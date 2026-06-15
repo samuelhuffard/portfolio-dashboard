@@ -1,12 +1,92 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sora);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
 body {
-  background: #fafaf9;
-  color: #171717;
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  background: #06080b;
+  color: #edfdf7;
+  font-family: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: rgba(0, 255, 178, 0.25);
+  color: #f8fffb;
+}
+
+button,
+a,
+input,
+textarea {
+  outline-color: rgba(0, 255, 178, 0.65);
+}
+
+.terminal-panel {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.86), rgba(6, 12, 18, 0.92)),
+    radial-gradient(circle at top right, rgba(0, 255, 178, 0.08), transparent 34%);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.market-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: linear-gradient(145deg, rgba(9, 15, 22, 0.96), rgba(14, 24, 33, 0.9));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.market-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -45% 20%;
+  height: 90px;
+  background: radial-gradient(circle, rgba(0, 255, 178, 0.1), transparent 70%);
+  pointer-events: none;
+}
+
+.data-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.data-table th {
+  background: rgba(10, 19, 28, 0.92);
+  color: #90a4ae;
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.data-table td {
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.data-table tr:hover td {
+  background: rgba(0, 255, 178, 0.035);
+}
+
+.prose {
+  color: #cad5dc;
+}
+
+.prose :where(h1,h2,h3,strong) {
+  color: #f8fffb;
+}
+
+.prose :where(a) {
+  color: #00ffb2;
+}
+
+.prose :where(code) {
+  color: #ffd166;
+  background: rgba(255, 209, 102, 0.08);
+  padding: 0.12rem 0.28rem;
+  border-radius: 0.35rem;
 }

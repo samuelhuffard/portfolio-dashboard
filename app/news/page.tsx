@@ -29,34 +29,40 @@ export default function NewsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-stone-500">Loading...</p>;
+  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading catalysts...</p>;
 
   if (error) {
     return (
       <div className="max-w-xl">
-        <h1 className="text-2xl font-semibold text-stone-900 mb-2">News</h1>
-        <p className="text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">{error}</p>
+        <h1 className="mb-2 text-2xl font-semibold text-white">Catalysts</h1>
+        <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold text-stone-900 mb-6">News</h1>
+    <div className="space-y-6">
+      <div className="terminal-panel p-5 sm:p-6">
+        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Market Catalysts</p>
+        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">News Tape</h1>
+        <p className="mt-3 max-w-2xl text-sm text-slate-400">
+          Headlines attached to research signals, kept close to the decision trail.
+        </p>
+      </div>
 
       {!news || news.length === 0 ? (
-        <p className="text-sm text-stone-500">
+        <p className="terminal-panel p-5 text-sm text-slate-400">
           No news yet — research-scan pulls headlines alongside each recommendation.
         </p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {news.map((item, i) => (
-            <div key={`${item.date}-${item.ticker}-${i}`} className="bg-white rounded-xl border border-stone-200 p-4">
+            <div key={`${item.date}-${item.ticker}-${i}`} className="market-card p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-stone-900">{item.ticker}</span>
-                <span className="text-xs text-stone-400">{item.date}</span>
+                <span className="font-mono text-lg font-semibold text-white">{item.ticker}</span>
+                <span className="font-mono text-xs text-slate-500">{item.date}</span>
               </div>
-              <p className="text-sm text-stone-700 mb-2">{item.rationale}</p>
+              <p className="mb-3 text-sm leading-6 text-slate-300">{item.rationale}</p>
               <div className="flex flex-col gap-1">
                 {item.links.map((link, j) => (
                   <a
@@ -64,7 +70,7 @@ export default function NewsPage() {
                     href={link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-emerald-600 hover:underline truncate"
+                    className="truncate font-mono text-[11px] text-cyan-200 hover:text-emerald-200"
                   >
                     {link}
                   </a>

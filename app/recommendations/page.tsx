@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react';
 import type { Recommendation } from '@/lib/sheets';
 
 const ACTION_STYLES: Record<string, string> = {
-  BUY: 'bg-emerald-100 text-emerald-700',
-  SELL: 'bg-red-100 text-red-700',
-  HOLD: 'bg-stone-100 text-stone-600',
+  BUY: 'border-emerald-300/35 bg-emerald-300/10 text-emerald-200',
+  SELL: 'border-red-300/35 bg-red-300/10 text-red-200',
+  HOLD: 'border-slate-300/20 bg-slate-300/10 text-slate-200',
 };
 
 export default function RecommendationsPage() {
@@ -28,42 +28,48 @@ export default function RecommendationsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-stone-500">Loading...</p>;
+  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading signals...</p>;
 
   if (error) {
     return (
       <div className="max-w-xl">
-        <h1 className="text-2xl font-semibold text-stone-900 mb-2">Recommendations</h1>
-        <p className="text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">{error}</p>
+        <h1 className="mb-2 text-2xl font-semibold text-white">Signals</h1>
+        <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold text-stone-900 mb-6">Recommendations</h1>
+    <div className="space-y-6">
+      <div className="terminal-panel p-5 sm:p-6">
+        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-emerald-300/75">AI Overlay</p>
+        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Signal Queue</h1>
+        <p className="mt-3 max-w-2xl text-sm text-slate-400">
+          Quant-ranked candidates with qualitative overlays, news context, and manual-execution status.
+        </p>
+      </div>
 
       {!recommendations || recommendations.length === 0 ? (
-        <p className="text-sm text-stone-500">
+        <p className="terminal-panel p-5 text-sm text-slate-400">
           No recommendations yet — run research-scan to generate the first batch.
         </p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {recommendations.map((r, i) => (
-            <div key={`${r.date}-${r.ticker}-${i}`} className="bg-white rounded-xl border border-stone-200 p-4">
+            <div key={`${r.date}-${r.ticker}-${i}`} className="market-card p-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
-                  <span className="font-semibold text-stone-900">{r.ticker}</span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ACTION_STYLES[r.action] ?? 'bg-stone-100 text-stone-600'}`}>
+                  <span className="font-mono text-lg font-semibold text-white">{r.ticker}</span>
+                  <span className={`border px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.16em] ${ACTION_STYLES[r.action] ?? 'border-slate-300/20 bg-slate-300/10 text-slate-200'}`}>
                     {r.action}
                   </span>
                   {r.quantScore !== null && (
-                    <span className="text-xs text-stone-500">Quant score: {r.quantScore.toFixed(1)}</span>
+                    <span className="font-mono text-xs text-cyan-200">Q {r.quantScore.toFixed(1)}</span>
                   )}
                 </div>
-                <span className="text-xs text-stone-400">{r.date}</span>
+                <span className="font-mono text-xs text-slate-500">{r.date}</span>
               </div>
-              <p className="text-sm text-stone-700 mb-2">{r.rationale}</p>
+              <p className="mb-3 text-sm leading-6 text-slate-300">{r.rationale}</p>
               {r.newsLinks && (
                 <div className="flex flex-wrap gap-2">
                   {r.newsLinks.split(',').map((link, j) => {
@@ -75,7 +81,7 @@ export default function RecommendationsPage() {
                         href={trimmed}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-emerald-600 hover:underline truncate max-w-xs"
+                        className="max-w-xs truncate border border-cyan-200/15 bg-cyan-200/[0.04] px-2 py-1 font-mono text-[10px] text-cyan-200 hover:border-cyan-200/35"
                       >
                         {trimmed}
                       </a>
@@ -84,7 +90,7 @@ export default function RecommendationsPage() {
                 </div>
               )}
               {r.status && (
-                <span className="inline-block mt-2 text-xs text-stone-400">Status: {r.status}</span>
+                <span className="mt-3 inline-block font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Status: {r.status}</span>
               )}
             </div>
           ))}

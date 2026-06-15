@@ -47,21 +47,24 @@ export default function StrategyPage() {
   }
 
   return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-semibold text-stone-900 mb-2">Strategy</h1>
-      <p className="text-sm text-stone-500 mb-4">
-        Free-text notes read by the AI overlay during the next research scan — e.g. &ldquo;lean defensive&rdquo;,
-        &ldquo;avoid airlines&rdquo;, &ldquo;prioritize dividend growth&rdquo;.
-      </p>
+    <div className="max-w-4xl space-y-6">
+      <div className="terminal-panel p-5 sm:p-6">
+        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Mandate Layer</p>
+        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Strategy</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+          Notes read by the AI overlay during the next research scan: risk posture, sectors to avoid,
+          cash preference, income tilt, or current investment constraints.
+        </p>
+      </div>
 
       {error && (
-        <p className="text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm mb-4">{error}</p>
+        <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>
       )}
 
       {loading ? (
-        <p className="text-stone-500">Loading...</p>
+        <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading mandate...</p>
       ) : (
-        <>
+        <div className="terminal-panel p-5">
           <textarea
             value={notes}
             onChange={(e) => {
@@ -69,20 +72,20 @@ export default function StrategyPage() {
               setSaved(false);
             }}
             rows={10}
-            className="w-full bg-white rounded-xl border border-stone-200 p-4 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="min-h-[320px] w-full resize-y border border-white/10 bg-black/30 p-4 font-mono text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-amber-200/60 focus:outline-none"
             placeholder="Write your strategy direction here..."
           />
           <div className="flex items-center gap-3 mt-3">
             <button
               onClick={handleSave}
               disabled={saving}
-              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
-            {saved && <span className="text-sm text-emerald-600">Saved</span>}
+            {saved && <span className="font-mono text-xs uppercase tracking-[0.16em] text-emerald-300">Saved</span>}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

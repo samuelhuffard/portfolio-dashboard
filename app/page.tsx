@@ -1,7 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { fmtCurrency, fmtPercent, gainLossColor } from '@/lib/format';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
@@ -30,8 +42,30 @@ function buildChartData(performance: PerformanceRow[]) {
     date: p.date,
     Portfolio: ((p.portfolioValue as number) / basePortfolio) * 100,
     'S&P 500': ((p.spyPrice as number) / baseSpy) * 100,
+    spread: ((p.portfolioValue as number) / basePortfolio) * 100 - ((p.spyPrice as number) / baseSpy) * 100,
   }));
 }
+
+function buildAllocation(holdings: Holding[]) {
+  return holdings
+    .filter((h) => h.marketValue !== null && h.marketValue > 0)
+    .sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0))
+    .slice(0, 7)
+    .map((h) => ({
+      ticker: h.ticker,
+      value: h.marketValue ?? 0,
+      returnPct: h.gainLossPct ?? 0,
+    }));
+}
+
+function getTopMovers(holdings: Holding[]) {
+  return [...holdings]
+    .filter((h) => h.gainLossPct !== null)
+    .sort((a, b) => Math.abs(b.gainLossPct ?? 0) - Math.abs(a.gainLossPct ?? 0))
+    .slice(0, 5);
+}
+
+const BAR_COLORS = ['#00ffb2', '#6ee7ff', '#ffd166', '#a7f3d0', '#38bdf8', '#f59e0b', '#94a3b8'];
 
 export default function OverviewPage() {
   const [data, setData] = useState<PortfolioResponse | null>(null);
@@ -52,15 +86,34 @@ export default function OverviewPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return <p className="text-stone-500">Loading...</p>;
-  }
+  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading market console...</p>;
 
   if (error) {
     return (
-      <div className="max-w-xl">
-        <h1 className="text-2xl font-semibold text-stone-900 mb-2">Overview</h1>
-        <p className="text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">{error}</p>
+      <div className="space-y-5">
+        <section className="terminal-panel p-5 sm:p-7">
+          <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.36em] text-red-200/80">
+            Data Feed Offline
+          </p>
+          <h1 className="max-w-4xl text-4xl font-black tracking-[-0.04em] text-white sm:text-6xl">
+            Command center is waiting on portfolio data.
+          </h1>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">
+            The interface is online, but the spreadsheet-backed holdings feed did not return data.
+          </p>
+        </section>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="terminal-panel p-5">
+            <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.28em] text-red-200/80">Feed Error</p>
+            <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>
+          </div>
+          <div className="market-card p-5">
+            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200/80">Expected Source</p>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Run holdings sync or research scan, then refresh this desk to populate charts, allocation, and movers.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -69,58 +122,153 @@ export default function OverviewPage() {
 
   const { totals, cash, lastSynced } = data;
   const chartData = buildChartData(data.performance);
+  const allocation = buildAllocation(data.holdings);
+  const topMovers = getTopMovers(data.holdings);
+  const investedRatio = totals.totalValue ? (totals.totalMarketValue / totals.totalValue) * 100 : null;
+  const cashRatio = totals.totalValue && cash !== null ? (cash / totals.totalValue) * 100 : null;
 
   return (
-    <div>
-      <div className="flex items-baseline justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-stone-900">Overview</h1>
-        {lastSynced && <span className="text-xs text-stone-400">Last synced {lastSynced}</span>}
+    <div className="space-y-6">
+      <section className="terminal-panel overflow-hidden p-5 sm:p-7">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.36em] text-emerald-300/80">
+              Portfolio Command Center
+            </p>
+            <h1 className="max-w-4xl text-4xl font-black tracking-[-0.04em] text-white sm:text-6xl">
+              Capital, signals, and risk in one live desk.
+            </h1>
+          </div>
+          <div className="grid min-w-full grid-cols-2 gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400 sm:min-w-[420px]">
+            <div className="border border-white/10 bg-white/[0.035] p-3">
+              <p>Last Sync</p>
+              <p className="mt-2 truncate text-emerald-200">{lastSynced ?? 'Awaiting data'}</p>
+            </div>
+            <div className="border border-white/10 bg-white/[0.035] p-3">
+              <p>Exposure</p>
+              <p className="mt-2 text-amber-200">{investedRatio === null ? '—' : `${investedRatio.toFixed(1)}% invested`}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Total Value" value={fmtCurrency(totals.totalValue)} accent="text-white" sub="NAV across holdings + cash" />
+        <MetricCard label="Cash Reserve" value={fmtCurrency(cash)} accent="text-amber-200" sub={cashRatio === null ? 'Liquidity buffer' : `${cashRatio.toFixed(1)}% of portfolio`} />
+        <MetricCard label="Open P/L" value={fmtCurrency(totals.totalGainLoss)} accent={totals.totalGainLoss >= 0 ? 'text-emerald-300' : 'text-red-300'} sub="Unrealized gain / loss" />
+        <MetricCard label="Total Return" value={fmtPercent(totals.totalGainLossPct)} accent={totals.totalGainLossPct !== null && totals.totalGainLossPct >= 0 ? 'text-emerald-300' : 'text-red-300'} sub="Since tracked cost basis" />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-stone-200 p-4">
-          <p className="text-xs text-stone-500 mb-1">Total Value</p>
-          <p className="text-xl font-semibold text-stone-900">{fmtCurrency(totals.totalValue)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-stone-200 p-4">
-          <p className="text-xs text-stone-500 mb-1">Cash</p>
-          <p className="text-xl font-semibold text-stone-900">{fmtCurrency(cash)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-stone-200 p-4">
-          <p className="text-xs text-stone-500 mb-1">Total Gain/Loss</p>
-          <p className={`text-xl font-semibold ${gainLossColor(totals.totalGainLoss)}`}>
-            {fmtCurrency(totals.totalGainLoss)}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl border border-stone-200 p-4">
-          <p className="text-xs text-stone-500 mb-1">Total Return</p>
-          <p className={`text-xl font-semibold ${gainLossColor(totals.totalGainLossPct)}`}>
-            {fmtPercent(totals.totalGainLossPct)}
-          </p>
-        </div>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(360px,0.85fr)]">
+        <section className="terminal-panel p-4 sm:p-5">
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Benchmark Spread</p>
+              <h2 className="text-xl font-semibold text-white">Portfolio vs S&P 500</h2>
+            </div>
+            <span className="font-mono text-xs text-slate-500">Normalized base: 100</span>
+          </div>
+          {chartData.length === 0 ? (
+            <p className="border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400">
+              No performance history yet — run holdings-sync to start tracking.
+            </p>
+          ) : (
+            <div className="h-[360px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="portfolioGlow" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="5%" stopColor="#00ffb2" stopOpacity={0.36} />
+                      <stop offset="95%" stopColor="#00ffb2" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="rgba(148,163,184,.12)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                  <Tooltip contentStyle={{ background: '#071019', border: '1px solid rgba(0,255,178,.22)', color: '#e5fff7' }} />
+                  <Area type="monotone" dataKey="Portfolio" stroke="#00ffb2" strokeWidth={3} fill="url(#portfolioGlow)" dot={false} />
+                  <Line type="monotone" dataKey="S&P 500" stroke="#7dd3fc" strokeWidth={2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+
+        <section className="terminal-panel p-4 sm:p-5">
+          <div className="mb-5">
+            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200/70">Allocation Stack</p>
+            <h2 className="text-xl font-semibold text-white">Top Capital Weights</h2>
+          </div>
+          {allocation.length === 0 ? (
+            <p className="text-sm text-slate-400">No holdings allocation available.</p>
+          ) : (
+            <div className="h-[360px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={allocation} layout="vertical" margin={{ left: 8, right: 18 }}>
+                  <CartesianGrid stroke="rgba(148,163,184,.1)" horizontal={false} />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="ticker" type="category" width={54} tick={{ fontSize: 12, fill: '#cbd5e1', fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={(value) => fmtCurrency(Number(value))} contentStyle={{ background: '#071019', border: '1px solid rgba(255,209,102,.2)', color: '#fff7df' }} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {allocation.map((entry, index) => (
+                      <Cell key={entry.ticker} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
       </div>
 
-      <div className="bg-white rounded-xl border border-stone-200 p-4">
-        <h2 className="text-sm font-medium text-stone-700 mb-4">Portfolio vs S&P 500 (normalized to 100)</h2>
-        {chartData.length === 0 ? (
-          <p className="text-sm text-stone-500">
-            No performance history yet — run holdings-sync to start tracking.
-          </p>
+      <section className="terminal-panel overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-emerald-300/70">Position Diagnostics</p>
+            <h2 className="text-lg font-semibold text-white">Largest return movers</h2>
+          </div>
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">{data.holdings.length} lines</span>
+        </div>
+        {topMovers.length === 0 ? (
+          <p className="p-5 text-sm text-slate-400">No position-level returns available.</p>
         ) : (
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#a8a29e" />
-                <YAxis tick={{ fontSize: 12 }} stroke="#a8a29e" domain={['auto', 'auto']} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="Portfolio" stroke="#10b981" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="S&P 500" stroke="#64748b" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="overflow-x-auto">
+            <table className="data-table w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="px-4 py-3 text-left">Ticker</th>
+                  <th className="px-4 py-3 text-left">Company</th>
+                  <th className="px-4 py-3 text-right">Market Value</th>
+                  <th className="px-4 py-3 text-right">Gain / Loss</th>
+                  <th className="px-4 py-3 text-right">Return</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topMovers.map((h) => (
+                  <tr key={h.ticker}>
+                    <td className="px-4 py-3 font-mono font-semibold text-white">{h.ticker}</td>
+                    <td className="px-4 py-3 text-slate-400">{h.name}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-200">{fmtCurrency(h.marketValue)}</td>
+                    <td className={`px-4 py-3 text-right font-mono ${gainLossColor(h.gainLoss).replace('600', '300')}`}>{fmtCurrency(h.gainLoss)}</td>
+                    <td className={`px-4 py-3 text-right font-mono ${gainLossColor(h.gainLossPct).replace('600', '300')}`}>{fmtPercent(h.gainLossPct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+      </section>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: string }) {
+  return (
+    <div className="market-card p-4">
+      <div className="relative z-10">
+        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-slate-500">{label}</p>
+        <p className={`mt-3 text-2xl font-black tracking-[-0.03em] ${accent}`}>{value}</p>
+        <p className="mt-2 text-xs text-slate-500">{sub}</p>
       </div>
     </div>
   );
