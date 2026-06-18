@@ -13,7 +13,7 @@ interface AgentInvestorSummary {
   proRataHoldings: ProRataHolding[]; // Client only, only non-empty for agents with real Holdings data
 }
 
-async function loadAgentSummary(agentId: string, agentName: string, email: string | null, isManager: boolean): Promise<AgentInvestorSummary> {
+async function loadAgentSummary(agentId: string, agentName: string, userId: string, email: string | null, isManager: boolean): Promise<AgentInvestorSummary> {
   try {
     const spreadsheetId = await getSpreadsheetId(agentId);
     const sheets = await getServiceAccountClients();
@@ -25,7 +25,7 @@ async function loadAgentSummary(agentId: string, agentName: string, email: strin
     ]);
 
     const { navPerUnit, unitsOutstanding } = latestNav(performance);
-    const position = email ? computeInvestorPosition(ledger, email, navPerUnit, unitsOutstanding) : null;
+    const position = computeInvestorPosition(ledger, { userId, email }, navPerUnit, unitsOutstanding);
     const roster = isManager ? computeRoster(ledger, navPerUnit, unitsOutstanding) : [];
     const proRataHoldings = !isManager && position?.ownershipPct != null ? computeProRataHoldings(holdingsResult.holdings, position.ownershipPct) : [];
 
@@ -44,10 +44,10 @@ export async function GET(req: Request) {
   });
   if (!authz.ok) return authz.response;
 
-  const { role, email } = authz.context;
+  const { role, userId, email } = authz.context;
   const isManager = role === "FundManager";
 
-  const agents = await Promise.all(AGENTS.map((a) => loadAgentSummary(a.id, a.name, email, isManager)));
+  const agents = await Promise.all(AGENTS.map((a) => loadAgentSummary(a.id, a.name, userId, email, isManager)));
 
   return NextResponse.json({ role, agents });
 }

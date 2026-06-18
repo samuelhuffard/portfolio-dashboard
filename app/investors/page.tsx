@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { fmtCurrency, fmtPercent, fmtNumber, gainLossColor } from '@/lib/format';
 
 interface InvestorPosition {
+  investorId: string | null;
   email: string;
   name: string;
   contributed: number;
@@ -112,7 +113,7 @@ function ManagerView({ agents }: { agents: AgentInvestorSummary[] }) {
                 </thead>
                 <tbody>
                   {a.roster.map((p) => (
-                    <tr key={p.email} className="border-b border-white/5">
+                    <tr key={p.investorId ?? p.email} className="border-b border-white/5">
                       <td className="px-4 py-3">
                         <p className="text-slate-100">{p.name}</p>
                         <p className="text-xs text-slate-500">{p.email}</p>

@@ -98,6 +98,35 @@ function parseProposal(value: unknown): AllocationProposal | null {
   return parsed as AllocationProposal;
 }
 
+export function normalizeDecisionStatus(status: unknown): Exclude<ProposalStatus, "Pending"> {
+  const normalizedStatus = cleanText(status);
+  if (!STATUSES.has(normalizedStatus as ProposalStatus) || normalizedStatus === "Pending") {
+    throw new Error("Decision must approve or reject the proposal.");
+  }
+  return normalizedStatus as Exclude<ProposalStatus, "Pending">;
+}
+
+export function applyProposalDecision(
+  current: AllocationProposal,
+  status: unknown,
+  note: unknown,
+  userId: string,
+  now = new Date().toISOString()
+): AllocationProposal {
+  if (current.status !== "Pending") {
+    throw new Error("Proposal has already been decided. Create a new proposal for any correction.");
+  }
+
+  return {
+    ...current,
+    status: normalizeDecisionStatus(status),
+    updatedAt: now,
+    decidedAt: now,
+    decidedByUserId: userId,
+    decisionNote: cleanText(note) || null,
+  };
+}
+
 export async function listProposals(limit = 100): Promise<AllocationProposal[]> {
   const redis = getRedis();
   if (!redis) return [];
@@ -135,23 +164,10 @@ export async function updateProposalDecision(id: string, status: unknown, note: 
   const redis = getRedis();
   if (!redis) throw new Error("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for approval proposals.");
 
-  const normalizedStatus = cleanText(status);
-  if (!STATUSES.has(normalizedStatus as ProposalStatus) || normalizedStatus === "Pending") {
-    throw new Error("Decision must approve or reject the proposal.");
-  }
-
   const current = parseProposal(await redis.get(keyFor(id)));
   if (!current) return null;
 
-  const now = new Date().toISOString();
-  const updated: AllocationProposal = {
-    ...current,
-    status: normalizedStatus as ProposalStatus,
-    updatedAt: now,
-    decidedAt: now,
-    decidedByUserId: userId,
-    decisionNote: cleanText(note) || null,
-  };
+  const updated = applyProposalDecision(current, status, note, userId);
 
   await redis.set(keyFor(updated.id), JSON.stringify(updated));
   return updated;

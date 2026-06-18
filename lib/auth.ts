@@ -2,7 +2,8 @@ import "server-only";
 
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { appendAudit, type AuditAction } from "./audit";
+import { appendAudit, getAuditConfigError, type AuditAction } from "./audit";
+import { enforceRateLimit } from "./rate-limit";
 import { canAccess, resolvePortfolioRole, type Permission, type PortfolioRole } from "./rbac";
 import { checkRedLines } from "./red-lines";
 
@@ -61,6 +62,14 @@ export async function requireApiPermission({
   metadata = {},
 }: RequirePermissionOptions): Promise<{ ok: true; context: PortfolioAuthContext } | { ok: false; response: NextResponse }> {
   const route = routeFromRequest(request);
+  const auditConfigError = getAuditConfigError();
+  if (auditConfigError) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Audit logging is not configured." }, { status: 503 }),
+    };
+  }
+
   const { userId } = await auth();
 
   if (!userId) {
@@ -129,6 +138,20 @@ export async function requireApiPermission({
       ok: false,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     };
+  }
+
+  const rateLimit = await enforceRateLimit({ userId, action });
+  if (!rateLimit.ok) {
+    await appendAudit({
+      userId,
+      role,
+      action: "RATE_LIMIT_REJECT",
+      route,
+      metadata: { ...metadata, permission, limitedAction: action },
+    });
+    const response = NextResponse.json({ error: rateLimit.message }, { status: rateLimit.status });
+    if (rateLimit.retryAfterSeconds) response.headers.set("Retry-After", String(rateLimit.retryAfterSeconds));
+    return { ok: false, response };
   }
 
   await appendAudit({

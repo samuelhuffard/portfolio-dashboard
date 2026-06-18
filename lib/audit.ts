@@ -20,7 +20,8 @@ export type AuditAction =
   | "INVESTORS_READ"
   | "APPROVAL_QUEUE_READ"
   | "PROPOSAL_CREATE"
-  | "APPROVAL_DECISION";
+  | "APPROVAL_DECISION"
+  | "RATE_LIMIT_REJECT";
 
 export interface AuditEventInput {
   userId?: string | null;
@@ -32,6 +33,19 @@ export interface AuditEventInput {
 
 interface AuditEvent extends AuditEventInput {
   timestamp: string;
+}
+
+function auditIsEnforced(): boolean {
+  return process.env.AUDIT_ENFORCE === "true" || process.env.VERCEL_ENV === "production";
+}
+
+export function getAuditConfigError(): string | null {
+  if (!auditIsEnforced()) return null;
+  if (!process.env.AUDIT_HMAC_SECRET?.trim()) return "AUDIT_HMAC_SECRET is required when audit enforcement is enabled.";
+  if (!process.env.UPSTASH_REDIS_REST_URL?.trim() || !process.env.UPSTASH_REDIS_REST_TOKEN?.trim()) {
+    return "Upstash Redis env vars are required when audit enforcement is enabled.";
+  }
+  return null;
 }
 
 function sortedJson(value: unknown): string {
@@ -47,7 +61,10 @@ function sortedJson(value: unknown): string {
 
 function computeRowHmac(event: AuditEvent): string | null {
   const secret = process.env.AUDIT_HMAC_SECRET?.trim();
-  if (!secret) return null;
+  if (!secret) {
+    if (auditIsEnforced()) throw new Error("AUDIT_HMAC_SECRET is required when audit enforcement is enabled.");
+    return null;
+  }
 
   const canonical = JSON.stringify([
     event.timestamp,
@@ -62,6 +79,9 @@ function computeRowHmac(event: AuditEvent): string | null {
 }
 
 export async function appendAudit(input: AuditEventInput): Promise<void> {
+  const configError = getAuditConfigError();
+  if (configError) throw new Error(configError);
+
   const timestamp = new Date().toISOString();
   const date = timestamp.slice(0, 10);
   const event: AuditEvent = {
@@ -76,10 +96,14 @@ export async function appendAudit(input: AuditEventInput): Promise<void> {
 
   try {
     const redis = getRedis();
-    if (!redis) return;
+    if (!redis) {
+      if (auditIsEnforced()) throw new Error("Audit Redis is not configured.");
+      return;
+    }
     await redis.rpush(`pm:audit:${date}`, JSON.stringify(row));
   } catch (err) {
     console.error("[Audit] Failed to append event:", err instanceof Error ? err.message : err);
+    if (auditIsEnforced()) throw err;
     try {
       await getRedis()?.incr("pm:audit_fail_count");
     } catch {

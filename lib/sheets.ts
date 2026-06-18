@@ -194,6 +194,9 @@ export interface InvestorLedgerEntry {
   amount: number;
   navPerUnit: number | null;
   units: number;
+  investorId: string | null;
+  entryId: string | null;
+  rowHmac: string | null;
 }
 
 /** Full capital ledger for one agent — every contribution/withdrawal ever recorded via record-contribution.js. */
@@ -203,7 +206,7 @@ export async function readInvestorLedger(
 ): Promise<InvestorLedgerEntry[]> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "Investors!A2:G",
+    range: "Investors!A2:J",
   });
   const rows = res.data.values ?? [];
   return rows
@@ -216,6 +219,9 @@ export async function readInvestorLedger(
       amount: parseNum(row[4]) ?? 0,
       navPerUnit: parseNum(row[5]),
       units: parseNum(row[6]) ?? 0,
+      investorId: row[7] ?? null,
+      entryId: row[8] ?? null,
+      rowHmac: row[9] ?? null,
     }));
 }
 
