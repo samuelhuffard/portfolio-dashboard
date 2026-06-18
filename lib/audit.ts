@@ -17,7 +17,10 @@ export type AuditAction =
   | "REPORT_HISTORY_READ"
   | "AGENT_CHAT_READ"
   | "AGENT_CHAT_SEND"
-  | "INVESTORS_READ";
+  | "INVESTORS_READ"
+  | "APPROVAL_QUEUE_READ"
+  | "PROPOSAL_CREATE"
+  | "APPROVAL_DECISION";
 
 export interface AuditEventInput {
   userId?: string | null;

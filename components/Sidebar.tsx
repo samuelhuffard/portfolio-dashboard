@@ -71,6 +71,15 @@ function InvestorsIcon({ className }: { className?: string }) {
   );
 }
 
+function ApprovalsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4h16v16H4z" />
+      <path d="m7 12 3 3 7-7" />
+    </svg>
+  );
+}
+
 function ResearchIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -121,11 +130,12 @@ const links: Array<{
   { href: '/news', label: 'Catalysts', Icon: NewsIcon, code: '07', roles: ['FundManager', 'Client'] },
   { href: '/strategy', label: 'Mandate', Icon: StrategyIcon, code: '08', roles: ['FundManager'] },
   { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '09', roles: ['FundManager'] },
+  { href: '/approvals', label: 'Approvals', Icon: ApprovalsIcon, code: '10', roles: ['FundManager'] },
   {
     href: '/investors',
     label: { FundManager: 'Investors', Client: 'My Investment' },
     Icon: InvestorsIcon,
-    code: '10',
+    code: '11',
     roles: ['FundManager', 'Client'],
   },
 ];

@@ -32,6 +32,32 @@ test("Research-only analysis wording is allowed", () => {
   assert.equal(result, null);
 });
 
+test("Approval proposal payloads are allowed when they do not claim execution", () => {
+  const result = checkRedLines({
+    role: "FundManager",
+    method: "POST",
+    route: "/api/proposals",
+    bodyText: JSON.stringify({
+      agentId: "agent-1",
+      ticker: "VTI",
+      side: "BUY",
+      amountDollars: 2500,
+      rationale: "Increase core ETF exposure after review.",
+    }),
+  });
+  assert.equal(result, null);
+});
+
+test("Execution-shaped API routes remain blocked", () => {
+  const result = checkRedLines({
+    role: "FundManager",
+    method: "POST",
+    route: "/api/orders",
+    bodyText: JSON.stringify({ ticker: "VTI" }),
+  });
+  assert.equal(result?.id, "no_trade_execution");
+});
+
 test("Non-manager AI generation is blocked", () => {
   const result = checkRedLines({
     role: "Client",

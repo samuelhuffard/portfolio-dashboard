@@ -12,6 +12,7 @@ test("canAccess grants FundManager the full control surface", () => {
   assert.equal(canAccess("FundManager", "research:run"), true);
   assert.equal(canAccess("FundManager", "reports:export"), true);
   assert.equal(canAccess("FundManager", "audit:read"), true);
+  assert.equal(canAccess("FundManager", "approvals:manage"), true);
 });
 
 test("canAccess limits Client to read-only portfolio and signal permissions", () => {
@@ -21,6 +22,7 @@ test("canAccess limits Client to read-only portfolio and signal permissions", ()
   assert.equal(canAccess("Client", "strategy:write"), false);
   assert.equal(canAccess("Client", "research:run"), false);
   assert.equal(canAccess("Client", "reports:export"), false);
+  assert.equal(canAccess("Client", "approvals:manage"), false);
 });
 
 test("canAccess fails closed for unknown or missing roles", () => {
