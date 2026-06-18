@@ -6,6 +6,7 @@ const managerEmails = ["manager@example.com", "second@example.com"];
 
 test("canAccess grants FundManager the full control surface", () => {
   assert.equal(canAccess("FundManager", "portfolio:read"), true);
+  assert.equal(canAccess("FundManager", "portfolio:full"), true);
   assert.equal(canAccess("FundManager", "signals:read"), true);
   assert.equal(canAccess("FundManager", "strategy:write"), true);
   assert.equal(canAccess("FundManager", "research:run"), true);
@@ -15,6 +16,7 @@ test("canAccess grants FundManager the full control surface", () => {
 
 test("canAccess limits Client to read-only portfolio and signal permissions", () => {
   assert.equal(canAccess("Client", "portfolio:read"), true);
+  assert.equal(canAccess("Client", "portfolio:full"), false);
   assert.equal(canAccess("Client", "signals:read"), true);
   assert.equal(canAccess("Client", "strategy:write"), false);
   assert.equal(canAccess("Client", "research:run"), false);
@@ -23,6 +25,7 @@ test("canAccess limits Client to read-only portfolio and signal permissions", ()
 
 test("canAccess fails closed for unknown or missing roles", () => {
   assert.equal(canAccess(null, "portfolio:read"), false);
+  assert.equal(canAccess(null, "portfolio:full"), false);
   assert.equal(canAccess(undefined, "portfolio:read"), false);
   assert.equal(canAccess("Admin" as never, "portfolio:read"), false);
 });

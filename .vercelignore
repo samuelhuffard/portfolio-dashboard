@@ -1,5 +1,6 @@
 .env
 .env.*
 .clerk/
+.claude/
 credentials.json
 token.json

@@ -4,7 +4,7 @@ import { getServiceAccountClients, getSpreadsheetId, readHoldings, readPerforman
 
 export async function GET(request: NextRequest) {
   const authz = await requireApiPermission({
-    permission: "portfolio:read",
+    permission: "portfolio:full",
     action: "PORTFOLIO_READ",
     request,
   });

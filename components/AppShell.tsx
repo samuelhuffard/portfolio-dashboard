@@ -1,24 +1,16 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
+import { CLIENT_DEFAULT_ROUTE, routeAllowed } from "@/lib/client-access";
 import type { PortfolioRole } from "@/lib/rbac";
 
 interface AppShellProps {
   children: React.ReactNode;
   role: PortfolioRole | null;
-}
-
-const CLIENT_ROUTES = new Set(["/", "/holdings", "/recommendations", "/news", "/investors"]);
-const MANAGER_ONLY_PREFIXES = ["/research", "/compare", "/history", "/strategy", "/agents"];
-
-function routeAllowed(role: PortfolioRole | null, pathname: string): boolean {
-  if (!role) return false;
-  if (role === "FundManager") return true;
-  if (CLIENT_ROUTES.has(pathname)) return true;
-  return !MANAGER_ONLY_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 function AccessBlock({ role }: { role: PortfolioRole | null }) {
@@ -36,7 +28,7 @@ function AccessBlock({ role }: { role: PortfolioRole | null }) {
         </h1>
         <p className="mt-4 text-sm leading-6 text-slate-400">
           {role
-            ? "Client accounts are limited to portfolio transparency, positions, client signals, and catalysts."
+            ? "Client accounts are limited to their own capital account plus curated signals and catalysts."
             : "This account needs a Portfolio Manager role assignment before the dashboard can load."}
         </p>
       </section>
@@ -46,8 +38,16 @@ function AccessBlock({ role }: { role: PortfolioRole | null }) {
 
 export default function AppShell({ children, role }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const isAuthRoute = pathname.startsWith("/sign-in");
   const hasSidebar = !isAuthRoute && role !== null;
+  const shouldRedirectClientHome = role === "Client" && pathname === "/";
+
+  useEffect(() => {
+    if (shouldRedirectClientHome) {
+      router.replace(CLIENT_DEFAULT_ROUTE);
+    }
+  }, [router, shouldRedirectClientHome]);
 
   if (isAuthRoute) {
     return <main className="relative min-h-screen overflow-hidden">{children}</main>;
@@ -66,7 +66,13 @@ export default function AppShell({ children, role }: AppShellProps) {
         <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-28 bg-gradient-to-b from-cyan-300/10 to-transparent" />
         <PageTransition>
           <div className="mx-auto max-w-[1540px]">
-            {routeAllowed(role, pathname) ? children : <AccessBlock role={role} />}
+            {shouldRedirectClientHome ? (
+              <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading capital account...</p>
+            ) : routeAllowed(role, pathname) ? (
+              children
+            ) : (
+              <AccessBlock role={role} />
+            )}
           </div>
         </PageTransition>
       </main>

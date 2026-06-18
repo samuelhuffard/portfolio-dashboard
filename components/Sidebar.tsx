@@ -106,8 +106,8 @@ const links: Array<{
   code: string;
   roles: PortfolioRole[];
 }> = [
-  { href: '/', label: 'Command', Icon: HomeIcon, code: '01', roles: ['FundManager', 'Client'] },
-  { href: '/holdings', label: 'Positions', Icon: HoldingsIcon, code: '02', roles: ['FundManager', 'Client'] },
+  { href: '/', label: 'Command', Icon: HomeIcon, code: '01', roles: ['FundManager'] },
+  { href: '/holdings', label: 'Positions', Icon: HoldingsIcon, code: '02', roles: ['FundManager'] },
   {
     href: '/recommendations',
     label: { FundManager: 'Signals', Client: 'Client Signals' },
