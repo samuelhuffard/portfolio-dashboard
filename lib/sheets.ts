@@ -104,6 +104,8 @@ export interface PerformanceRow {
   date: string;
   portfolioValue: number | null;
   spyPrice: number | null;
+  unitsOutstanding: number | null;
+  navPerUnit: number | null;
 }
 
 export async function readPerformance(
@@ -112,7 +114,7 @@ export async function readPerformance(
 ): Promise<PerformanceRow[]> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "Performance!A2:C",
+    range: "Performance!A2:E",
   });
 
   const rows = res.data.values ?? [];
@@ -122,6 +124,8 @@ export async function readPerformance(
       date: row[0],
       portfolioValue: parseNum(row[1]),
       spyPrice: parseNum(row[2]),
+      unitsOutstanding: parseNum(row[3]),
+      navPerUnit: parseNum(row[4]),
     }));
 }
 
@@ -180,6 +184,39 @@ export async function writeStrategyNotes(
     valueInputOption: "RAW",
     requestBody: { values: [[notes]] },
   });
+}
+
+export interface InvestorLedgerEntry {
+  date: string;
+  email: string;
+  name: string;
+  type: string; // "Contribution" | "Withdrawal"
+  amount: number;
+  navPerUnit: number | null;
+  units: number;
+}
+
+/** Full capital ledger for one agent — every contribution/withdrawal ever recorded via record-contribution.js. */
+export async function readInvestorLedger(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string
+): Promise<InvestorLedgerEntry[]> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "Investors!A2:G",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((row) => row[0])
+    .map((row) => ({
+      date: row[0],
+      email: row[1] ?? "",
+      name: row[2] ?? "",
+      type: row[3] ?? "",
+      amount: parseNum(row[4]) ?? 0,
+      navPerUnit: parseNum(row[5]),
+      units: parseNum(row[6]) ?? 0,
+    }));
 }
 
 export interface TrackRecordRow {

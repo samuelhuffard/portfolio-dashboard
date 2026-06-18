@@ -11,7 +11,7 @@ interface AppShellProps {
   role: PortfolioRole | null;
 }
 
-const CLIENT_ROUTES = new Set(["/", "/holdings", "/recommendations", "/news"]);
+const CLIENT_ROUTES = new Set(["/", "/holdings", "/recommendations", "/news", "/investors"]);
 const MANAGER_ONLY_PREFIXES = ["/research", "/compare", "/history", "/strategy", "/agents"];
 
 function routeAllowed(role: PortfolioRole | null, pathname: string): boolean {

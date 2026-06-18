@@ -62,6 +62,15 @@ function AgentsIcon({ className }: { className?: string }) {
   );
 }
 
+function InvestorsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v2M12 15v2M9.5 9.5c0-1 .9-1.5 2.5-1.5s2.5.6 2.5 1.6c0 2.1-5 1.4-5 3.6 0 1 1 1.6 2.5 1.6s2.5-.5 2.5-1.5" />
+    </svg>
+  );
+}
+
 function ResearchIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -112,6 +121,13 @@ const links: Array<{
   { href: '/news', label: 'Catalysts', Icon: NewsIcon, code: '07', roles: ['FundManager', 'Client'] },
   { href: '/strategy', label: 'Mandate', Icon: StrategyIcon, code: '08', roles: ['FundManager'] },
   { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '09', roles: ['FundManager'] },
+  {
+    href: '/investors',
+    label: { FundManager: 'Investors', Client: 'My Investment' },
+    Icon: InvestorsIcon,
+    code: '10',
+    roles: ['FundManager', 'Client'],
+  },
 ];
 
 export default function Sidebar({ role }: { role: PortfolioRole }) {
