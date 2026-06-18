@@ -1,7 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireApiPermission } from "@/lib/auth";
 import { getServiceAccountClients, getSpreadsheetId, readHoldings, readPerformance } from "@/lib/sheets";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authz = await requireApiPermission({
+    permission: "portfolio:read",
+    action: "PORTFOLIO_READ",
+    request,
+  });
+  if (!authz.ok) return authz.response;
+
   try {
     const spreadsheetId = await getSpreadsheetId();
     const sheets = await getServiceAccountClients();

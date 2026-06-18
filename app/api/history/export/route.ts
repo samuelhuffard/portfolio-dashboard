@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireApiPermission } from "@/lib/auth";
 import { getReport } from "@/lib/redis";
 import { generateResearchWorkbook, generateComparisonWorkbook } from "@/lib/research/excel";
 
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
+  const authz = await requireApiPermission({
+    permission: "reports:export",
+    action: "REPORT_EXPORT",
+    request,
+    metadata: { reportId: id },
+  });
+  if (!authz.ok) return authz.response;
+
   if (!id) {
     return NextResponse.json({ error: "Missing report id" }, { status: 400 });
   }

@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireApiPermission } from "@/lib/auth";
 import { generateResearchWorkbook } from "@/lib/research/excel";
 import type { ResearchResponse } from "@/lib/research/types";
 
 export async function POST(request: NextRequest) {
+  const authz = await requireApiPermission({
+    permission: "reports:export",
+    action: "REPORT_EXPORT",
+    request,
+    metadata: { kind: "research" },
+  });
+  if (!authz.ok) return authz.response;
+
   let body: ResearchResponse;
   try {
     body = await request.json();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
+import { requireApiPermission } from "@/lib/auth";
 import { fetchCompanyData } from "@/lib/research/yahoo";
 import { computeCompanyData } from "@/lib/research/compute";
 import { generateCompanyAnalysis } from "@/lib/research/analyze";
@@ -7,6 +8,13 @@ import { saveReport } from "@/lib/redis";
 import type { ResearchRequest, ResearchResponse } from "@/lib/research/types";
 
 export async function POST(request: NextRequest) {
+  const authz = await requireApiPermission({
+    permission: "research:run",
+    action: "RESEARCH_GENERATE",
+    request,
+  });
+  if (!authz.ok) return authz.response;
+
   let body: ResearchRequest;
   try {
     body = await request.json();

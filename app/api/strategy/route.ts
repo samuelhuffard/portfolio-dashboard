@@ -1,7 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireApiPermission } from "@/lib/auth";
 import { getServiceAccountClients, getSpreadsheetId, readStrategyNotes, writeStrategyNotes } from "@/lib/sheets";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authz = await requireApiPermission({
+    permission: "strategy:write",
+    action: "STRATEGY_READ",
+    request,
+  });
+  if (!authz.ok) return authz.response;
+
   try {
     const spreadsheetId = await getSpreadsheetId();
     const sheets = await getServiceAccountClients();
@@ -17,7 +25,14 @@ export async function GET() {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const authz = await requireApiPermission({
+    permission: "strategy:write",
+    action: "STRATEGY_EDIT",
+    request: req,
+  });
+  if (!authz.ok) return authz.response;
+
   try {
     const body = await req.json();
     const notes = body?.notes;

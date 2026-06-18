@@ -1,8 +1,10 @@
 'use client';
 
+import { UserButton } from '@clerk/nextjs';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
+import type { PortfolioRole } from '@/lib/rbac';
 
 function HomeIcon({ className }: { className?: string }) {
   return (
@@ -49,6 +51,17 @@ function StrategyIcon({ className }: { className?: string }) {
   );
 }
 
+function AgentsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="8" r="2.5" />
+      <circle cx="18" cy="8" r="2.5" />
+      <circle cx="12" cy="6" r="2.5" />
+      <path d="M3 19c0-2.5 1.5-4 3-4s3 1.5 3 4M15 19c0-2.5 1.5-4 3-4s3 1.5 3 4M9 19c0-2.5 1.5-4 3-4s3 1.5 3 4" />
+    </svg>
+  );
+}
+
 function ResearchIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -77,19 +90,33 @@ function HistoryIcon({ className }: { className?: string }) {
   );
 }
 
-const links = [
-  { href: '/', label: 'Command', Icon: HomeIcon, code: '01' },
-  { href: '/holdings', label: 'Positions', Icon: HoldingsIcon, code: '02' },
-  { href: '/recommendations', label: 'Signals', Icon: RecommendationsIcon, code: '03' },
-  { href: '/research', label: 'Analyst Lab', Icon: ResearchIcon, code: '04' },
-  { href: '/compare', label: 'Comps', Icon: CompareIcon, code: '05' },
-  { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '06' },
-  { href: '/news', label: 'Catalysts', Icon: NewsIcon, code: '07' },
-  { href: '/strategy', label: 'Mandate', Icon: StrategyIcon, code: '08' },
+const links: Array<{
+  href: string;
+  label: string | Record<PortfolioRole, string>;
+  Icon: (props: { className?: string }) => React.ReactNode;
+  code: string;
+  roles: PortfolioRole[];
+}> = [
+  { href: '/', label: 'Command', Icon: HomeIcon, code: '01', roles: ['FundManager', 'Client'] },
+  { href: '/holdings', label: 'Positions', Icon: HoldingsIcon, code: '02', roles: ['FundManager', 'Client'] },
+  {
+    href: '/recommendations',
+    label: { FundManager: 'Signals', Client: 'Client Signals' },
+    Icon: RecommendationsIcon,
+    code: '03',
+    roles: ['FundManager', 'Client'],
+  },
+  { href: '/research', label: 'Analyst Lab', Icon: ResearchIcon, code: '04', roles: ['FundManager'] },
+  { href: '/compare', label: 'Comps', Icon: CompareIcon, code: '05', roles: ['FundManager'] },
+  { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '06', roles: ['FundManager'] },
+  { href: '/news', label: 'Catalysts', Icon: NewsIcon, code: '07', roles: ['FundManager', 'Client'] },
+  { href: '/strategy', label: 'Mandate', Icon: StrategyIcon, code: '08', roles: ['FundManager'] },
+  { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '09', roles: ['FundManager'] },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ role }: { role: PortfolioRole }) {
   const pathname = usePathname();
+  const visibleLinks = links.filter((link) => link.roles.includes(role));
 
   return (
     <>
@@ -103,11 +130,14 @@ export default function Sidebar() {
               <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-cyan-200/70">Private Desk</p>
               <p className="text-lg font-semibold tracking-tight text-white">Portfolio OS</p>
             </div>
+            <div className="ml-auto">
+              <UserButton />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">
             <div className="border border-white/10 bg-white/[0.03] p-2">
               <p className="text-slate-500">Mode</p>
-              <p className="mt-1 text-emerald-300">Live</p>
+              <p className="mt-1 text-emerald-300">{role === 'FundManager' ? 'Manager' : 'Client'}</p>
             </div>
             <div className="border border-white/10 bg-white/[0.03] p-2">
               <p className="text-slate-500">Desk</p>
@@ -117,8 +147,9 @@ export default function Sidebar() {
         </div>
 
         <nav className="flex flex-col gap-2">
-          {links.map(({ href, label, Icon, code }) => {
+          {visibleLinks.map(({ href, label, Icon, code }) => {
             const active = pathname === href;
+            const resolvedLabel = typeof label === 'string' ? label : label[role];
             return (
               <Link
                 key={href}
@@ -138,7 +169,7 @@ export default function Sidebar() {
                 )}
                 <span className="relative z-10 w-7 font-mono text-[10px] text-slate-500">{code}</span>
                 <Icon className={`relative z-10 h-4 w-4 ${active ? 'text-emerald-300' : 'text-slate-500 group-hover:text-cyan-200'}`} />
-                <span className="relative z-10">{label}</span>
+                <span className="relative z-10">{resolvedLabel}</span>
               </Link>
             );
           })}
@@ -153,12 +184,13 @@ export default function Sidebar() {
       </aside>
 
       <nav className="fixed inset-x-2 bottom-2 z-50 grid grid-cols-4 gap-1 border border-white/10 bg-[#05080d]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,.55)] backdrop-blur-xl lg:hidden">
-        {links.map(({ href, label, Icon }) => {
+        {visibleLinks.map(({ href, label, Icon }) => {
           const active = pathname === href;
+          const resolvedLabel = typeof label === 'string' ? label : label[role];
           return (
             <Link key={href} href={href} className={`flex flex-col items-center gap-1 px-2 py-2 text-[10px] ${active ? 'bg-emerald-300/10 text-emerald-200' : 'text-slate-500'}`}>
               <Icon className="h-4 w-4" />
-              <span className="truncate">{label}</span>
+              <span className="truncate">{resolvedLabel}</span>
             </Link>
           );
         })}

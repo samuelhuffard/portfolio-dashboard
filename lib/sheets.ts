@@ -20,12 +20,13 @@ export async function getServiceAccountClients(): Promise<sheets_v4.Sheets> {
   return google.sheets({ version: "v4", auth });
 }
 
-export async function getSpreadsheetId(): Promise<string> {
+/** Defaults to agent-1 (the real, holdings-synced account) so existing call sites are unaffected. Pass an agentId for agent-2/agent-3. */
+export async function getSpreadsheetId(agentId: string = "agent-1"): Promise<string> {
   const redis = getRedis();
-  const id = redis ? await redis.get<string>("pm:spreadsheet-id") : null;
+  const id = redis ? await redis.get<string>(`pm:${agentId}:spreadsheet-id`) : null;
   if (!id) {
     throw new Error(
-      "Portfolio spreadsheet not found yet — run portfolio-manager's holdings-sync or research-scan first."
+      `${agentId}'s spreadsheet isn't configured yet — set its SPREADSHEET_ID env var on the Jetson and run portfolio-manager's research-scan once.`
     );
   }
   return id;
@@ -179,4 +180,33 @@ export async function writeStrategyNotes(
     valueInputOption: "RAW",
     requestBody: { values: [[notes]] },
   });
+}
+
+export interface TrackRecordRow {
+  horizon: string;
+  evaluated: number | null;
+  hitRatePct: number | null;
+  avgReturnPct: number | null;
+  avgAlphaPct: number | null;
+}
+
+/** Aggregate hit-rate stats per horizon, written by portfolio-manager's performance-review job. Rows 5-7 are the 30/90/180-day data rows (rows 1-4 are title/subtitle/blank/header). */
+export async function readTrackRecord(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string
+): Promise<TrackRecordRow[]> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "Track Record!A5:E7",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((row) => row[0])
+    .map((row) => ({
+      horizon: row[0],
+      evaluated: parseNum(row[1]),
+      hitRatePct: parseNum(row[2]),
+      avgReturnPct: parseNum(row[3]),
+      avgAlphaPct: parseNum(row[4]),
+    }));
 }

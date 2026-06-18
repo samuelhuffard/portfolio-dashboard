@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
+import { requireApiPermission } from "@/lib/auth";
 import { fetchCompaniesData } from "@/lib/research/yahoo";
 import { computeCompaniesData } from "@/lib/research/compute";
 import { saveReport } from "@/lib/redis";
@@ -8,6 +9,13 @@ import type { AnalyzeRequest, AnalyzeResponse } from "@/lib/research/types";
 const MAX_TICKERS = 5;
 
 export async function POST(request: NextRequest) {
+  const authz = await requireApiPermission({
+    permission: "research:run",
+    action: "COMPARE_GENERATE",
+    request,
+  });
+  if (!authz.ok) return authz.response;
+
   let body: AnalyzeRequest;
   try {
     body = await request.json();
