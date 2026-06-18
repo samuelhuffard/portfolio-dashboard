@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireApiPermission } from "@/lib/auth";
 import { getServiceAccountClients, getSpreadsheetId, readHoldings, readRecommendations, readStrategyNotes, readTrackRecord } from "@/lib/sheets";
-import { getChatHistory, appendChatMessages, type ChatMessage } from "@/lib/agentChat";
+import { getChatHistory, appendChatMessages, clearChatHistory, type ChatMessage } from "@/lib/agentChat";
 import { getAgent } from "@/lib/agents";
 
 const MODEL = "claude-sonnet-4-6";
@@ -10,7 +10,7 @@ const MODEL = "claude-sonnet-4-6";
 function buildSystemPrompt(agentId: string, name: string, contextBlock: string): string {
   return `You are an independent investment research agent, internally identified as "${agentId}"${name ? ` ("${name}")` : ""}. You have no assigned investment philosophy yet — Sam will name and define your mandate later. Until then, discuss your own watchlist, recommendations, and track record plainly and helpfully, without inventing a philosophy you don't have.
 
-You operate completely independently of any other research agents Sam runs. You only know about your own data below — never assume anything about other agents' holdings, recommendations, or strategy. You do not place trades; Sam executes everything manually.
+You operate completely independently of any other research agents Sam runs. You only know about your own data below — never assume anything about other agents' holdings, recommendations, or strategy. You do not place trades; Sam executes everything manually. The person you're talking to is named Sam — address him as Sam, not by any other name.
 
 Your current data:
 ${contextBlock}`;
@@ -37,19 +37,34 @@ async function loadContextBlock(agentId: string): Promise<string> {
   ].join("\n\n");
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ agentId: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ agentId: string }> }) {
   const authz = await requireApiPermission({
     permission: "research:run",
     action: "AGENT_CHAT_READ",
-    request: _req,
+    request: req,
   });
   if (!authz.ok) return authz.response;
 
   const { agentId } = await params;
   if (!getAgent(agentId)) return NextResponse.json({ error: "Unknown agent" }, { status: 404 });
 
-  const history = await getChatHistory(agentId);
+  const history = await getChatHistory(agentId, authz.context.userId);
   return NextResponse.json({ history });
+}
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ agentId: string }> }) {
+  const authz = await requireApiPermission({
+    permission: "research:run",
+    action: "AGENT_CHAT_SEND",
+    request: req,
+  });
+  if (!authz.ok) return authz.response;
+
+  const { agentId } = await params;
+  if (!getAgent(agentId)) return NextResponse.json({ error: "Unknown agent" }, { status: 404 });
+
+  await clearChatHistory(agentId, authz.context.userId);
+  return NextResponse.json({ ok: true });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ agentId: string }> }) {
@@ -75,7 +90,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
     const contextBlock = await loadContextBlock(agentId);
-    const history = await getChatHistory(agentId);
+    const history = await getChatHistory(agentId, authz.context.userId);
 
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
@@ -92,7 +107,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
       { role: "user", content: message, ts: now },
       { role: "assistant", content: reply, ts: now },
     ];
-    await appendChatMessages(agentId, exchange);
+    await appendChatMessages(agentId, authz.context.userId, exchange);
 
     return NextResponse.json({ reply });
   } catch (err) {

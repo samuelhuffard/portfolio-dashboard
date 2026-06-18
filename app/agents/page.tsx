@@ -16,6 +16,7 @@ export default function AgentsPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -63,6 +64,22 @@ export default function AgentsPage() {
     }
   }
 
+  async function clearChat() {
+    if (clearing || sending) return;
+    setClearing(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/agents/${activeId}/chat`, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.error) setError(json.error);
+      else setHistory([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setClearing(false);
+    }
+  }
+
   return (
     <div className="flex h-[calc(100vh-2.5rem)] max-w-4xl flex-col gap-4 lg:h-[calc(100vh-5.5rem)]">
       <div className="terminal-panel p-5 sm:p-6">
@@ -91,6 +108,13 @@ export default function AgentsPage() {
             </button>
           );
         })}
+        <button
+          onClick={clearChat}
+          disabled={clearing || sending || history.length === 0}
+          className="border border-red-300/25 bg-red-300/[0.04] px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-red-200/80 transition-colors hover:border-red-300/40 hover:bg-red-300/[0.08] disabled:opacity-40"
+        >
+          {clearing ? 'Clearing...' : 'Clear chat'}
+        </button>
       </div>
 
       {error && <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
