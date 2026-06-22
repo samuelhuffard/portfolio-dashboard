@@ -12,6 +12,22 @@ export function getRedis(): Redis | null {
   return _redis;
 }
 
+const DEFAULT_TAX_RESERVE_RATE_PCT = 0.2; // fallback if portfolio-manager hasn't cached config/tax.json yet
+
+/** Mirrors portfolio-manager's config/tax.json reserveRatePct (cached there on each holdings-sync). */
+export async function getTaxReserveRatePct(): Promise<number> {
+  const redis = getRedis();
+  if (!redis) return DEFAULT_TAX_RESERVE_RATE_PCT;
+  try {
+    const raw = await redis.get<number | string>("pm:tax:reserve-rate-pct");
+    const parsed = typeof raw === "string" ? Number(raw) : raw;
+    return Number.isFinite(parsed) && parsed != null ? (parsed as number) : DEFAULT_TAX_RESERVE_RATE_PCT;
+  } catch (e) {
+    console.warn("[Redis] getTaxReserveRatePct failed:", e instanceof Error ? e.message : e);
+    return DEFAULT_TAX_RESERVE_RATE_PCT;
+  }
+}
+
 const HISTORY_KEY = "research:history";
 const MAX_HISTORY = 100;
 

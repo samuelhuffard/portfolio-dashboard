@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
-import { getServiceAccountClients, getSpreadsheetId, readInvestorLedger, readPerformance, readHoldings } from "@/lib/sheets";
+import { getServiceAccountClients, getSharedSpreadsheetId, readInvestorLedger, readPerformance, readHoldings } from "@/lib/sheets";
 import { latestNav, computeInvestorPosition, computeRoster, computeProRataHoldings, type InvestorPosition, type ProRataHolding } from "@/lib/investors";
-import { AGENTS } from "@/lib/agents";
 
-interface AgentInvestorSummary {
-  agentId: string;
-  agentName: string;
+interface InvestorSummary {
   navPerUnit: number | null;
-  position: InvestorPosition | null; // Client: their own position in this agent
-  roster: InvestorPosition[]; // FundManager only: every investor's position in this agent
-  proRataHoldings: ProRataHolding[]; // Client only, only non-empty for agents with real Holdings data
+  position: InvestorPosition | null; // Client: their own position in the shared portfolio
+  roster: InvestorPosition[]; // FundManager only: every investor's position
+  proRataHoldings: ProRataHolding[]; // Client only
 }
 
-async function loadAgentSummary(agentId: string, agentName: string, userId: string, email: string | null, isManager: boolean): Promise<AgentInvestorSummary> {
+async function loadInvestorSummary(userId: string, email: string | null, isManager: boolean): Promise<InvestorSummary> {
   try {
-    const spreadsheetId = await getSpreadsheetId(agentId);
+    const spreadsheetId = await getSharedSpreadsheetId();
     const sheets = await getServiceAccountClients();
 
     const [ledger, performance, holdingsResult] = await Promise.all([
@@ -29,10 +26,10 @@ async function loadAgentSummary(agentId: string, agentName: string, userId: stri
     const roster = isManager ? computeRoster(ledger, navPerUnit, unitsOutstanding) : [];
     const proRataHoldings = !isManager && position?.ownershipPct != null ? computeProRataHoldings(holdingsResult.holdings, position.ownershipPct) : [];
 
-    return { agentId, agentName, navPerUnit, position, roster, proRataHoldings };
+    return { navPerUnit, position, roster, proRataHoldings };
   } catch {
-    // Agent not provisioned yet (no spreadsheet) — treat as having no investor data rather than erroring the whole response.
-    return { agentId, agentName, navPerUnit: null, position: null, roster: [], proRataHoldings: [] };
+    // Shared spreadsheet not provisioned yet — treat as having no investor data rather than erroring the whole response.
+    return { navPerUnit: null, position: null, roster: [], proRataHoldings: [] };
   }
 }
 
@@ -47,7 +44,7 @@ export async function GET(req: Request) {
   const { role, userId, email } = authz.context;
   const isManager = role === "FundManager";
 
-  const agents = await Promise.all(AGENTS.map((a) => loadAgentSummary(a.id, a.name, userId, email, isManager)));
+  const summary = await loadInvestorSummary(userId, email, isManager);
 
-  return NextResponse.json({ role, agents });
+  return NextResponse.json({ role, ...summary });
 }

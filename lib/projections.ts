@@ -28,6 +28,7 @@ export function projectRecommendationForRole(recommendation: Recommendation, rol
   }
 
   return {
+    agentId: recommendation.agentId,
     date: recommendation.date,
     ticker: recommendation.ticker,
     action: recommendation.action,

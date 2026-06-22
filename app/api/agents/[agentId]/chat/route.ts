@@ -1,36 +1,36 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireApiPermission } from "@/lib/auth";
-import { getServiceAccountClients, getSpreadsheetId, readHoldings, readRecommendations, readStrategyNotes, readTrackRecord } from "@/lib/sheets";
+import { getServiceAccountClients, getSharedSpreadsheetId, readHoldings, readRecommendations, readStrategyNotes, readTrackRecord } from "@/lib/sheets";
 import { getChatHistory, appendChatMessages, clearChatHistory, type ChatMessage } from "@/lib/agentChat";
 import { getAgent } from "@/lib/agents";
 
 const MODEL = "claude-sonnet-4-6";
 
 function buildSystemPrompt(agentId: string, name: string, contextBlock: string): string {
-  return `You are an independent investment research agent, internally identified as "${agentId}"${name ? ` ("${name}")` : ""}. You have no assigned investment philosophy yet — Sam will name and define your mandate later. Until then, discuss your own watchlist, recommendations, and track record plainly and helpfully, without inventing a philosophy you don't have.
+  return `You are an independent research agent, internally identified as "${agentId}"${name ? ` ("${name}")` : ""}, proposing trades against ONE shared real Robinhood portfolio alongside two other research agents. You have no assigned investment philosophy yet — Sam will name and define your mandate later. Until then, discuss your own watchlist, recommendations, and track record plainly and helpfully, without inventing a philosophy you don't have.
 
-You operate completely independently of any other research agents Sam runs. You only know about your own data below — never assume anything about other agents' holdings, recommendations, or strategy. You do not place trades or claim that anything has been sent to a broker. If Sam wants action, draft a proposed allocation for the dashboard approval queue with ticker, side, dollar amount, rationale, and risk notes. The person you're talking to is named Sam — address him as Sam, not by any other name.
+You and the other two agents share the same pool of capital — the holdings/cash below are the REAL shared portfolio's current state, not yours alone. Your proposals compete with theirs for the same money, and Sam's risk engine can downgrade a BUY if combined exposure across all three agents would breach a position/sector limit. You only know your own strategy notes, recommendation history, and track record — never assume anything about the other agents' reasoning. You do not place trades or claim that anything has been sent to a broker. If Sam wants action, draft a proposed allocation for the dashboard approval queue with ticker, side, dollar amount, rationale, and risk notes. The person you're talking to is named Sam — address him as Sam, not by any other name.
 
 Your current data:
 ${contextBlock}`;
 }
 
 async function loadContextBlock(agentId: string): Promise<string> {
-  const spreadsheetId = await getSpreadsheetId(agentId);
+  const spreadsheetId = await getSharedSpreadsheetId();
   const sheets = await getServiceAccountClients();
 
   const [holdingsResult, recommendations, strategyNotes, trackRecord] = await Promise.all([
     readHoldings(sheets, spreadsheetId).catch(() => ({ holdings: [], cash: null, lastSynced: null })),
-    readRecommendations(sheets, spreadsheetId).catch(() => []),
-    readStrategyNotes(sheets, spreadsheetId).catch(() => ""),
-    readTrackRecord(sheets, spreadsheetId).catch(() => []),
+    readRecommendations(sheets, spreadsheetId, agentId).catch(() => []),
+    readStrategyNotes(sheets, spreadsheetId, agentId).catch(() => ""),
+    readTrackRecord(sheets, spreadsheetId, agentId).catch(() => []),
   ]);
 
   const recentRecs = recommendations.slice(-15);
 
   return [
-    `Current holdings: ${holdingsResult.holdings.length ? holdingsResult.holdings.map((h) => `${h.ticker} (${h.shares} sh)`).join(", ") : "none yet (research-only/paper until Sam allocates real capital)"}`,
+    `Current shared portfolio holdings (all three agents propose against this same pool): ${holdingsResult.holdings.length ? holdingsResult.holdings.map((h) => `${h.ticker} (${h.shares} sh)`).join(", ") : "none yet"}`,
     `Strategy notes from Sam: ${strategyNotes || "(none set)"}`,
     `Recent recommendations (most recent ${recentRecs.length}):\n${recentRecs.map((r) => `- ${r.date} ${r.ticker} ${r.action} (quant score ${r.quantScore ?? "—"})`).join("\n") || "none yet"}`,
     `Track record: ${trackRecord.length ? trackRecord.map((t) => `${t.horizon} — ${t.evaluated ?? 0} evaluated, ${t.hitRatePct ?? "—"}% hit rate, ${t.avgAlphaPct ?? "—"}% avg alpha vs SPY`).join("; ") : "no completed evaluations yet"}`,

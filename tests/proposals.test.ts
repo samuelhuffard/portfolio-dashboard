@@ -62,6 +62,8 @@ const baseProposal: AllocationProposal = {
   decidedAt: null,
   decidedByUserId: null,
   decisionNote: null,
+  fulfilledAt: null,
+  fulfilledTradeId: null,
 };
 
 test("applyProposalDecision records a one-way approval", () => {

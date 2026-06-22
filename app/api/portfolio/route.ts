@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
-import { getServiceAccountClients, getSpreadsheetId, readHoldings, readPerformance } from "@/lib/sheets";
+import { getServiceAccountClients, getSharedSpreadsheetId, readHoldings, readPerformance } from "@/lib/sheets";
 
 export async function GET(request: NextRequest) {
   const authz = await requireApiPermission({
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   if (!authz.ok) return authz.response;
 
   try {
-    const spreadsheetId = await getSpreadsheetId();
+    const spreadsheetId = await getSharedSpreadsheetId();
     const sheets = await getServiceAccountClients();
 
     const [{ holdings, cash, lastSynced }, performance] = await Promise.all([

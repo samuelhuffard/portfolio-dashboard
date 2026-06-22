@@ -3,11 +3,66 @@
 import { useEffect, useRef, useState } from 'react';
 import { AGENTS } from '@/lib/agents';
 import type { ChatMessage } from '@/lib/agentChat';
+import type { AgentBook } from '@/lib/agent-books';
 
 function agentLabel(id: string, name: string): string {
   if (name) return name;
   const n = id.split('-')[1];
   return `Agent ${n}`;
+}
+
+function fmtUsd(value: number | null): string {
+  if (value == null) return '—';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}$${value.toFixed(2)}`;
+}
+
+function AgentBookPanel({ agentId }: { agentId: string }) {
+  const [book, setBook] = useState<AgentBook | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setBook(null);
+    setError(null);
+    fetch(`/api/agents/${agentId}/book`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.error) setError(json.error);
+        else setBook(json.book);
+      })
+      .catch((err) => setError(err.message));
+  }, [agentId]);
+
+  if (error) return null; // non-critical panel — chat is the primary surface, fail quiet
+  if (!book) return <p className="font-mono text-xs uppercase tracking-[0.16em] text-slate-500">Loading book...</p>;
+
+  return (
+    <div className="terminal-panel space-y-3 p-5">
+      <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Attributed Book</p>
+      <div className="flex flex-wrap gap-4 font-mono text-xs">
+        <span className="text-slate-400">
+          Unrealized: <span className={book.unrealizedGain >= 0 ? 'text-emerald-300' : 'text-red-300'}>{fmtUsd(book.unrealizedGain)}</span>
+        </span>
+        <span className="text-slate-400">
+          Realized: <span className={book.realizedGain >= 0 ? 'text-emerald-300' : 'text-red-300'}>{fmtUsd(book.realizedGain)}</span>
+        </span>
+        <span className="text-slate-400">
+          Win rate: <span className="text-slate-200">{book.winRatePct != null ? `${book.winRatePct}%` : '—'}</span> ({book.closedTradeCount} closed)
+        </span>
+      </div>
+      {book.positions.length > 0 && (
+        <div className="space-y-1">
+          {book.positions.map((p) => (
+            <div key={p.ticker} className="flex justify-between font-mono text-xs text-slate-400">
+              <span>{p.ticker} · {p.sharesOpen} sh</span>
+              <span className={(p.unrealizedGain ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-300'}>{fmtUsd(p.unrealizedGain)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {book.positions.length === 0 && <p className="font-mono text-xs text-slate-500">No open positions attributed to this agent yet.</p>}
+    </div>
+  );
 }
 
 export default function AgentsPage() {
@@ -118,6 +173,8 @@ export default function AgentsPage() {
       </div>
 
       {error && <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+
+      <AgentBookPanel agentId={activeId} />
 
       <div className="terminal-panel flex flex-1 flex-col overflow-hidden p-0">
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-5">

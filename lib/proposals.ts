@@ -21,6 +21,11 @@ export interface AllocationProposal {
   decidedAt: string | null;
   decidedByUserId: string | null;
   decisionNote: string | null;
+  // Set once the backend (portfolio-manager) detects a Robinhood fill matching this
+  // approved proposal — lets it attribute the trade to this proposal's agentId without
+  // re-matching an already-fulfilled proposal against a later, unrelated fill.
+  fulfilledAt: string | null;
+  fulfilledTradeId: string | null;
 }
 
 export interface ProposalInput {
@@ -52,7 +57,7 @@ function cleanText(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
-export function validateProposalInput(input: ProposalInput): { ok: true; value: Omit<AllocationProposal, "id" | "status" | "createdAt" | "updatedAt" | "createdByUserId" | "createdByEmail" | "decidedAt" | "decidedByUserId" | "decisionNote"> } | { ok: false; error: string } {
+export function validateProposalInput(input: ProposalInput): { ok: true; value: Omit<AllocationProposal, "id" | "status" | "createdAt" | "updatedAt" | "createdByUserId" | "createdByEmail" | "decidedAt" | "decidedByUserId" | "decisionNote" | "fulfilledAt" | "fulfilledTradeId"> } | { ok: false; error: string } {
   const agentId = cleanText(input.agentId);
   if (!AGENT_IDS.has(agentId)) return { ok: false, error: "Select a valid agent." };
 
@@ -152,6 +157,8 @@ export async function createProposal(input: ReturnType<typeof validateProposalIn
     decidedAt: null,
     decidedByUserId: null,
     decisionNote: null,
+    fulfilledAt: null,
+    fulfilledTradeId: null,
   };
 
   await redis.set(keyFor(proposal.id), JSON.stringify(proposal));

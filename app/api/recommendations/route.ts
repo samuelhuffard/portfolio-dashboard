@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
 import { projectRecommendationsForRole } from "@/lib/projections";
-import { getServiceAccountClients, getSpreadsheetId, readRecommendations } from "@/lib/sheets";
+import { getServiceAccountClients, getSharedSpreadsheetId, readRecommendations } from "@/lib/sheets";
+import { AGENTS } from "@/lib/agents";
 
 export async function GET(request: NextRequest) {
   const authz = await requireApiPermission({
@@ -12,10 +13,11 @@ export async function GET(request: NextRequest) {
   if (!authz.ok) return authz.response;
 
   try {
-    const spreadsheetId = await getSpreadsheetId();
+    const spreadsheetId = await getSharedSpreadsheetId();
     const sheets = await getServiceAccountClients();
 
-    const recommendations = await readRecommendations(sheets, spreadsheetId);
+    const perAgent = await Promise.all(AGENTS.map((a) => readRecommendations(sheets, spreadsheetId, a.id)));
+    const recommendations = perAgent.flat().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const projected = projectRecommendationsForRole([...recommendations].reverse(), authz.context.role);
 
     return NextResponse.json({ recommendations: projected });

@@ -4,6 +4,7 @@ import { projectNewsForRole, projectRecommendationForRole } from "../lib/project
 import type { Recommendation } from "../lib/sheets";
 
 const recommendation = {
+  agentId: "agent-1",
   date: "2026-06-18",
   ticker: "MSFT",
   action: "BUY",
@@ -26,6 +27,7 @@ test("Client recommendation projection keeps public fields and limits news links
   };
 
   assert.deepEqual(Object.keys(projected), [
+    "agentId",
     "date",
     "ticker",
     "action",

@@ -20,14 +20,17 @@ export async function getServiceAccountClients(): Promise<sheets_v4.Sheets> {
   return google.sheets({ version: "v4", auth });
 }
 
-/** Defaults to agent-1 (the real, holdings-synced account) so existing call sites are unaffected. Pass an agentId for agent-2/agent-3. */
-export async function getSpreadsheetId(agentId: string = "agent-1"): Promise<string> {
+/** "agent-1" -> "Agent-1" — the single internal tab each agent reads/writes for its own history. Mirrors portfolio-manager's lib/sheets.js agentTabName. */
+export function agentTabName(agentId: string): string {
+  return agentId.replace(/^agent-/, "Agent-");
+}
+
+/** One shared spreadsheet for the whole portfolio — same Redis key portfolio-manager's getCachedSharedSpreadsheetId writes. */
+export async function getSharedSpreadsheetId(): Promise<string> {
   const redis = getRedis();
-  const id = redis ? await redis.get<string>(`pm:${agentId}:spreadsheet-id`) : null;
+  const id = redis ? await redis.get<string>("pm:shared:spreadsheet-id") : null;
   if (!id) {
-    throw new Error(
-      `${agentId}'s spreadsheet isn't configured yet — set its SPREADSHEET_ID env var on the Jetson and run portfolio-manager's research-scan once.`
-    );
+    throw new Error("The shared portfolio spreadsheet isn't configured yet — run portfolio-manager's holdings-sync once.");
   }
   return id;
 }
@@ -100,6 +103,35 @@ export async function readHoldings(
   return { holdings, cash, lastSynced };
 }
 
+export interface HoldingDetail {
+  ticker: string;
+  shares: number;
+  currentPrice: number | null;
+  marketValue: number | null;
+}
+
+/** Ticker, shares held, and current price for current holdings — for withdrawal preview sell-down lookups. */
+export async function readHoldingsDetail(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<HoldingDetail[]> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Holdings!A2:F" });
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((row) => row[0] && row[0] !== "Cash" && !String(row[0]).startsWith("Last synced") && !String(row[0]).startsWith("⚠️"))
+    .map((row) => ({
+      ticker: row[0],
+      shares: parseNum(row[2]) ?? 0,
+      currentPrice: parseNum(row[4]),
+      marketValue: parseNum(row[5]),
+    }));
+}
+
+/** Current idle cash balance from the Holdings tab's Cash row — for withdrawal funding previews. */
+export async function readCashBalance(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<number> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Holdings!A2:F" });
+  const rows = res.data.values ?? [];
+  const cashRow = rows.find((row) => row[0] === "Cash");
+  return cashRow ? parseNum(cashRow[5]) ?? 0 : 0;
+}
+
 export interface PerformanceRow {
   date: string;
   portfolioValue: number | null;
@@ -130,6 +162,7 @@ export async function readPerformance(
 }
 
 export interface Recommendation {
+  agentId: string;
   date: string;
   ticker: string;
   action: string;
@@ -139,19 +172,23 @@ export interface Recommendation {
   status: string;
 }
 
+const AGENT_REC_DATA_START_ROW = 13; // matches portfolio-manager's lib/sheets.js REC_DATA_START_ROW
+
 export async function readRecommendations(
   sheets: sheets_v4.Sheets,
-  spreadsheetId: string
+  spreadsheetId: string,
+  agentId: string
 ): Promise<Recommendation[]> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "Recommendations!A2:G",
+    range: `${agentTabName(agentId)}!A${AGENT_REC_DATA_START_ROW}:G`,
   });
 
   const rows = res.data.values ?? [];
   return rows
     .filter((row) => row[0])
     .map((row) => ({
+      agentId,
       date: row[0],
       ticker: row[1] ?? "",
       action: row[2] ?? "",
@@ -164,11 +201,12 @@ export async function readRecommendations(
 
 export async function readStrategyNotes(
   sheets: sheets_v4.Sheets,
-  spreadsheetId: string
+  spreadsheetId: string,
+  agentId: string
 ): Promise<string> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "Strategy!A2",
+    range: `${agentTabName(agentId)}!A3`,
   });
   return res.data.values?.[0]?.[0] ?? "";
 }
@@ -176,11 +214,12 @@ export async function readStrategyNotes(
 export async function writeStrategyNotes(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
+  agentId: string,
   notes: string
 ): Promise<void> {
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: "Strategy!A2",
+    range: `${agentTabName(agentId)}!A3`,
     valueInputOption: "RAW",
     requestBody: { values: [[notes]] },
   });
@@ -225,6 +264,66 @@ export async function readInvestorLedger(
     }));
 }
 
+export interface TradeLedgerEntry {
+  date: string;
+  ticker: string;
+  side: string;
+  shares: number;
+  price: number;
+  amount: number;
+  orderId: string | null;
+  agentId: string;
+  proposalId: string | null;
+  realizedGain: number | null;
+}
+
+export async function readTradeLedger(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<TradeLedgerEntry[]> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Trade Ledger!A2:J" });
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((row) => row[0])
+    .map((row) => ({
+      date: row[0],
+      ticker: row[1] ?? "",
+      side: row[2] ?? "",
+      shares: parseNum(row[3]) ?? 0,
+      price: parseNum(row[4]) ?? 0,
+      amount: parseNum(row[5]) ?? 0,
+      orderId: row[6] || null,
+      agentId: row[7] || "unattributed",
+      proposalId: row[8] || null,
+      realizedGain: parseNum(row[9]),
+    }));
+}
+
+export interface Lot {
+  lotId: string;
+  ticker: string;
+  openDate: string;
+  agentId: string;
+  costPerShare: number;
+  sharesOriginal: number;
+  sharesOpen: number;
+  status: string;
+}
+
+export async function readLots(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<Lot[]> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Lots!A2:H" });
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((row) => row[0])
+    .map((row) => ({
+      lotId: row[0],
+      ticker: row[1] ?? "",
+      openDate: row[2] ?? "",
+      agentId: row[3] || "unattributed",
+      costPerShare: parseNum(row[4]) ?? 0,
+      sharesOriginal: parseNum(row[5]) ?? 0,
+      sharesOpen: parseNum(row[6]) ?? 0,
+      status: row[7] || "OPEN",
+    }));
+}
+
 export interface TrackRecordRow {
   horizon: string;
   evaluated: number | null;
@@ -233,14 +332,15 @@ export interface TrackRecordRow {
   avgAlphaPct: number | null;
 }
 
-/** Aggregate hit-rate stats per horizon, written by portfolio-manager's performance-review job. Rows 5-7 are the 30/90/180-day data rows (rows 1-4 are title/subtitle/blank/header). */
+/** Aggregate hit-rate stats per horizon, written by portfolio-manager's performance-review job into one agent's tab. Rows 7-9 are the 30/90/180-day data rows (see portfolio-manager's seedAgentTabLayout). */
 export async function readTrackRecord(
   sheets: sheets_v4.Sheets,
-  spreadsheetId: string
+  spreadsheetId: string,
+  agentId: string
 ): Promise<TrackRecordRow[]> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "Track Record!A5:E7",
+    range: `${agentTabName(agentId)}!A7:E9`,
   });
   const rows = res.data.values ?? [];
   return rows
