@@ -45,7 +45,7 @@ export default function RecommendationsPage() {
         <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-emerald-300/75">AI Overlay</p>
         <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Signal Queue</h1>
         <p className="mt-3 max-w-2xl text-sm text-slate-400">
-          Quant-ranked candidates with qualitative overlays, news context, and manual-execution status.
+          Quant-ranked candidates with qualitative overlays, news context, and approval/execution status.
         </p>
       </div>
 

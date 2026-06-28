@@ -13,7 +13,7 @@ const STATUS_STYLES: Record<ProposalStatus, string> = {
 
 const STATUS_LABELS: Record<ProposalStatus, string> = {
   Pending: 'Pending',
-  ApprovedForBrokerReview: 'Approved - no broker submission',
+  ApprovedForBrokerReview: 'Approved for MCP execution',
   Rejected: 'Rejected',
 };
 
@@ -101,7 +101,7 @@ export default function ApprovalsPage() {
           status,
           note:
             status === 'ApprovedForBrokerReview'
-              ? 'Approved by FundManager. Dashboard did not submit this to Robinhood.'
+              ? 'Approved by FundManager for Robinhood MCP execution. Dashboard did not submit this order.'
               : 'Rejected by FundManager.',
         }),
       });

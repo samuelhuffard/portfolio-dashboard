@@ -204,7 +204,7 @@ export default function Sidebar({ role }: { role: PortfolioRole }) {
         <div className="mt-auto border border-amber-200/15 bg-amber-200/[0.04] p-4">
           <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber-200/70">Risk Console</p>
           <p className="mt-2 text-xs leading-5 text-slate-400">
-            Recommendations are research signals only. Execution stays manual.
+            Recommendations become approval-gated MCP execution requests. Dashboard APIs never place orders.
           </p>
         </div>
       </aside>
