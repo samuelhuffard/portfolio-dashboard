@@ -12,6 +12,8 @@ const ACTION_LIMITS: Partial<Record<AuditAction, RateLimitPolicy>> = {
   AGENT_CHAT_SEND: { limit: 40, windowSeconds: 60 * 60 },
   PROPOSAL_CREATE: { limit: 25, windowSeconds: 60 * 60 },
   APPROVAL_DECISION: { limit: 50, windowSeconds: 60 * 60 },
+  ALERT_CREATE: { limit: 50, windowSeconds: 60 * 60 },
+  ALERT_DELETE: { limit: 100, windowSeconds: 60 * 60 },
   REPORT_EXPORT: { limit: 30, windowSeconds: 60 * 60 },
 };
 

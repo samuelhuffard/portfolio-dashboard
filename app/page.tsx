@@ -46,6 +46,12 @@ function buildChartData(performance: PerformanceRow[]) {
   }));
 }
 
+function buildGrowthData(performance: PerformanceRow[]) {
+  return performance
+    .filter((p) => p.portfolioValue !== null)
+    .map((p) => ({ date: p.date, Value: p.portfolioValue as number }));
+}
+
 function buildAllocation(holdings: Holding[]) {
   return holdings
     .filter((h) => h.marketValue !== null && h.marketValue > 0)
@@ -67,10 +73,13 @@ function getTopMovers(holdings: Holding[]) {
 
 const BAR_COLORS = ['#00ffb2', '#6ee7ff', '#ffd166', '#a7f3d0', '#38bdf8', '#f59e0b', '#94a3b8'];
 
+type ChartMode = 'normalized' | 'growth';
+
 export default function OverviewPage() {
   const [data, setData] = useState<PortfolioResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chartMode, setChartMode] = useState<ChartMode>('normalized');
 
   useEffect(() => {
     fetch('/api/portfolio')
@@ -122,6 +131,7 @@ export default function OverviewPage() {
 
   const { totals, cash, lastSynced } = data;
   const chartData = buildChartData(data.performance);
+  const growthData = buildGrowthData(data.performance);
   const allocation = buildAllocation(data.holdings);
   const topMovers = getTopMovers(data.holdings);
   const investedRatio = totals.totalValue ? (totals.totalMarketValue / totals.totalValue) * 100 : null;
@@ -133,10 +143,10 @@ export default function OverviewPage() {
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.36em] text-emerald-300/80">
-              Portfolio Command Center
+              Capital, signals, and risk in one live desk.
             </p>
             <h1 className="max-w-4xl text-4xl font-black tracking-[-0.04em] text-white sm:text-6xl">
-              Capital, signals, and risk in one live desk.
+              Sam's Personal Investor
             </h1>
           </div>
           <div className="grid min-w-full grid-cols-2 gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400 sm:min-w-[420px]">
@@ -161,18 +171,35 @@ export default function OverviewPage() {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(360px,0.85fr)]">
         <section className="terminal-panel p-4 sm:p-5">
-          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Benchmark Spread</p>
-              <h2 className="text-xl font-semibold text-white">Portfolio vs S&P 500</h2>
+              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">
+                {chartMode === 'normalized' ? 'Benchmark Spread' : 'Portfolio Growth'}
+              </p>
+              <h2 className="text-xl font-semibold text-white">
+                {chartMode === 'normalized' ? 'Portfolio vs S&P 500' : 'Total Portfolio Value'}
+              </h2>
             </div>
-            <span className="font-mono text-xs text-slate-500">Normalized base: 100</span>
+            <div className="flex gap-1 rounded border border-white/10 bg-white/[0.04] p-1">
+              <button
+                onClick={() => setChartMode('normalized')}
+                className={`px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] transition-colors ${chartMode === 'normalized' ? 'bg-cyan-400/20 text-cyan-200' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                vs S&P 500
+              </button>
+              <button
+                onClick={() => setChartMode('growth')}
+                className={`px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] transition-colors ${chartMode === 'growth' ? 'bg-emerald-400/20 text-emerald-200' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                Growth ($)
+              </button>
+            </div>
           </div>
-          {chartData.length === 0 ? (
+          {(chartMode === 'normalized' ? chartData : growthData).length === 0 ? (
             <p className="border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400">
               No performance history yet — run holdings-sync to start tracking.
             </p>
-          ) : (
+          ) : chartMode === 'normalized' ? (
             <div className="h-[360px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
@@ -188,6 +215,33 @@ export default function OverviewPage() {
                   <Tooltip contentStyle={{ background: '#071019', border: '1px solid rgba(0,255,178,.22)', color: '#e5fff7' }} />
                   <Area type="monotone" dataKey="Portfolio" stroke="#00ffb2" strokeWidth={3} fill="url(#portfolioGlow)" dot={false} />
                   <Line type="monotone" dataKey="S&P 500" stroke="#7dd3fc" strokeWidth={2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-[360px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={growthData}>
+                  <defs>
+                    <linearGradient id="growthGlow" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="5%" stopColor="#00ffb2" stopOpacity={0.36} />
+                      <stop offset="95%" stopColor="#00ffb2" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="rgba(148,163,184,.12)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    axisLine={false}
+                    tickLine={false}
+                    domain={['auto', 'auto']}
+                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip
+                    formatter={(v) => fmtCurrency(Number(v))}
+                    contentStyle={{ background: '#071019', border: '1px solid rgba(0,255,178,.22)', color: '#e5fff7' }}
+                  />
+                  <Area type="monotone" dataKey="Value" stroke="#00ffb2" strokeWidth={3} fill="url(#growthGlow)" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

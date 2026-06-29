@@ -2,6 +2,52 @@ import YahooFinance from "yahoo-finance2";
 import type { QuoteSummaryModules } from "yahoo-finance2/modules/quoteSummary";
 import type { QuoteSummaryResult } from "yahoo-finance2/modules/quoteSummary-iface";
 
+const INDICES = [
+  { symbol: "^GSPC", label: "S&P 500" },
+  { symbol: "^IXIC", label: "Nasdaq" },
+  { symbol: "^DJI", label: "Dow" },
+  { symbol: "^VIX", label: "VIX" },
+];
+
+export interface MarketSnapshot {
+  asOf: string;
+  indices: { label: string; price: number; changePct: number }[];
+  quotes: { ticker: string; price: number; changePct: number }[];
+}
+
+export async function fetchMarketSnapshot(tickers: string[]): Promise<MarketSnapshot> {
+  const yf = new YahooFinance();
+  const allSymbols = [...INDICES.map((i) => i.symbol), ...tickers.map((t) => t.toUpperCase())];
+
+  const results = await Promise.allSettled(
+    allSymbols.map((sym) => yf.quote(sym))
+  );
+
+  const get = (sym: string) => {
+    const idx = allSymbols.indexOf(sym);
+    const r = results[idx];
+    if (r?.status !== "fulfilled" || !r.value) return null;
+    const q = r.value;
+    const price = q.regularMarketPrice ?? null;
+    const changePct = q.regularMarketChangePercent ?? null;
+    if (price == null || changePct == null) return null;
+    return { price, changePct };
+  };
+
+  const indices = INDICES.flatMap(({ symbol, label }) => {
+    const d = get(symbol);
+    return d ? [{ label, price: d.price, changePct: d.changePct }] : [];
+  });
+
+  const quotes = tickers.flatMap((t) => {
+    const sym = t.toUpperCase();
+    const d = get(sym);
+    return d ? [{ ticker: sym, price: d.price, changePct: d.changePct }] : [];
+  });
+
+  return { asOf: new Date().toISOString(), indices, quotes };
+}
+
 const yahooFinance = new YahooFinance();
 
 const QUOTE_SUMMARY_MODULES: QuoteSummaryModules[] = [

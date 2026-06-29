@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Portfolio Manager",
+  title: "Sam's Personal Investor",
   description: "Quant + AI research, recommendations, and performance tracking for Sam's portfolio",
 };
 

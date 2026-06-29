@@ -132,6 +132,34 @@ export function applyProposalDecision(
   };
 }
 
+export function computeAcceptedBuyReserve(proposals: AllocationProposal[], excludeId?: string): number {
+  return proposals
+    .filter(
+      (proposal) =>
+        proposal.id !== excludeId &&
+        proposal.side === "BUY" &&
+        proposal.status === "ApprovedForBrokerReview" &&
+        !proposal.fulfilledAt
+    )
+    .reduce((sum, proposal) => sum + proposal.amountDollars, 0);
+}
+
+export function assertCashAvailableForAcceptance(
+  current: AllocationProposal,
+  proposals: AllocationProposal[],
+  cashAvailable: number
+): void {
+  if (current.side !== "BUY") return;
+
+  const reserved = computeAcceptedBuyReserve(proposals, current.id);
+  const requested = reserved + current.amountDollars;
+  if (requested > cashAvailable + 0.005) {
+    throw new Error(
+      `Accepting this BUY would reserve $${requested.toFixed(2)}, but only $${cashAvailable.toFixed(2)} idle cash is available after already accepted BUYs.`
+    );
+  }
+}
+
 export async function listProposals(limit = 100): Promise<AllocationProposal[]> {
   const redis = getRedis();
   if (!redis) return [];
@@ -139,6 +167,12 @@ export async function listProposals(limit = 100): Promise<AllocationProposal[]> 
   const ids = await redis.lrange<string>(LIST_KEY, 0, limit - 1);
   const proposals = await Promise.all(ids.map((id) => redis.get(keyFor(id)).then(parseProposal).catch(() => null)));
   return proposals.filter((proposal): proposal is AllocationProposal => proposal !== null);
+}
+
+export async function getProposal(id: string): Promise<AllocationProposal | null> {
+  const redis = getRedis();
+  if (!redis) throw new Error("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for approval proposals.");
+  return parseProposal(await redis.get(keyFor(id)));
 }
 
 export async function createProposal(input: ReturnType<typeof validateProposalInput> & { ok: true }, userId: string, email: string | null): Promise<AllocationProposal> {

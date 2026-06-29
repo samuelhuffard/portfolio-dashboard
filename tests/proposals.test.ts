@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyProposalDecision, validateProposalInput, type AllocationProposal } from "../lib/proposals";
+import {
+  applyProposalDecision,
+  assertCashAvailableForAcceptance,
+  computeAcceptedBuyReserve,
+  validateProposalInput,
+  type AllocationProposal,
+} from "../lib/proposals";
 
 test("validateProposalInput normalizes a safe approval proposal", () => {
   const result = validateProposalInput({
@@ -86,4 +92,26 @@ test("applyProposalDecision rejects direct changes to already-decided proposals"
     () => applyProposalDecision({ ...baseProposal, status: "ApprovedForBrokerReview" }, "Rejected", "", "user_decider"),
     /already been decided/
   );
+});
+
+test("cash acceptance reserve counts accepted unfilled BUYs but not pending alternatives", () => {
+  const proposals: AllocationProposal[] = [
+    { ...baseProposal, id: "accepted-buy", status: "ApprovedForBrokerReview", amountDollars: 700, fulfilledAt: null },
+    { ...baseProposal, id: "pending-buy", status: "Pending", amountDollars: 900, fulfilledAt: null },
+    { ...baseProposal, id: "filled-buy", status: "ApprovedForBrokerReview", amountDollars: 500, fulfilledAt: "2026-06-19T10:00:00.000Z" },
+    { ...baseProposal, id: "accepted-sell", side: "SELL", status: "ApprovedForBrokerReview", amountDollars: 500, fulfilledAt: null },
+  ];
+
+  assert.equal(computeAcceptedBuyReserve(proposals), 700);
+});
+
+test("accepting a BUY cannot reserve more idle cash than available", () => {
+  const current = { ...baseProposal, id: "new-buy", amountDollars: 400 };
+  const proposals: AllocationProposal[] = [
+    current,
+    { ...baseProposal, id: "accepted-buy", status: "ApprovedForBrokerReview", amountDollars: 700, fulfilledAt: null },
+  ];
+
+  assert.doesNotThrow(() => assertCashAvailableForAcceptance(current, proposals, 1100));
+  assert.throws(() => assertCashAvailableForAcceptance(current, proposals, 1000), /idle cash is available/);
 });

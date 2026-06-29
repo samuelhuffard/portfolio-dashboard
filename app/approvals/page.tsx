@@ -5,6 +5,29 @@ import { AGENTS } from '@/lib/agents';
 import { fmtCurrency } from '@/lib/format';
 import type { AllocationProposal, ProposalSide, ProposalStatus } from '@/lib/proposals';
 
+const SIGNAL_KEYWORDS: { label: string; terms: string[] }[] = [
+  { label: 'MOMENTUM', terms: ['momentum', 'breakout', 'surge', 'rally', 'acceleration'] },
+  { label: 'EARNINGS', terms: ['earnings', 'eps', 'beat', 'revenue', 'guidance'] },
+  { label: 'CATALYST', terms: ['catalyst', 'event', 'merger', 'acquisition', 'spinoff', 'announcement'] },
+  { label: 'VALUE', terms: ['undervalued', 'value', 'cheap', 'discount', 'p/e', 'pe ratio'] },
+  { label: 'GROWTH', terms: ['growth', 'expanding', 'market share', 'compounding'] },
+  { label: 'TECHNICAL', terms: ['technical', 'moving average', 'support', 'resistance', 'rsi', 'macd', 'chart'] },
+  { label: 'MACRO', terms: ['macro', 'fed', 'rate', 'inflation', 'gdp', 'recession', 'cycle'] },
+  { label: 'SECTOR', terms: ['sector', 'rotation', 'industry', 'thematic'] },
+  { label: 'TREND', terms: ['trend', 'uptrend', 'bullish', 'bearish', 'regime'] },
+  { label: 'HEDGE', terms: ['hedge', 'defensive', 'volatility', 'downside protection', 'risk-off'] },
+];
+
+function extractSignals(text: string): string[] {
+  const lower = text.toLowerCase();
+  return SIGNAL_KEYWORDS.filter(({ terms }) => terms.some((t) => lower.includes(t))).map(({ label }) => label);
+}
+
+function firstSentence(text: string): string {
+  const match = text.match(/^[^.!?\n]+[.!?]?/);
+  return match ? match[0].trim() : text.slice(0, 140);
+}
+
 const STATUS_STYLES: Record<ProposalStatus, string> = {
   Pending: 'border-amber-200/30 bg-amber-200/[0.06] text-amber-100',
   ApprovedForBrokerReview: 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-100',
@@ -13,9 +36,14 @@ const STATUS_STYLES: Record<ProposalStatus, string> = {
 
 const STATUS_LABELS: Record<ProposalStatus, string> = {
   Pending: 'Pending',
-  ApprovedForBrokerReview: 'Approved for MCP execution',
+  ApprovedForBrokerReview: 'Accepted for broker review',
   Rejected: 'Rejected',
 };
+
+function proposalStatusLabel(proposal: AllocationProposal): string {
+  if (proposal.fulfilledAt) return 'Fulfilled / tracked';
+  return STATUS_LABELS[proposal.status];
+}
 
 function agentLabel(id: string): string {
   const agent = AGENTS.find((a) => a.id === id);
@@ -48,6 +76,16 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const pendingCount = useMemo(() => proposals.filter((p) => p.status === 'Pending').length, [proposals]);
 
@@ -101,7 +139,7 @@ export default function ApprovalsPage() {
           status,
           note:
             status === 'ApprovedForBrokerReview'
-              ? 'Approved by FundManager for Robinhood MCP execution. Dashboard did not submit this order.'
+              ? 'Accepted by FundManager for broker review. Dashboard did not submit this order.'
               : 'Rejected by FundManager.',
         }),
       });
@@ -231,7 +269,7 @@ export default function ApprovalsPage() {
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs uppercase tracking-[0.16em] text-slate-500">{agentLabel(proposal.agentId)}</span>
                     <span className={`border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] ${STATUS_STYLES[proposal.status]}`}>
-                      {STATUS_LABELS[proposal.status]}
+                      {proposalStatusLabel(proposal)}
                     </span>
                   </div>
                   <h2 className="font-mono text-2xl font-black tracking-[-0.03em] text-white">
@@ -247,7 +285,7 @@ export default function ApprovalsPage() {
                       onClick={() => decide(proposal.id, 'ApprovedForBrokerReview')}
                       className="border border-emerald-300/35 bg-emerald-300/10 px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-emerald-200 hover:bg-emerald-300/15"
                     >
-                      Approve
+                      Accept Proposal
                     </button>
                     <button
                       onClick={() => decide(proposal.id, 'Rejected')}
@@ -259,20 +297,65 @@ export default function ApprovalsPage() {
                 )}
               </div>
 
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                <div className="border border-white/10 bg-white/[0.025] p-3">
-                  <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/70">Rationale</p>
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.rationale}</p>
-                </div>
-                <div className="border border-white/10 bg-white/[0.025] p-3">
-                  <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200/70">Risk Notes</p>
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.riskSummary || 'No risk notes recorded.'}</p>
-                </div>
+              <div className="mt-4">
+                {(() => {
+                  const isExpanded = expandedIds.has(proposal.id);
+                  const signals = extractSignals(proposal.rationale + ' ' + proposal.riskSummary);
+                  const hook = firstSentence(proposal.rationale);
+                  const hasMore = proposal.rationale.trim().length > hook.length + 2 || !!proposal.riskSummary;
+                  return (
+                    <>
+                      <div className="border border-white/10 bg-white/[0.025] p-3">
+                        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/70">Rationale</p>
+                        <p className="text-sm leading-6 text-slate-200">{hook}</p>
+                        {signals.length > 0 && (
+                          <div className="mt-2.5 flex flex-wrap gap-1.5">
+                            {signals.map((s) => (
+                              <span
+                                key={s}
+                                className="border border-cyan-300/20 bg-cyan-300/[0.06] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-200/60"
+                              >
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {hasMore && (
+                          <button
+                            onClick={() => toggleExpanded(proposal.id)}
+                            className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 transition-colors hover:text-slate-300"
+                          >
+                            {isExpanded ? '↑ collapse' : '↓ full rationale'}
+                          </button>
+                        )}
+                      </div>
+
+                      {isExpanded && (
+                        <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                          <div className="border border-white/10 bg-white/[0.025] p-3">
+                            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/50">Full Rationale</p>
+                            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.rationale}</p>
+                          </div>
+                          <div className="border border-white/10 bg-white/[0.025] p-3">
+                            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200/70">Risk Notes</p>
+                            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.riskSummary || 'No risk notes recorded.'}</p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {proposal.decisionNote && (
                 <p className="mt-3 border border-white/10 bg-white/[0.025] px-3 py-2 text-xs leading-5 text-slate-400">
                   {proposal.decisionNote}
+                </p>
+              )}
+              {proposal.fulfilledAt && (
+                <p className="mt-3 border border-emerald-300/20 bg-emerald-300/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200/80">
+                  Tracked in ledger {new Date(proposal.fulfilledAt).toLocaleString()}
+                  {proposal.fulfilledTradeId ? ` · trade ${proposal.fulfilledTradeId}` : ''}
                 </p>
               )}
             </article>

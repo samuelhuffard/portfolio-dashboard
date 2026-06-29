@@ -17,6 +17,10 @@
 ## Domain Behavior Guardrails
 1. **[2026-06-18] Dashboard is research/accounting only**
    Do instead: keep execution, money movement, and trade-placement language out of dashboard APIs and UI.
+2. **[2026-06-29] Pending proposals are alternatives**
+   Do instead: allow all agents to propose against the shared cash pool, but block accepting BUYs when accepted unfilled BUYs already reserve the available cash.
+3. **[2026-06-29] Agent memory feeds proposal scans**
+   Do instead: store durable agent preferences/feedback under `pm:agent-memory:*` and keep chat/proposal decision memories global to the agent when future backend scans should see them.
 
 ## User Directives
 1. **[2026-06-18] Do not store secrets in memory or runbooks**

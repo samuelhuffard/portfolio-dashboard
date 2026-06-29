@@ -1,7 +1,6 @@
-// Mirrors portfolio-manager's config/agents.js. Each agent has its own
-// spreadsheet (own Holdings/Recommendations/Strategy/Track Record), own chat
-// memory in Redis, and no shared state with the other agents except market
-// facts (news/macro), which aren't agent memory or opinion.
+// Mirrors portfolio-manager's config/agents.js. The agents share one real
+// portfolio/capital pool, but keep separate tabs, strategy context, chat memory,
+// proposals, and attributed books.
 export interface AgentDef {
   id: string;
   name: string; // empty until Sam names this agent after its investment philosophy

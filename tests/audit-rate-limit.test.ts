@@ -57,6 +57,7 @@ test("audit config fails closed when enforcement is enabled", () => {
 
 test("costly manager actions have stable per-user rate-limit keys", () => {
   assert.deepEqual(getRateLimitPolicy("RESEARCH_GENERATE"), { limit: 10, windowSeconds: 3600 });
+  assert.deepEqual(getRateLimitPolicy("ALERT_CREATE"), { limit: 50, windowSeconds: 3600 });
   assert.equal(buildRateLimitKey("user_123", "RESEARCH_GENERATE", 0), "pm:rate:RESEARCH_GENERATE:user_123:0");
   assert.equal(buildRateLimitKey("user_123", "SIGNALS_READ", 0), null);
 });

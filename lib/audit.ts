@@ -23,6 +23,9 @@ export type AuditAction =
   | "APPROVAL_QUEUE_READ"
   | "PROPOSAL_CREATE"
   | "APPROVAL_DECISION"
+  | "ALERTS_READ"
+  | "ALERT_CREATE"
+  | "ALERT_DELETE"
   | "RATE_LIMIT_REJECT";
 
 export interface AuditEventInput {

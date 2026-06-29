@@ -80,6 +80,15 @@ function ApprovalsIcon({ className }: { className?: string }) {
   );
 }
 
+function AlertsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
 function ResearchIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -108,37 +117,47 @@ function HistoryIcon({ className }: { className?: string }) {
   );
 }
 
-const links: Array<{
+type NavItem = {
   href: string;
   label: string | Record<PortfolioRole, string>;
   Icon: (props: { className?: string }) => React.ReactNode;
   code: string;
   roles: PortfolioRole[];
-}> = [
-  { href: '/', label: 'Command', Icon: HomeIcon, code: '01', roles: ['FundManager'] },
-  { href: '/holdings', label: 'Positions', Icon: HoldingsIcon, code: '02', roles: ['FundManager'] },
-  {
-    href: '/recommendations',
-    label: { FundManager: 'Signals', Client: 'Client Signals' },
-    Icon: RecommendationsIcon,
-    code: '03',
-    roles: ['FundManager', 'Client'],
-  },
-  { href: '/research', label: 'Analyst Lab', Icon: ResearchIcon, code: '04', roles: ['FundManager'] },
-  { href: '/compare', label: 'Comps', Icon: CompareIcon, code: '05', roles: ['FundManager'] },
-  { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '06', roles: ['FundManager'] },
-  { href: '/news', label: 'Catalysts', Icon: NewsIcon, code: '07', roles: ['FundManager', 'Client'] },
-  { href: '/strategy', label: 'Mandate', Icon: StrategyIcon, code: '08', roles: ['FundManager'] },
-  { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '09', roles: ['FundManager'] },
-  { href: '/approvals', label: 'Approvals', Icon: ApprovalsIcon, code: '10', roles: ['FundManager'] },
-  {
-    href: '/investors',
-    label: { FundManager: 'Investors', Client: 'My Investment' },
-    Icon: InvestorsIcon,
-    code: '11',
-    roles: ['FundManager', 'Client'],
-  },
+};
+
+const linkGroups: NavItem[][] = [
+  [
+    { href: '/', label: 'Command', Icon: HomeIcon, code: '01', roles: ['FundManager'] },
+    { href: '/holdings', label: 'Positions', Icon: HoldingsIcon, code: '02', roles: ['FundManager'] },
+    {
+      href: '/recommendations',
+      label: { FundManager: 'Signals', Client: 'Client Signals' },
+      Icon: RecommendationsIcon,
+      code: '03',
+      roles: ['FundManager', 'Client'],
+    },
+  ],
+  [
+    { href: '/research', label: 'Lab', Icon: ResearchIcon, code: '04', roles: ['FundManager'] },
+  ],
+  [
+    {
+      href: '/investors',
+      label: { FundManager: 'Investors', Client: 'My Investment' },
+      Icon: InvestorsIcon,
+      code: '05',
+      roles: ['FundManager', 'Client'],
+    },
+  ],
+  [
+    { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '06', roles: ['FundManager'] },
+  ],
+  [
+    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '07', roles: ['FundManager'] },
+  ],
 ];
+
+const links = linkGroups.flat();
 
 export default function Sidebar({ role }: { role: PortfolioRole }) {
   const pathname = usePathname();
@@ -172,31 +191,40 @@ export default function Sidebar({ role }: { role: PortfolioRole }) {
           </div>
         </div>
 
-        <nav className="flex flex-col gap-2">
-          {visibleLinks.map(({ href, label, Icon, code }) => {
-            const active = pathname === href;
-            const resolvedLabel = typeof label === 'string' ? label : label[role];
+        <nav className="flex flex-col gap-4">
+          {linkGroups.map((group, gi) => {
+            const visibleGroup = group.filter((item) => item.roles.includes(role));
+            if (visibleGroup.length === 0) return null;
             return (
-              <Link
-                key={href}
-                href={href}
-                className={`group relative flex items-center gap-3 overflow-hidden border px-3 py-3 text-sm font-medium transition-colors ${
-                  active
-                    ? 'border-emerald-300/35 bg-emerald-300/[0.08] text-white shadow-[0_0_32px_rgba(0,255,178,.09)]'
-                    : 'border-white/5 bg-white/[0.025] text-slate-400 hover:border-cyan-200/20 hover:bg-cyan-200/[0.04] hover:text-slate-100'
-                }`}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="sidebar-active-pill"
-                    className="absolute inset-y-0 left-0 w-1 bg-emerald-300"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
-                  />
-                )}
-                <span className="relative z-10 w-7 font-mono text-[10px] text-slate-500">{code}</span>
-                <Icon className={`relative z-10 h-4 w-4 ${active ? 'text-emerald-300' : 'text-slate-500 group-hover:text-cyan-200'}`} />
-                <span className="relative z-10">{resolvedLabel}</span>
-              </Link>
+              <div key={gi} className="flex flex-col gap-1">
+                {gi > 0 && <div className="mb-1 border-t border-white/[0.06]" />}
+                {visibleGroup.map(({ href, label, Icon, code }) => {
+                  const active = pathname === href;
+                  const resolvedLabel = typeof label === 'string' ? label : label[role];
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className={`group relative flex items-center gap-3 overflow-hidden border px-3 py-2.5 text-sm font-medium transition-colors ${
+                        active
+                          ? 'border-emerald-300/35 bg-emerald-300/[0.08] text-white shadow-[0_0_32px_rgba(0,255,178,.09)]'
+                          : 'border-white/5 bg-white/[0.025] text-slate-400 hover:border-cyan-200/20 hover:bg-cyan-200/[0.04] hover:text-slate-100'
+                      }`}
+                    >
+                      {active && (
+                        <motion.div
+                          layoutId="sidebar-active-pill"
+                          className="absolute inset-y-0 left-0 w-1 bg-emerald-300"
+                          transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
+                        />
+                      )}
+                      <span className="relative z-10 w-7 font-mono text-[10px] text-slate-500">{code}</span>
+                      <Icon className={`relative z-10 h-4 w-4 ${active ? 'text-emerald-300' : 'text-slate-500 group-hover:text-cyan-200'}`} />
+                      <span className="relative z-10">{resolvedLabel}</span>
+                    </Link>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
@@ -204,7 +232,7 @@ export default function Sidebar({ role }: { role: PortfolioRole }) {
         <div className="mt-auto border border-amber-200/15 bg-amber-200/[0.04] p-4">
           <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber-200/70">Risk Console</p>
           <p className="mt-2 text-xs leading-5 text-slate-400">
-            Recommendations become approval-gated MCP execution requests. Dashboard APIs never place orders.
+            Recommendations become acceptance-gated broker-review proposals. Dashboard APIs never place orders.
           </p>
         </div>
       </aside>
