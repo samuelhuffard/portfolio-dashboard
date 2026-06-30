@@ -117,9 +117,9 @@ ${orderInstructions}
 Proposal ID (for reference): ${id}
 
 IMPORTANT: Place the order now — do not ask for confirmation. After placing, respond with ONLY this JSON (no other text):
-{"ok": true, "orderId": "...", "shares": 0.0, "message": "brief status"}
+{"ok": true, "orderId": "...", "shares": 0.0, "price": 0.00, "message": "brief status"}
 
-On failure respond with ONLY:
+Use the actual average fill price for "price". On failure respond with ONLY:
 {"ok": false, "error": "reason"}`;
 
   // Strip ANTHROPIC_API_KEY so claude uses claude.ai login (which has Robinhood auth)
@@ -169,6 +169,32 @@ function isMarketOpen() {
   return etMinutes >= 9 * 60 + 30 && etMinutes < 16 * 60; // 9:30–16:00 ET
 }
 
+// ── Trade ledger + lots ────────────────────────────────────────────────────────
+const RECORD_SCRIPT = join(__dir, "../../portfolio-manager/scripts/record-trade.js");
+
+async function recordTrade(proposal, result) {
+  if (!existsSync(RECORD_SCRIPT)) {
+    console.warn("[companion] record-trade.js not found — skipping ledger entry");
+    return;
+  }
+  const { stdout, stderr } = await execFileAsync(
+    "node",
+    [
+      RECORD_SCRIPT,
+      "--proposalId", proposal.id,
+      "--orderId",    result.orderId,
+      "--ticker",     proposal.ticker,
+      "--side",       proposal.side,
+      "--shares",     String(result.shares),
+      "--price",      String(result.price ?? (proposal.amountDollars / result.shares).toFixed(4)),
+      "--agentId",    proposal.agentId,
+    ],
+    { cwd: join(__dir, "../../portfolio-manager"), timeout: 30_000 }
+  );
+  if (stderr) console.warn("[companion] record-trade stderr:", stderr.trim());
+  console.log("[companion] ✓ Trade recorded in ledger:", stdout.trim());
+}
+
 // ── Holdings sync ─────────────────────────────────────────────────────────────
 const SYNC_SCRIPT = join(__dir, "../../portfolio-manager/scripts/sync-holdings-from-mcp.js");
 
@@ -212,9 +238,11 @@ Include every open position. Use the actual live values from the MCP.`;
     return;
   }
 
-  // Pipe positions JSON into sync-holdings-from-mcp.js
+  // Pipe positions JSON into sync-holdings-from-mcp.js, run from portfolio-manager dir so
+  // dotenv + credentials.json resolve correctly
+  const syncDir = join(__dir, "../../portfolio-manager");
   await new Promise((resolve, reject) => {
-    const child = execFile("node", [SYNC_SCRIPT], { env: process.env }, (err) => {
+    const child = execFile("node", [SYNC_SCRIPT], { env: process.env, cwd: syncDir }, (err) => {
       if (err) reject(err); else resolve();
     });
     child.stdin.write(positionsJson);
@@ -252,12 +280,16 @@ async function poll(force = false) {
         const result = await executeViaClaude(proposal);
 
         if (result.ok) {
+          // 1. Record in trade ledger + open lot (runs while fulfilledAt is still null)
+          await recordTrade(proposal, result).catch((err) => console.warn("[companion] record-trade error:", err.message));
+          // 2. Mark fulfilled in dashboard Redis (adds fulfilledOrderId + fulfilledShares)
           await setProposalField(id, {
             fulfilledAt: new Date().toISOString(),
             fulfilledOrderId: result.orderId,
             fulfilledShares: result.shares,
           });
           console.log(`[companion] ✓ ${id} fulfilled — order ${result.orderId}, ${result.shares} shares`);
+          // 3. Sync holdings sheet in background
           syncHoldings().catch((err) => console.warn("[companion] sync error:", err.message));
         } else {
           console.error(`[companion] ✗ ${id} failed:`, result.error);

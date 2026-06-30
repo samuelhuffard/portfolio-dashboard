@@ -89,10 +89,15 @@ function AgentBookStrip({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     setBook(null);
-    fetch(`/api/agents/${agentId}/book`)
-      .then((r) => r.json())
-      .then((j) => { if (!j.error) setBook(j.book); })
-      .catch(() => {});
+    function load() {
+      fetch(`/api/agents/${agentId}/book`)
+        .then((r) => r.json())
+        .then((j) => { if (!j.error) setBook(j.book); })
+        .catch(() => {});
+    }
+    load();
+    const id = setInterval(load, 30_000);
+    return () => clearInterval(id);
   }, [agentId]);
 
   if (!book) return null;
@@ -355,14 +360,19 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
     setLoading(true);
     setEditingId(null);
     setEditDraft(null);
-    fetch('/api/proposals')
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.error) setError(j.error);
-        else setProposals(j.proposals ?? []);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    function load(initial = false) {
+      fetch('/api/proposals')
+        .then((r) => r.json())
+        .then((j) => {
+          if (j.error) setError(j.error);
+          else setProposals(j.proposals ?? []);
+        })
+        .catch((err) => setError(err.message))
+        .finally(() => { if (initial) setLoading(false); });
+    }
+    load(true);
+    const id = setInterval(() => load(false), 10_000);
+    return () => clearInterval(id);
   }, [agentId, refreshKey]);
 
   async function decide(id: string, status: Exclude<ProposalStatus, 'Pending'>) {

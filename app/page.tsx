@@ -82,17 +82,19 @@ export default function OverviewPage() {
   const [chartMode, setChartMode] = useState<ChartMode>('normalized');
 
   useEffect(() => {
-    fetch('/api/portfolio')
-      .then((res) => res.json())
-      .then((json) => {
-        if (json.error) {
-          setError(json.error);
-        } else {
-          setData(json);
-        }
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    function load() {
+      fetch('/api/portfolio')
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.error) setError(json.error);
+          else { setData(json); setError(null); }
+        })
+        .catch((err) => setError(err.message))
+        .finally(() => setLoading(false));
+    }
+    load();
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
   }, []);
 
   if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading market console...</p>;
