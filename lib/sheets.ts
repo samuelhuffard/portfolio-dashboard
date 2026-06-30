@@ -132,6 +132,52 @@ export async function readCashBalance(sheets: sheets_v4.Sheets, spreadsheetId: s
   return cashRow ? parseNum(cashRow[5]) ?? 0 : 0;
 }
 
+export interface MarketScanRow {
+  syncedAt: string;
+  scanName: string;
+  ticker: string;
+  name: string;
+  price: number | null;
+  changePct: number | null;
+  volume: number | null;
+  avgVolume: number | null;
+  marketCap: number | null;
+  signal: string;
+  score: number | null;
+  agentHint: string;
+  notes: string;
+}
+
+export async function readMarketScans(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  limit = 250,
+): Promise<MarketScanRow[]> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `Market Scans!A2:M${limit + 1}`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((row) => row[2])
+    .map((row) => ({
+      syncedAt: row[0] ?? "",
+      scanName: row[1] ?? "",
+      ticker: row[2] ?? "",
+      name: row[3] ?? "",
+      price: parseNum(row[4]),
+      changePct: parseNum(row[5]),
+      volume: parseNum(row[6]),
+      avgVolume: parseNum(row[7]),
+      marketCap: parseNum(row[8]),
+      signal: row[9] ?? "",
+      score: parseNum(row[10]),
+      agentHint: row[11] ?? "",
+      notes: row[12] ?? "",
+    }));
+}
+
 export interface PerformanceRow {
   date: string;
   portfolioValue: number | null;

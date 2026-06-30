@@ -47,6 +47,22 @@ const POLL_INTERVAL_MS = 15 * 60 * 1000; // 15 min during market hours
 const LOCK_TTL_SECONDS = 300; // 5 min — prevents double-execution if companion restarts mid-trade
 const LIST_KEY = "pm:approval_proposals";
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "/Users/samhuffard/.local/bin/claude";
+const ROBINHOOD_MCP_TOOLS = "mcp__robinhood-trading__*";
+const MARKET_SYNC_DISALLOWED_TOOLS = [
+  "mcp__robinhood-trading__place_equity_order",
+  "mcp__robinhood-trading__place_option_order",
+  "mcp__robinhood-trading__cancel_equity_order",
+  "mcp__robinhood-trading__cancel_option_order",
+  "mcp__robinhood-trading__review_equity_order",
+  "mcp__robinhood-trading__review_option_order",
+  "mcp__robinhood-trading__create_scan",
+  "mcp__robinhood-trading__update_scan_filters",
+  "mcp__robinhood-trading__update_scan_config",
+  "mcp__robinhood-trading__create_watchlist",
+  "mcp__robinhood-trading__rename_watchlist",
+  "mcp__robinhood-trading__add_to_watchlist",
+  "mcp__robinhood-trading__remove_from_watchlist",
+].join(",");
 
 if (!REDIS_URL || !REDIS_TOKEN) {
   console.error("[companion] Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN");
@@ -94,6 +110,40 @@ async function acquireLock(id) {
 
 async function releaseLock(id) {
   await redisCmd("del", `pm:exec_lock:${id}`);
+}
+
+function extractJsonObject(stdout, predicate) {
+  const starts = [];
+  for (let i = 0; i < stdout.length; i++) {
+    if (stdout[i] === "{") starts.push(i);
+  }
+  for (const start of starts.reverse()) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < stdout.length; i++) {
+      const ch = stdout[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === "\"") inString = false;
+        continue;
+      }
+      if (ch === "\"") inString = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          try {
+            const parsed = JSON.parse(stdout.slice(start, i + 1));
+            if (!predicate || predicate(parsed)) return { parsed, text: stdout.slice(start, i + 1) };
+          } catch {}
+          break;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 // ── Claude executor ────────────────────────────────────────────────────────────
@@ -252,6 +302,94 @@ Include every open position. Use the actual live values from the MCP.`;
   console.log("[companion] ✓ Holdings synced to Google Sheets");
 }
 
+// ── Market scan sync ─────────────────────────────────────────────────────────
+const MARKET_SYNC_SCRIPT = join(__dir, "../../portfolio-manager/scripts/sync-market-scans-from-mcp.js");
+
+async function setMarketScanStatus(status) {
+  await redisPost(["set", "pm:market-scans:status", JSON.stringify({
+    ...status,
+    updatedAt: new Date().toISOString(),
+  }), "EX", 3600]).catch(() => null);
+}
+
+async function runMarketScanSync() {
+  if (!existsSync(MARKET_SYNC_SCRIPT)) {
+    console.warn("[companion] sync-market-scans-from-mcp.js not found — skipping market scan sync");
+    return;
+  }
+
+  await setMarketScanStatus({ state: "running", count: 0, error: null });
+
+  const prompt = `Use only Robinhood MCP read-only scanner, quote, fundamentals, technical indicator, earnings, portfolio, and position tools.
+Do not place, review, cancel, or modify any order. Do not create or update saved scans or watchlists.
+
+Task:
+1. Get my saved Robinhood scans.
+2. Run the most useful scans for discovering equity candidates. Prefer momentum/relative-volume, oversold-quality/pullback, earnings/catalyst, and large-cap strength scans when present.
+3. Add enough quote/market data to make each candidate useful for research.
+
+Return ONLY this JSON — no markdown, no prose:
+{
+  "syncedAt": "ISO timestamp",
+  "scans": [
+    {
+      "scanName": "Momentum + Volume",
+      "results": [
+        {
+          "ticker": "NVDA",
+          "name": "NVIDIA Corporation",
+          "price": 196.40,
+          "changePct": 2.1,
+          "volume": 12345678,
+          "avgVolume": 9876543,
+          "marketCap": 4800000000000,
+          "signal": "Why this scan surfaced the ticker",
+          "score": 92,
+          "agentHint": "agent-1",
+          "notes": "One brief extra market-data note"
+        }
+      ]
+    }
+  ]
+}
+
+Use agentHint only when obvious: agent-1 for high-growth technology/software/semis, agent-2 for financials/healthcare/quality compounders, agent-3 for defensive/consumer/industrial/dividend names. Otherwise leave agentHint empty. Limit total results to the 40 best rows.`;
+
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;
+
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync(
+      CLAUDE_BIN,
+      ["-p", "--allowedTools", ROBINHOOD_MCP_TOOLS, "--disallowedTools", MARKET_SYNC_DISALLOWED_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+      { env, timeout: 180_000 }
+    ));
+  } catch (err) {
+    console.warn("[companion] market scan: failed to fetch scans from Robinhood:", err.message);
+    await setMarketScanStatus({ state: "error", count: 0, error: err.message });
+    return;
+  }
+
+  const extracted = extractJsonObject(stdout, (p) => Array.isArray(p.scans) || Array.isArray(p.results));
+  if (!extracted) {
+    console.warn("[companion] market scan: could not parse scan JSON from claude output");
+    await setMarketScanStatus({ state: "error", count: 0, error: "Could not parse scan JSON from Claude output" });
+    return;
+  }
+
+  const syncDir = join(__dir, "../../portfolio-manager");
+  await new Promise((resolve, reject) => {
+    const child = execFile("node", [MARKET_SYNC_SCRIPT], { env: process.env, cwd: syncDir }, (err) => {
+      if (err) reject(err); else resolve();
+    });
+    child.stdin.write(extracted.text);
+    child.stdin.end();
+  });
+
+  console.log("[companion] ✓ Market scans synced to Google Sheets");
+}
+
 // ── Main poll loop ─────────────────────────────────────────────────────────────
 async function poll(force = false) {
   if (!force && !isMarketOpen()) {
@@ -311,6 +449,12 @@ async function heartbeat() {
   if (triggered) {
     console.log(`[companion] Manual trigger received — running immediate poll`);
     await poll(true);
+  }
+
+  const marketTriggered = await redisCmd("getdel", "pm:market_scan_trigger").catch(() => null);
+  if (marketTriggered) {
+    console.log(`[companion] Market scan trigger received — syncing Robinhood scans`);
+    await runMarketScanSync();
   }
 }
 

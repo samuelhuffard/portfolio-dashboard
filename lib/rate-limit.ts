@@ -9,6 +9,7 @@ interface RateLimitPolicy {
 const ACTION_LIMITS: Partial<Record<AuditAction, RateLimitPolicy>> = {
   RESEARCH_GENERATE: { limit: 10, windowSeconds: 60 * 60 },
   COMPARE_GENERATE: { limit: 10, windowSeconds: 60 * 60 },
+  MARKET_SCAN_SYNC: { limit: 8, windowSeconds: 60 * 60 },
   AGENT_CHAT_SEND: { limit: 40, windowSeconds: 60 * 60 },
   PROPOSAL_CREATE: { limit: 25, windowSeconds: 60 * 60 },
   APPROVAL_DECISION: { limit: 50, windowSeconds: 60 * 60 },
