@@ -96,7 +96,7 @@ function AgentBookStrip({ agentId }: { agentId: string }) {
         .catch(() => {});
     }
     load();
-    const id = setInterval(load, 30_000);
+    const id = setInterval(load, 300_000);
     return () => clearInterval(id);
   }, [agentId]);
 
@@ -371,7 +371,7 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
         .finally(() => { if (initial) setLoading(false); });
     }
     load(true);
-    const id = setInterval(() => load(false), 10_000);
+    const id = setInterval(() => load(false), 300_000);
     return () => clearInterval(id);
   }, [agentId, refreshKey]);
 

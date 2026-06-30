@@ -27,7 +27,7 @@ export default function HoldingsPage() {
         .finally(() => setLoading(false));
     }
     load();
-    const id = setInterval(load, 60_000);
+    const id = setInterval(load, 300_000);
     return () => clearInterval(id);
   }, []);
 
