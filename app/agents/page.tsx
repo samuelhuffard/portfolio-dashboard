@@ -6,7 +6,7 @@ import { fmtCurrency } from '@/lib/format';
 import type { ChatMessage } from '@/lib/agentChat';
 import type { AgentBook } from '@/lib/agent-books';
 import type { AgentMemory } from '@/lib/agentMemory';
-import type { AllocationProposal, ProposalStatus } from '@/lib/proposals';
+import type { AllocationProposal, ProposalSide, ProposalStatus } from '@/lib/proposals';
 
 // ─── shared helpers ──────────────────────────────────────────────────────────
 
@@ -238,13 +238,98 @@ function AlertsSection({ agentId }: { agentId: string }) {
   );
 }
 
+// ─── Robinhood connect banner ─────────────────────────────────────────────────
+
+function RobinhoodConnectBanner() {
+  const [connected, setConnected] = useState<boolean | null>(null);
+  const [accountNumber, setAccountNumber] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/robinhood/status')
+      .then((r) => r.json())
+      .then((j) => { setConnected(j.connected ?? false); setAccountNumber(j.accountNumber ?? null); })
+      .catch(() => setConnected(false));
+  }, []);
+
+  if (connected === null) return null;
+
+  if (connected) {
+    return (
+      <div className="flex items-center gap-2 border border-emerald-300/20 bg-emerald-300/[0.04] px-4 py-2">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-300/80">
+          Robinhood connected{accountNumber ? ` · ${accountNumber.slice(-4)}` : ''}
+        </span>
+      </div>
+    );
+  }
+
+  async function connect() {
+    if (connecting) return;
+    setConnecting(true);
+    try {
+      const res = await fetch('/api/robinhood/connect', { method: 'POST' });
+      const json = await res.json();
+      if (json.authUrl) window.location.href = json.authUrl;
+    } catch {
+      setConnecting(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 border border-amber-200/20 bg-amber-200/[0.04] px-4 py-2">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-amber-300/80">Robinhood not connected</span>
+      <button onClick={connect} disabled={connecting}
+        className="border border-amber-300/40 bg-amber-300/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200 transition-colors hover:bg-amber-300/15 disabled:opacity-50">
+        {connecting ? 'Opening...' : 'Connect'}
+      </button>
+    </div>
+  );
+}
+
 // ─── Proposals section ────────────────────────────────────────────────────────
 
-function ProposalsSection({ agentId }: { agentId: string }) {
+interface ExecutePreview {
+  proposal: AllocationProposal;
+  livePrice: number | null;
+  estimatedShares: number | null;
+  maxPriceBreached: boolean;
+  accountNumber: string;
+}
+
+interface ProposalEditDraft {
+  ticker: string;
+  side: ProposalSide;
+  amountDollars: string;
+  maxPrice: string;
+  rationale: string;
+  riskSummary: string;
+}
+
+function proposalToEditDraft(p: AllocationProposal): ProposalEditDraft {
+  return {
+    ticker: p.ticker,
+    side: p.side,
+    amountDollars: String(p.amountDollars),
+    maxPrice: p.maxPrice != null ? String(p.maxPrice) : '',
+    rationale: p.rationale,
+    riskSummary: p.riskSummary,
+  };
+}
+
+function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId: string; refreshKey: number; onProposalUpdated: (p: AllocationProposal) => void }) {
   const [proposals, setProposals] = useState<AllocationProposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<ProposalEditDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [triggering, setTriggering] = useState(false);
+  const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
@@ -254,8 +339,22 @@ function ProposalsSection({ agentId }: { agentId: string }) {
     });
   }
 
+  function startEdit(proposal: AllocationProposal) {
+    setEditingId(proposal.id);
+    setEditDraft(proposalToEditDraft(proposal));
+    setEditError(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditDraft(null);
+    setEditError(null);
+  }
+
   useEffect(() => {
     setLoading(true);
+    setEditingId(null);
+    setEditDraft(null);
     fetch('/api/proposals')
       .then((r) => r.json())
       .then((j) => {
@@ -264,7 +363,7 @@ function ProposalsSection({ agentId }: { agentId: string }) {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [agentId]);
+  }, [agentId, refreshKey]);
 
   async function decide(id: string, status: Exclude<ProposalStatus, 'Pending'>) {
     try {
@@ -284,6 +383,51 @@ function ProposalsSection({ agentId }: { agentId: string }) {
     }
   }
 
+  async function saveEdit(id: string) {
+    if (!editDraft || saving) return;
+    setSaving(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/proposals/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker: editDraft.ticker,
+          side: editDraft.side,
+          amountDollars: editDraft.amountDollars,
+          maxPrice: editDraft.maxPrice || null,
+          rationale: editDraft.rationale,
+          riskSummary: editDraft.riskSummary,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error);
+      setProposals((prev) => prev.map((p) => (p.id === id ? json.proposal : p)));
+      onProposalUpdated(json.proposal);
+      setEditingId(null);
+      setEditDraft(null);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function triggerCompanion() {
+    if (triggering) return;
+    setTriggering(true);
+    setTriggerMsg(null);
+    try {
+      const res = await fetch('/api/companion/trigger', { method: 'POST' });
+      const json = await res.json();
+      setTriggerMsg(json.ok ? 'Companion triggered — check pm2 logs.' : (json.error ?? 'Failed'));
+    } catch {
+      setTriggerMsg('Failed to reach trigger endpoint');
+    } finally {
+      setTriggering(false);
+    }
+  }
+
   const agentProposals = proposals.filter((p) => p.agentId === agentId);
 
   if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading...</p>;
@@ -292,77 +436,157 @@ function ProposalsSection({ agentId }: { agentId: string }) {
 
   return (
     <div className="space-y-2">
+      {triggerMsg && (
+        <p className="border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/80">{triggerMsg}</p>
+      )}
+
       {agentProposals.map((proposal) => {
+        const isEditing = editingId === proposal.id;
         const isExpanded = expandedIds.has(proposal.id);
         const signals = extractSignals(proposal.rationale + ' ' + proposal.riskSummary);
         const hook = firstSentence(proposal.rationale);
         const hasMore = proposal.rationale.trim().length > hook.length + 2 || !!proposal.riskSummary;
         return (
           <article key={proposal.id} className="terminal-panel p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${STATUS_STYLES[proposal.status]}`}>
-                    {proposalStatusLabel(proposal)}
-                  </span>
-                  <span className="font-mono text-xs text-slate-500">{new Date(proposal.createdAt).toLocaleDateString()}</span>
+            {isEditing && editDraft ? (
+              /* ── edit mode ── */
+              <div className="space-y-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">Editing Proposal</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="space-y-1">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Ticker</span>
+                    <input value={editDraft.ticker} onChange={(e) => setEditDraft((d) => d && ({ ...d, ticker: e.target.value.toUpperCase() }))}
+                      className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm uppercase text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Side</span>
+                    <select value={editDraft.side} onChange={(e) => setEditDraft((d) => d && ({ ...d, side: e.target.value as ProposalSide }))}
+                      className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-cyan-300/50 focus:outline-none">
+                      <option value="BUY">BUY</option>
+                      <option value="SELL">SELL</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Dollars</span>
+                    <input value={editDraft.amountDollars} onChange={(e) => setEditDraft((d) => d && ({ ...d, amountDollars: e.target.value }))}
+                      inputMode="decimal"
+                      className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Max Price</span>
+                    <input value={editDraft.maxPrice} onChange={(e) => setEditDraft((d) => d && ({ ...d, maxPrice: e.target.value }))}
+                      inputMode="decimal" placeholder="none"
+                      className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                  </label>
                 </div>
-                <h3 className="font-mono text-xl font-black tracking-[-0.03em] text-white">
-                  {proposal.side} {proposal.ticker} — {fmtCurrency(proposal.amountDollars)}
-                </h3>
-                <p className="mt-0.5 font-mono text-xs text-slate-500">
-                  Max price: {proposal.maxPrice == null ? 'none' : fmtCurrency(proposal.maxPrice)}
-                </p>
-              </div>
-              {proposal.status === 'Pending' && (
+                <div className="grid gap-2 lg:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Rationale</span>
+                    <textarea value={editDraft.rationale} onChange={(e) => setEditDraft((d) => d && ({ ...d, rationale: e.target.value }))}
+                      rows={4}
+                      className="w-full resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Risk Notes</span>
+                    <textarea value={editDraft.riskSummary} onChange={(e) => setEditDraft((d) => d && ({ ...d, riskSummary: e.target.value }))}
+                      rows={4}
+                      className="w-full resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                  </label>
+                </div>
+                {editError && <p className="text-xs text-red-300">{editError}</p>}
                 <div className="flex gap-2">
-                  <button onClick={() => decide(proposal.id, 'ApprovedForBrokerReview')}
-                    className="border border-emerald-300/35 bg-emerald-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-emerald-200 hover:bg-emerald-300/15">
-                    Accept Proposal
+                  <button onClick={() => saveEdit(proposal.id)} disabled={saving}
+                    className="border border-cyan-300/35 bg-cyan-300/10 px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-cyan-200 transition-colors hover:bg-cyan-300/15 disabled:opacity-40">
+                    {saving ? 'Saving...' : 'Save Changes'}
                   </button>
-                  <button onClick={() => decide(proposal.id, 'Rejected')}
-                    className="border border-red-300/35 bg-red-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15">
-                    Reject
+                  <button onClick={cancelEdit} disabled={saving}
+                    className="border border-white/15 px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-slate-400 transition-colors hover:text-slate-200 disabled:opacity-40">
+                    Cancel
                   </button>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-3 border border-white/10 bg-white/[0.025] p-3">
-              <p className="text-sm leading-6 text-slate-200">{hook}</p>
-              {signals.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {signals.map((s) => (
-                    <span key={s} className="border border-cyan-300/20 bg-cyan-300/[0.06] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-200/60">{s}</span>
-                  ))}
-                </div>
-              )}
-              {hasMore && (
-                <button onClick={() => toggleExpanded(proposal.id)}
-                  className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 transition-colors hover:text-slate-300">
-                  {isExpanded ? '↑ collapse' : '↓ full rationale'}
-                </button>
-              )}
-            </div>
-
-            {isExpanded && (
-              <div className="mt-2 grid gap-2 lg:grid-cols-2">
-                <div className="border border-white/10 bg-white/[0.025] p-3">
-                  <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/50">Full Rationale</p>
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.rationale}</p>
-                </div>
-                <div className="border border-white/10 bg-white/[0.025] p-3">
-                  <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200/70">Risk Notes</p>
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.riskSummary || 'No risk notes recorded.'}</p>
                 </div>
               </div>
-            )}
+            ) : (
+              /* ── view mode ── */
+              <>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${STATUS_STYLES[proposal.status]}`}>
+                        {proposalStatusLabel(proposal)}
+                      </span>
+                      <span className="font-mono text-xs text-slate-500">{new Date(proposal.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <h3 className="font-mono text-xl font-black tracking-[-0.03em] text-white">
+                      {proposal.side} {proposal.ticker} — {fmtCurrency(proposal.amountDollars)}
+                    </h3>
+                    <p className="mt-0.5 font-mono text-xs text-slate-500">
+                      Max price: {proposal.maxPrice == null ? 'none' : fmtCurrency(proposal.maxPrice)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {proposal.status === 'Pending' && (
+                      <>
+                        <button onClick={() => startEdit(proposal)}
+                          className="border border-white/15 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-slate-400 transition-colors hover:border-cyan-300/30 hover:text-cyan-200">
+                          Edit
+                        </button>
+                        <button onClick={() => decide(proposal.id, 'ApprovedForBrokerReview')}
+                          className="border border-emerald-300/35 bg-emerald-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-emerald-200 hover:bg-emerald-300/15">
+                          Accept
+                        </button>
+                        <button onClick={() => decide(proposal.id, 'Rejected')}
+                          className="border border-red-300/35 bg-red-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15">
+                          Reject
+                        </button>
+                      </>
+                    )}
+                    {proposal.status === 'ApprovedForBrokerReview' && !proposal.fulfilledAt && (
+                      <button onClick={triggerCompanion} disabled={triggering}
+                        className="border border-violet-300/40 bg-violet-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-violet-200 transition-colors hover:bg-violet-300/15 disabled:opacity-40">
+                        {triggering ? 'Triggering...' : 'Trigger Now'}
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-            {proposal.fulfilledAt && (
-              <p className="mt-2 border border-emerald-300/20 bg-emerald-300/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200/80">
-                Tracked {new Date(proposal.fulfilledAt).toLocaleString()}
-                {proposal.fulfilledTradeId ? ` · trade ${proposal.fulfilledTradeId}` : ''}
-              </p>
+                <div className="mt-3 border border-white/10 bg-white/[0.025] p-3">
+                  <p className="text-sm leading-6 text-slate-200">{hook}</p>
+                  {signals.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {signals.map((s) => (
+                        <span key={s} className="border border-cyan-300/20 bg-cyan-300/[0.06] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-200/60">{s}</span>
+                      ))}
+                    </div>
+                  )}
+                  {hasMore && (
+                    <button onClick={() => toggleExpanded(proposal.id)}
+                      className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 transition-colors hover:text-slate-300">
+                      {isExpanded ? '↑ collapse' : '↓ full rationale'}
+                    </button>
+                  )}
+                </div>
+
+                {isExpanded && (
+                  <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                    <div className="border border-white/10 bg-white/[0.025] p-3">
+                      <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/50">Full Rationale</p>
+                      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.rationale}</p>
+                    </div>
+                    <div className="border border-white/10 bg-white/[0.025] p-3">
+                      <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200/70">Risk Notes</p>
+                      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.riskSummary || 'No risk notes recorded.'}</p>
+                    </div>
+                  </div>
+                )}
+
+                {proposal.fulfilledAt && (
+                  <p className="mt-2 border border-emerald-300/20 bg-emerald-300/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200/80">
+                    Executed {new Date(proposal.fulfilledAt).toLocaleString()}
+                    {proposal.fulfilledOrderId ? ` · order ${proposal.fulfilledOrderId}` : ''}
+                    {proposal.fulfilledShares != null ? ` · ${proposal.fulfilledShares} shares` : ''}
+                  </p>
+                )}
+              </>
             )}
           </article>
         );
@@ -373,7 +597,7 @@ function ProposalsSection({ agentId }: { agentId: string }) {
 
 // ─── Chat section ─────────────────────────────────────────────────────────────
 
-function ChatSection({ agentId }: { agentId: string }) {
+function ChatSection({ agentId, onProposalEdited }: { agentId: string; onProposalEdited?: () => void }) {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
@@ -415,7 +639,10 @@ function ChatSection({ agentId }: { agentId: string }) {
       });
       const json = await res.json();
       if (json.error) setError(json.error);
-      else setHistory((h) => [...h, { role: 'assistant', content: json.reply, ts: new Date().toISOString() }]);
+      else {
+        setHistory((h) => [...h, { role: 'assistant', content: json.reply, ts: new Date().toISOString() }]);
+        if (json.editedProposals?.length > 0) onProposalEdited?.();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -629,6 +856,11 @@ function MemorySection({ agentId }: { agentId: string }) {
 export default function AgentsPage() {
   const [activeId, setActiveId] = useState(AGENTS[0].id);
   const [section, setSection] = useState<SectionTab>('chat');
+  const [proposalRefreshKey, setProposalRefreshKey] = useState(0);
+
+  function handleProposalUpdated() {
+    setProposalRefreshKey((k) => k + 1);
+  }
 
   return (
     <div className="max-w-5xl space-y-4">
@@ -636,6 +868,9 @@ export default function AgentsPage() {
         <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Independent Desks</p>
         <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Agents</h1>
       </div>
+
+      {/* Robinhood connection banner */}
+      <RobinhoodConnectBanner />
 
       {/* Agent tabs */}
       <div className="flex gap-1 border border-white/10 bg-white/[0.02] p-1">
@@ -682,8 +917,8 @@ export default function AgentsPage() {
 
       {/* Section content */}
       {section === 'alerts' && <AlertsSection agentId={activeId} />}
-      {section === 'proposals' && <ProposalsSection agentId={activeId} />}
-      {section === 'chat' && <ChatSection agentId={activeId} />}
+      {section === 'proposals' && <ProposalsSection agentId={activeId} refreshKey={proposalRefreshKey} onProposalUpdated={handleProposalUpdated} />}
+      {section === 'chat' && <ChatSection agentId={activeId} onProposalEdited={handleProposalUpdated} />}
       {section === 'memory' && <MemorySection agentId={activeId} />}
     </div>
   );

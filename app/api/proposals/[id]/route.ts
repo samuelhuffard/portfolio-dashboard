@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
 import { addAgentMemory } from "@/lib/agentMemory";
-import { assertCashAvailableForAcceptance, getProposal, listProposals, updateProposalDecision } from "@/lib/proposals";
+import { assertCashAvailableForAcceptance, getProposal, listProposals, updateProposalDecision, updateProposalFields, validateProposalPatch } from "@/lib/proposals";
 import { getServiceAccountClients, getSharedSpreadsheetId, readCashBalance } from "@/lib/sheets";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -42,6 +42,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       source: "proposal_decision",
       importance: proposal.status === "ApprovedForBrokerReview" ? 4 : 3,
     }).catch((err) => console.warn("[Proposals] failed to save decision memory:", err instanceof Error ? err.message : err));
+    return NextResponse.json({ proposal });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 400 });
+  }
+}
+
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const authz = await requireApiPermission({
+    permission: "approvals:manage",
+    action: "PROPOSAL_EDIT",
+    request: req,
+  });
+  if (!authz.ok) return authz.response;
+
+  try {
+    const { id } = await params;
+    const body = await req.json();
+    const validated = validateProposalPatch(body);
+    if (!validated.ok) return NextResponse.json({ error: validated.error }, { status: 400 });
+
+    const proposal = await updateProposalFields(id, validated.patch);
+    if (!proposal) return NextResponse.json({ error: "Proposal not found" }, { status: 404 });
     return NextResponse.json({ proposal });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 400 });

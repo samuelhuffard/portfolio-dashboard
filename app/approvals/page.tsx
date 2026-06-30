@@ -354,8 +354,9 @@ export default function ApprovalsPage() {
               )}
               {proposal.fulfilledAt && (
                 <p className="mt-3 border border-emerald-300/20 bg-emerald-300/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200/80">
-                  Tracked in ledger {new Date(proposal.fulfilledAt).toLocaleString()}
-                  {proposal.fulfilledTradeId ? ` · trade ${proposal.fulfilledTradeId}` : ''}
+                  Executed {new Date(proposal.fulfilledAt).toLocaleString()}
+                  {proposal.fulfilledOrderId ? ` · order ${proposal.fulfilledOrderId}` : ''}
+                  {proposal.fulfilledShares != null ? ` · ${proposal.fulfilledShares} shares` : ''}
                 </p>
               )}
             </article>

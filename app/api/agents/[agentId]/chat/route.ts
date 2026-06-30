@@ -6,6 +6,7 @@ import { getChatHistory, appendChatMessages, clearChatHistory, type ChatMessage 
 import { addAgentMemory, formatAgentMemoriesForPrompt, listAgentMemories } from "@/lib/agentMemory";
 import { getAgent } from "@/lib/agents";
 import { fetchMarketSnapshot } from "@/lib/research/yahoo";
+import { listProposals, updateProposalFields, validateProposalPatch, type AllocationProposal } from "@/lib/proposals";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -18,16 +19,19 @@ Your current data:
 ${contextBlock}`;
 }
 
-async function loadContextBlock(agentId: string): Promise<string> {
+async function loadContextBlock(agentId: string): Promise<{ contextBlock: string; pendingProposals: AllocationProposal[] }> {
   const spreadsheetId = await getSharedSpreadsheetId();
   const sheets = await getServiceAccountClients();
 
-  const [holdingsResult, recommendations, strategyNotes, trackRecord] = await Promise.all([
+  const [holdingsResult, recommendations, strategyNotes, trackRecord, allProposals] = await Promise.all([
     readHoldings(sheets, spreadsheetId).catch(() => ({ holdings: [], cash: null, lastSynced: null })),
     readRecommendations(sheets, spreadsheetId, agentId).catch(() => []),
     readStrategyNotes(sheets, spreadsheetId, agentId).catch(() => ""),
     readTrackRecord(sheets, spreadsheetId, agentId).catch(() => []),
+    listProposals(50).catch(() => [] as AllocationProposal[]),
   ]);
+
+  const pendingProposals = allProposals.filter((p) => p.agentId === agentId && p.status === "Pending");
 
   const holdingTickers = holdingsResult.holdings.map((h) => h.ticker);
   const marketSnapshot = await fetchMarketSnapshot(holdingTickers).catch(() => null);
@@ -47,13 +51,22 @@ async function loadContextBlock(agentId: string): Promise<string> {
         .join("\n")
     : "Live market data: unavailable";
 
-  return [
+  const pendingProposalsLine = pendingProposals.length
+    ? `Your pending proposals (Pending status, editable via edit_proposal tool):\n${pendingProposals
+        .map((p) => `  ID: ${p.id} | ${p.side} ${p.ticker} $${p.amountDollars}${p.maxPrice != null ? ` @ max $${p.maxPrice}` : ""} | ${p.rationale.slice(0, 120)}`)
+        .join("\n")}`
+    : "Your pending proposals: none";
+
+  const contextBlock = [
     marketLine,
     `Current shared portfolio holdings (all three agents propose against this same pool): ${holdingsResult.holdings.length ? holdingsResult.holdings.map((h) => `${h.ticker} (${h.shares} sh)`).join(", ") : "none yet"}`,
     `Strategy notes from Sam: ${strategyNotes || "(none set)"}`,
     `Recent recommendations (most recent ${recentRecs.length}):\n${recentRecs.map((r) => `- ${r.date} ${r.ticker} ${r.action} (quant score ${r.quantScore ?? "—"})`).join("\n") || "none yet"}`,
     `Track record: ${trackRecord.length ? trackRecord.map((t) => `${t.horizon} — ${t.evaluated ?? 0} evaluated, ${t.hitRatePct ?? "—"}% hit rate, ${t.avgAlphaPct ?? "—"}% avg alpha vs SPY`).join("; ") : "no completed evaluations yet"}`,
+    pendingProposalsLine,
   ].join("\n\n");
+
+  return { contextBlock, pendingProposals };
 }
 
 async function extractDurableMemories({
@@ -135,6 +148,25 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ agent
   return NextResponse.json({ ok: true });
 }
 
+const EDIT_PROPOSAL_TOOL: Anthropic.Tool = {
+  name: "edit_proposal",
+  description:
+    "Edit fields of one of your pending trade proposals. Use this when Sam asks you to revise a proposal — change the price, amount, rationale, side, ticker, or risk notes. Only Pending proposals can be edited.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      proposal_id: { type: "string", description: "The ID of the proposal to edit (from your pending proposals list)" },
+      ticker: { type: "string", description: "New ticker symbol, e.g. NVDA" },
+      side: { type: "string", enum: ["BUY", "SELL"] },
+      amountDollars: { type: "number", description: "New dollar amount" },
+      maxPrice: { type: "number", description: "New max price limit (omit or null to clear)" },
+      rationale: { type: "string", description: "Updated rationale text (min 12 chars)" },
+      riskSummary: { type: "string", description: "Updated risk summary" },
+    },
+    required: ["proposal_id"],
+  },
+};
+
 export async function POST(req: Request, { params }: { params: Promise<{ agentId: string }> }) {
   const authz = await requireApiPermission({
     permission: "research:run",
@@ -157,20 +189,74 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
-    const contextBlock = await loadContextBlock(agentId);
+    const { contextBlock, pendingProposals } = await loadContextBlock(agentId);
     const history = await getChatHistory(agentId, authz.context.userId);
     const memories = await listAgentMemories(agentId, authz.context.userId, 20);
     const memoryBlock = `Persistent memory:\n${formatAgentMemoriesForPrompt(memories)}`;
 
     const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
+    const messages: Anthropic.MessageParam[] = [
+      ...history.map((h) => ({ role: h.role as "user" | "assistant", content: h.content })),
+      { role: "user" as const, content: message },
+    ];
+
+    const firstResponse = await client.messages.create({
       model: MODEL,
       max_tokens: 1024,
+      tools: pendingProposals.length > 0 ? [EDIT_PROPOSAL_TOOL] : [],
       system: buildSystemPrompt(agentId, agent.name, `${contextBlock}\n\n${memoryBlock}`),
-      messages: [...history.map((h) => ({ role: h.role, content: h.content })), { role: "user" as const, content: message }],
+      messages,
     });
 
-    const reply = response.content.find((b) => b.type === "text")?.text ?? "";
+    // Handle tool use: if agent calls edit_proposal, apply it and get final reply
+    const editedProposals: AllocationProposal[] = [];
+    let reply = "";
+
+    if (firstResponse.stop_reason === "tool_use") {
+      const toolUseBlocks = firstResponse.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+      for (const toolUse of toolUseBlocks) {
+        if (toolUse.name === "edit_proposal") {
+          const input = toolUse.input as Record<string, unknown>;
+          const { proposal_id, ...fields } = input;
+          try {
+            const validated = validateProposalPatch(fields as Record<string, unknown>);
+            if (!validated.ok) {
+              toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: `Error: ${validated.error}`, is_error: true });
+            } else {
+              const updated = await updateProposalFields(String(proposal_id), validated.patch);
+              if (!updated) {
+                toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: "Error: Proposal not found.", is_error: true });
+              } else {
+                editedProposals.push(updated);
+                toolResults.push({
+                  type: "tool_result",
+                  tool_use_id: toolUse.id,
+                  content: `Proposal updated successfully: ${updated.side} ${updated.ticker} $${updated.amountDollars}${updated.maxPrice != null ? ` @ max $${updated.maxPrice}` : ""}.`,
+                });
+              }
+            }
+          } catch (err) {
+            toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: `Error: ${err instanceof Error ? err.message : "Unknown error"}`, is_error: true });
+          }
+        }
+      }
+
+      const finalResponse = await client.messages.create({
+        model: MODEL,
+        max_tokens: 1024,
+        system: buildSystemPrompt(agentId, agent.name, `${contextBlock}\n\n${memoryBlock}`),
+        messages: [
+          ...messages,
+          { role: "assistant" as const, content: firstResponse.content },
+          { role: "user" as const, content: toolResults },
+        ],
+      });
+      reply = finalResponse.content.find((b) => b.type === "text")?.text ?? "";
+    } else {
+      reply = firstResponse.content.find((b) => b.type === "text")?.text ?? "";
+    }
 
     const now = new Date().toISOString();
     const exchange: ChatMessage[] = [
@@ -186,7 +272,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
       assistantReply: reply,
     }).catch((err) => console.warn("[AgentChat] memory extraction skipped:", err instanceof Error ? err.message : err));
 
-    return NextResponse.json({ reply });
+    return NextResponse.json({ reply, editedProposals });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
   }
