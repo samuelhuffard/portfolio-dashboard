@@ -245,51 +245,13 @@ function AlertsSection({ agentId }: { agentId: string }) {
 
 // ─── Robinhood connect banner ─────────────────────────────────────────────────
 
-function RobinhoodConnectBanner() {
-  const [connected, setConnected] = useState<boolean | null>(null);
-  const [accountNumber, setAccountNumber] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/robinhood/status')
-      .then((r) => r.json())
-      .then((j) => { setConnected(j.connected ?? false); setAccountNumber(j.accountNumber ?? null); })
-      .catch(() => setConnected(false));
-  }, []);
-
-  if (connected === null) return null;
-
-  if (connected) {
-    return (
-      <div className="flex items-center gap-2 border border-emerald-300/20 bg-emerald-300/[0.04] px-4 py-2">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-300/80">
-          Robinhood connected{accountNumber ? ` · ${accountNumber.slice(-4)}` : ''}
-        </span>
-      </div>
-    );
-  }
-
-  async function connect() {
-    if (connecting) return;
-    setConnecting(true);
-    try {
-      const res = await fetch('/api/robinhood/connect', { method: 'POST' });
-      const json = await res.json();
-      if (json.authUrl) window.location.href = json.authUrl;
-    } catch {
-      setConnecting(false);
-    }
-  }
-
+function CompanionStatusBanner() {
   return (
-    <div className="flex items-center gap-3 border border-amber-200/20 bg-amber-200/[0.04] px-4 py-2">
-      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-amber-300/80">Robinhood not connected</span>
-      <button onClick={connect} disabled={connecting}
-        className="border border-amber-300/40 bg-amber-300/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200 transition-colors hover:bg-amber-300/15 disabled:opacity-50">
-        {connecting ? 'Opening...' : 'Connect'}
-      </button>
+    <div className="flex items-center gap-2 border border-emerald-300/20 bg-emerald-300/[0.04] px-4 py-2">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-300/80">
+        Mac companion active · Robinhood ••••4149
+      </span>
     </div>
   );
 }
@@ -879,8 +841,7 @@ export default function AgentsPage() {
         <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Agents</h1>
       </div>
 
-      {/* Robinhood connection banner */}
-      <RobinhoodConnectBanner />
+      <CompanionStatusBanner />
 
       {/* Agent tabs */}
       <div className="flex gap-1 border border-white/10 bg-white/[0.02] p-1">
