@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface MarketScanRow {
   syncedAt: string;
@@ -56,7 +56,7 @@ export default function MarketScansPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setError(null);
     try {
       const res = await fetch('/api/market-scans');
@@ -69,9 +69,17 @@ export default function MarketScansPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const isSyncing = status?.state === 'queued' || status?.state === 'running';
+
+  useEffect(() => {
+    if (!isSyncing) return;
+    const interval = window.setInterval(() => { void load(); }, 5000);
+    return () => window.clearInterval(interval);
+  }, [isSyncing, load]);
 
   async function requestRefresh() {
     if (refreshing) return;
@@ -82,7 +90,7 @@ export default function MarketScansPage() {
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || 'Failed to queue scan sync');
       setStatus(json.status ?? { state: 'queued' });
-      setTimeout(load, 4000);
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -118,10 +126,10 @@ export default function MarketScansPage() {
             </span>
             <button
               onClick={requestRefresh}
-              disabled={refreshing}
+              disabled={refreshing || isSyncing}
               className="border border-cyan-300/35 bg-cyan-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-cyan-200 transition-colors hover:bg-cyan-300/15 disabled:opacity-40"
             >
-              {refreshing ? 'Queued...' : 'Sync Scans'}
+              {refreshing ? 'Queued...' : isSyncing ? 'Syncing...' : 'Sync Scans'}
             </button>
           </div>
         </div>
