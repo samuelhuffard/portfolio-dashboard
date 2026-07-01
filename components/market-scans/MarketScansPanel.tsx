@@ -31,6 +31,7 @@ interface MarketScansPanelProps {
 }
 
 type ProposalSide = 'BUY' | 'SELL';
+type ScanResearchState = 'idle' | 'scanning' | 'researching' | 'queued' | 'error';
 
 const nf0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
@@ -65,6 +66,11 @@ function defaultAgentFor(row: MarketScanRow) {
   return AGENTS.some((agent) => agent.id === row.agentHint) ? row.agentHint : AGENTS[0].id;
 }
 
+function statusUpdatedAt(status: ScanStatus | null) {
+  const time = Date.parse(status?.updatedAt ?? '');
+  return Number.isNaN(time) ? 0 : time;
+}
+
 export default function MarketScansPanel({ showHeader = true }: MarketScansPanelProps) {
   const [rows, setRows] = useState<MarketScanRow[]>([]);
   const [status, setStatus] = useState<ScanStatus | null>(null);
@@ -76,6 +82,9 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
   const [rowAgents, setRowAgents] = useState<Record<string, string>>({});
   const [creatingProposalFor, setCreatingProposalFor] = useState<string | null>(null);
   const [createdProposalIds, setCreatedProposalIds] = useState<Record<string, string>>({});
+  const [scanResearchState, setScanResearchState] = useState<ScanResearchState>('idle');
+  const [scanResearchRequestedAt, setScanResearchRequestedAt] = useState<number | null>(null);
+  const [scanResearchMessage, setScanResearchMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -95,17 +104,21 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
   useEffect(() => { load(); }, [load]);
 
   const isSyncing = status?.state === 'queued' || status?.state === 'running';
+  const scanResearchActive = scanResearchState === 'scanning' || scanResearchState === 'researching';
 
   useEffect(() => {
-    if (!isSyncing) return;
+    if (!isSyncing && scanResearchState !== 'scanning') return;
     const interval = window.setInterval(() => { void load(); }, 5000);
     return () => window.clearInterval(interval);
-  }, [isSyncing, load]);
+  }, [isSyncing, load, scanResearchState]);
 
   async function requestRefresh() {
-    if (refreshing) return;
+    if (refreshing || scanResearchActive) return;
     setRefreshing(true);
     setError(null);
+    setScanResearchState('idle');
+    setScanResearchMessage(null);
+    setScanResearchRequestedAt(null);
     try {
       const res = await fetch('/api/market-scans', { method: 'POST' });
       const json = await res.json();
@@ -118,6 +131,61 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
       setRefreshing(false);
     }
   }
+
+  async function requestScanAndResearch() {
+    if (refreshing || isSyncing || scanResearchActive) return;
+    setError(null);
+    setScanResearchState('scanning');
+    setScanResearchMessage('Market scan queued. Waiting for fresh Robinhood MCP results...');
+    setScanResearchRequestedAt(null);
+
+    try {
+      const res = await fetch('/api/market-scans', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Failed to queue scan sync');
+
+      const queuedStatus = json.status ?? { state: 'queued' };
+      setStatus(queuedStatus);
+      setScanResearchRequestedAt(statusUpdatedAt(queuedStatus) || Date.now());
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+      setScanResearchState('error');
+      setScanResearchMessage(message);
+    }
+  }
+
+  useEffect(() => {
+    if (scanResearchState !== 'scanning' || !scanResearchRequestedAt || !status) return;
+
+    if (status.state === 'error') {
+      setScanResearchState('error');
+      setScanResearchMessage(status.error || 'Market scan sync failed.');
+      return;
+    }
+
+    if (status.state !== 'synced' || statusUpdatedAt(status) < scanResearchRequestedAt) return;
+
+    async function startResearchScan() {
+      setScanResearchState('researching');
+      setScanResearchMessage('Market scan synced. Starting all-agent research scan...');
+      try {
+        const res = await fetch('/api/scan', { method: 'POST' });
+        const json = await res.json();
+        if (!res.ok || json.error) throw new Error(json.error || 'Failed to start research scan');
+        setScanResearchState('queued');
+        setScanResearchMessage(json.message || 'All-agent research scan started.');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        setError(message);
+        setScanResearchState('error');
+        setScanResearchMessage(message);
+      }
+    }
+
+    void startResearchScan();
+  }, [scanResearchRequestedAt, scanResearchState, status]);
 
   async function queueProposal(row: MarketScanRow) {
     const rowKey = `${row.scanName}-${row.ticker}`;
@@ -202,10 +270,17 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
             </span>
             <button
               onClick={requestRefresh}
-              disabled={refreshing || isSyncing}
+              disabled={refreshing || isSyncing || scanResearchActive}
               className="border border-cyan-300/35 bg-cyan-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-cyan-200 transition-colors hover:bg-cyan-300/15 disabled:opacity-40"
             >
               {refreshing ? 'Queued...' : isSyncing ? 'Syncing...' : 'Sync Scans'}
+            </button>
+            <button
+              onClick={requestScanAndResearch}
+              disabled={refreshing || isSyncing || scanResearchActive}
+              className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40"
+            >
+              {scanResearchState === 'scanning' ? 'Scanning...' : scanResearchState === 'researching' ? 'Starting Research...' : 'Scan + Research'}
             </button>
           </div>
         </div>
@@ -248,6 +323,17 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
             Row actions create Pending approval proposals only. They do not accept, execute, or send orders to Robinhood.
           </p>
         </div>
+        {scanResearchMessage && (
+          <p className={`mt-4 border px-4 py-3 text-sm ${
+            scanResearchState === 'error'
+              ? 'border-red-400/30 bg-red-500/10 text-red-200'
+              : scanResearchState === 'queued'
+                ? 'border-emerald-300/25 bg-emerald-300/[0.06] text-emerald-100'
+                : 'border-cyan-300/25 bg-cyan-300/[0.06] text-cyan-100'
+          }`}>
+            {scanResearchMessage}
+          </p>
+        )}
         {status?.error && <p className="mt-4 border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{status.error}</p>}
       </section>
 
