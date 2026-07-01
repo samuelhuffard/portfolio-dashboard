@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
 import { addAgentMemory } from "@/lib/agentMemory";
-import { assertCashAvailableForAcceptance, getProposal, listProposals, updateProposalDecision, updateProposalFields, validateProposalPatch } from "@/lib/proposals";
+import {
+  assertCashAvailableForAcceptance,
+  assertCashAvailableForBuyProposal,
+  getProposal,
+  listProposals,
+  updateProposalDecision,
+  updateProposalFields,
+  validateProposalPatch,
+} from "@/lib/proposals";
 import { getServiceAccountClients, getSharedSpreadsheetId, readCashBalance } from "@/lib/sheets";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -62,8 +70,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const validated = validateProposalPatch(body);
     if (!validated.ok) return NextResponse.json({ error: validated.error }, { status: 400 });
 
+    const current = await getProposal(id);
+    if (!current) return NextResponse.json({ error: "Proposal not found" }, { status: 404 });
+    const candidate = { ...current, ...validated.patch };
+
+    if (candidate.side === "BUY") {
+      const [proposals, sheets, spreadsheetId] = await Promise.all([
+        listProposals(250),
+        getServiceAccountClients(),
+        getSharedSpreadsheetId(),
+      ]);
+      const cashAvailable = await readCashBalance(sheets, spreadsheetId);
+      assertCashAvailableForBuyProposal(candidate, proposals, cashAvailable);
+    }
+
     const proposal = await updateProposalFields(id, validated.patch);
-    if (!proposal) return NextResponse.json({ error: "Proposal not found" }, { status: 404 });
     return NextResponse.json({ proposal });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 400 });

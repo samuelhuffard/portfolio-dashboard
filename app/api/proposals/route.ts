@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
-import { createProposal, listProposals, validateProposalInput } from "@/lib/proposals";
+import { assertCashAvailableForBuyProposal, createProposal, listProposals, validateProposalInput } from "@/lib/proposals";
+import { getServiceAccountClients, getSharedSpreadsheetId, readCashBalance } from "@/lib/sheets";
 
 export async function GET(req: Request) {
   const authz = await requireApiPermission({
@@ -30,6 +31,16 @@ export async function POST(req: Request) {
     const body = await req.json();
     const validated = validateProposalInput(body);
     if (!validated.ok) return NextResponse.json({ error: validated.error }, { status: 400 });
+
+    if (validated.value.side === "BUY") {
+      const [proposals, sheets, spreadsheetId] = await Promise.all([
+        listProposals(250),
+        getServiceAccountClients(),
+        getSharedSpreadsheetId(),
+      ]);
+      const cashAvailable = await readCashBalance(sheets, spreadsheetId);
+      assertCashAvailableForBuyProposal(validated.value, proposals, cashAvailable);
+    }
 
     const proposal = await createProposal(validated, authz.context.userId, authz.context.email);
     return NextResponse.json({ proposal }, { status: 201 });

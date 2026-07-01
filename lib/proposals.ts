@@ -144,18 +144,36 @@ export function computeAcceptedBuyReserve(proposals: AllocationProposal[], exclu
     .reduce((sum, proposal) => sum + proposal.amountDollars, 0);
 }
 
+export function computeAvailableBuyCash(proposals: AllocationProposal[], cashAvailable: number, excludeId?: string): number {
+  return Math.max(0, Math.round((cashAvailable - computeAcceptedBuyReserve(proposals, excludeId)) * 100) / 100);
+}
+
+export function assertCashAvailableForBuyProposal(
+  proposal: Pick<AllocationProposal, "side" | "amountDollars"> & { id?: string },
+  proposals: AllocationProposal[],
+  cashAvailable: number,
+): void {
+  if (proposal.side !== "BUY") return;
+
+  const available = computeAvailableBuyCash(proposals, cashAvailable, proposal.id);
+  if (proposal.amountDollars > available + 0.005) {
+    throw new Error(
+      `This BUY proposal needs $${proposal.amountDollars.toFixed(2)}, but only $${available.toFixed(2)} cash is available after accepted unfilled BUYs are reserved.`
+    );
+  }
+}
+
 export function assertCashAvailableForAcceptance(
   current: AllocationProposal,
   proposals: AllocationProposal[],
   cashAvailable: number
 ): void {
-  if (current.side !== "BUY") return;
-
-  const reserved = computeAcceptedBuyReserve(proposals, current.id);
-  const requested = reserved + current.amountDollars;
-  if (requested > cashAvailable + 0.005) {
+  try {
+    assertCashAvailableForBuyProposal(current, proposals, cashAvailable);
+  } catch {
+    const available = computeAvailableBuyCash(proposals, cashAvailable, current.id);
     throw new Error(
-      `Accepting this BUY would reserve $${requested.toFixed(2)}, but only $${cashAvailable.toFixed(2)} idle cash is available after already accepted BUYs.`
+      `Accepting this BUY would reserve $${current.amountDollars.toFixed(2)}, but only $${available.toFixed(2)} idle cash is available after already accepted BUYs.`
     );
   }
 }

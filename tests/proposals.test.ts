@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applyProposalDecision,
+  assertCashAvailableForBuyProposal,
   assertCashAvailableForAcceptance,
   computeAcceptedBuyReserve,
+  computeAvailableBuyCash,
   validateProposalInput,
   type AllocationProposal,
 } from "../lib/proposals";
@@ -104,6 +106,18 @@ test("cash acceptance reserve counts accepted unfilled BUYs but not pending alte
   ];
 
   assert.equal(computeAcceptedBuyReserve(proposals), 700);
+  assert.equal(computeAvailableBuyCash(proposals, 1000), 300);
+});
+
+test("creating or editing a BUY cannot exceed cash after accepted reserves", () => {
+  const proposals: AllocationProposal[] = [
+    { ...baseProposal, id: "accepted-buy", status: "ApprovedForBrokerReview", amountDollars: 700, fulfilledAt: null },
+    { ...baseProposal, id: "pending-buy", status: "Pending", amountDollars: 900, fulfilledAt: null },
+  ];
+
+  assert.doesNotThrow(() => assertCashAvailableForBuyProposal({ side: "BUY", amountDollars: 300 }, proposals, 1000));
+  assert.throws(() => assertCashAvailableForBuyProposal({ side: "BUY", amountDollars: 301 }, proposals, 1000), /cash is available/);
+  assert.doesNotThrow(() => assertCashAvailableForBuyProposal({ side: "SELL", amountDollars: 5000 }, proposals, 1000));
 });
 
 test("accepting a BUY cannot reserve more idle cash than available", () => {

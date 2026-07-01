@@ -26,6 +26,12 @@ interface ScanStatus {
   updatedAt?: string;
 }
 
+interface ProposalCash {
+  cashAvailable: number;
+  reservedBuyCash: number;
+  availableBuyCash: number;
+}
+
 interface MarketScansPanelProps {
   showHeader?: boolean;
 }
@@ -85,6 +91,7 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
   const [scanResearchState, setScanResearchState] = useState<ScanResearchState>('idle');
   const [scanResearchRequestedAt, setScanResearchRequestedAt] = useState<number | null>(null);
   const [scanResearchMessage, setScanResearchMessage] = useState<string | null>(null);
+  const [proposalCash, setProposalCash] = useState<ProposalCash | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -94,6 +101,7 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
       if (!res.ok || json.error) throw new Error(json.error || 'Failed to load market scans');
       setRows(json.rows ?? []);
       setStatus(json.status ?? null);
+      setProposalCash(json.proposalCash ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -105,6 +113,12 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
 
   const isSyncing = status?.state === 'queued' || status?.state === 'running';
   const scanResearchActive = scanResearchState === 'scanning' || scanResearchState === 'researching';
+  const proposalAmountNumber = Number(proposalAmount);
+  const buyProposalExceedsCash =
+    proposalSide === 'BUY' &&
+    proposalCash != null &&
+    Number.isFinite(proposalAmountNumber) &&
+    proposalAmountNumber > proposalCash.availableBuyCash + 0.005;
 
   useEffect(() => {
     if (!isSyncing && scanResearchState !== 'scanning') return;
@@ -188,6 +202,11 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
   }, [scanResearchRequestedAt, scanResearchState, status]);
 
   async function queueProposal(row: MarketScanRow) {
+    if (buyProposalExceedsCash) {
+      setError(`This BUY proposal needs ${usd.format(proposalAmountNumber)}, but only ${usd.format(proposalCash?.availableBuyCash ?? 0)} cash is available after accepted BUY reserves.`);
+      return;
+    }
+
     const rowKey = `${row.scanName}-${row.ticker}`;
     const agentId = rowAgents[rowKey] ?? defaultAgentFor(row);
     setCreatingProposalFor(rowKey);
@@ -284,7 +303,7 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
             </button>
           </div>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="border border-white/10 bg-white/[0.03] p-3">
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Rows</p>
             <p className="mt-2 font-mono text-2xl font-black text-white">{rows.length}</p>
@@ -296,6 +315,15 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
           <div className="border border-white/10 bg-white/[0.03] p-3">
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Last Sync</p>
             <p className="mt-2 text-sm text-slate-300">{formatDate(lastSynced)}</p>
+          </div>
+          <div className="border border-white/10 bg-white/[0.03] p-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">BUY Cash</p>
+            <p className="mt-2 font-mono text-2xl font-black text-amber-100">
+              {proposalCash ? usd.format(proposalCash.availableBuyCash) : '—'}
+            </p>
+            {proposalCash && proposalCash.reservedBuyCash > 0 && (
+              <p className="mt-1 text-xs text-slate-500">{usd.format(proposalCash.reservedBuyCash)} reserved</p>
+            )}
           </div>
         </div>
         <div className="mt-4 flex flex-col gap-3 border border-white/10 bg-white/[0.025] p-3 sm:flex-row sm:items-end">
@@ -320,9 +348,14 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
             />
           </label>
           <p className="text-xs leading-5 text-slate-500">
-            Row actions create Pending approval proposals only. They do not accept, execute, or send orders to Robinhood.
+            Row actions create Pending approval proposals only. BUY proposals are capped by cash after accepted unfilled BUY reserves.
           </p>
         </div>
+        {buyProposalExceedsCash && (
+          <p className="mt-3 border border-amber-300/25 bg-amber-300/[0.07] px-4 py-3 text-sm text-amber-100">
+            Entered BUY amount exceeds available cash after accepted proposal reserves.
+          </p>
+        )}
         {scanResearchMessage && (
           <p className={`mt-4 border px-4 py-3 text-sm ${
             scanResearchState === 'error'
@@ -408,10 +441,10 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
                             ) : (
                               <button
                                 onClick={() => queueProposal(row)}
-                                disabled={creatingProposalFor === rowKey}
+                                disabled={creatingProposalFor === rowKey || buyProposalExceedsCash}
                                 className="border border-emerald-300/30 bg-emerald-300/[0.08] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200 transition-colors hover:bg-emerald-300/[0.14] disabled:opacity-40"
                               >
-                                {creatingProposalFor === rowKey ? 'Queuing...' : 'Queue Proposal'}
+                                {creatingProposalFor === rowKey ? 'Queuing...' : buyProposalExceedsCash ? 'Cash Capped' : 'Queue Proposal'}
                               </button>
                             )}
                           </td>

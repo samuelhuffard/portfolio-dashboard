@@ -6,7 +6,15 @@ import { getChatHistory, appendChatMessages, clearChatHistory, type ChatMessage 
 import { addAgentMemory, formatAgentMemoriesForPrompt, listAgentMemories } from "@/lib/agentMemory";
 import { getAgent } from "@/lib/agents";
 import { fetchMarketSnapshot } from "@/lib/research/yahoo";
-import { listProposals, updateProposalFields, validateProposalPatch, type AllocationProposal } from "@/lib/proposals";
+import {
+  assertCashAvailableForBuyProposal,
+  computeAcceptedBuyReserve,
+  computeAvailableBuyCash,
+  listProposals,
+  updateProposalFields,
+  validateProposalPatch,
+  type AllocationProposal,
+} from "@/lib/proposals";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -19,7 +27,12 @@ Your current data:
 ${contextBlock}`;
 }
 
-async function loadContextBlock(agentId: string): Promise<{ contextBlock: string; pendingProposals: AllocationProposal[] }> {
+async function loadContextBlock(agentId: string): Promise<{
+  contextBlock: string;
+  pendingProposals: AllocationProposal[];
+  allProposals: AllocationProposal[];
+  cashAvailable: number | null;
+}> {
   const spreadsheetId = await getSharedSpreadsheetId();
   const sheets = await getServiceAccountClients();
 
@@ -28,10 +41,13 @@ async function loadContextBlock(agentId: string): Promise<{ contextBlock: string
     readRecommendations(sheets, spreadsheetId, agentId).catch(() => []),
     readStrategyNotes(sheets, spreadsheetId, agentId).catch(() => ""),
     readTrackRecord(sheets, spreadsheetId, agentId).catch(() => []),
-    listProposals(50).catch(() => [] as AllocationProposal[]),
+    listProposals(250).catch(() => [] as AllocationProposal[]),
   ]);
 
   const pendingProposals = allProposals.filter((p) => p.agentId === agentId && p.status === "Pending");
+  const cashAvailable = holdingsResult.cash;
+  const reservedBuyCash = cashAvailable == null ? null : computeAcceptedBuyReserve(allProposals);
+  const availableBuyCash = cashAvailable == null ? null : computeAvailableBuyCash(allProposals, cashAvailable);
 
   const holdingTickers = holdingsResult.holdings.map((h) => h.ticker);
   const marketSnapshot = await fetchMarketSnapshot(holdingTickers).catch(() => null);
@@ -59,6 +75,7 @@ async function loadContextBlock(agentId: string): Promise<{ contextBlock: string
 
   const contextBlock = [
     marketLine,
+    `Shared cash: ${cashAvailable == null ? "unavailable" : `$${cashAvailable.toFixed(2)}`}. Accepted unfilled BUY reserve: ${reservedBuyCash == null ? "unavailable" : `$${reservedBuyCash.toFixed(2)}`}. Available for a new BUY proposal: ${availableBuyCash == null ? "unavailable" : `$${availableBuyCash.toFixed(2)}`}.`,
     `Current shared portfolio holdings (all three agents propose against this same pool): ${holdingsResult.holdings.length ? holdingsResult.holdings.map((h) => `${h.ticker} (${h.shares} sh)`).join(", ") : "none yet"}`,
     `Strategy notes from Sam: ${strategyNotes || "(none set)"}`,
     `Recent recommendations (most recent ${recentRecs.length}):\n${recentRecs.map((r) => `- ${r.date} ${r.ticker} ${r.action} (quant score ${r.quantScore ?? "—"})`).join("\n") || "none yet"}`,
@@ -66,7 +83,7 @@ async function loadContextBlock(agentId: string): Promise<{ contextBlock: string
     pendingProposalsLine,
   ].join("\n\n");
 
-  return { contextBlock, pendingProposals };
+  return { contextBlock, pendingProposals, allProposals, cashAvailable };
 }
 
 async function extractDurableMemories({
@@ -189,7 +206,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
-    const { contextBlock, pendingProposals } = await loadContextBlock(agentId);
+    const { contextBlock, pendingProposals, allProposals, cashAvailable } = await loadContextBlock(agentId);
     const history = await getChatHistory(agentId, authz.context.userId);
     const memories = await listAgentMemories(agentId, authz.context.userId, 20);
     const memoryBlock = `Persistent memory:\n${formatAgentMemoriesForPrompt(memories)}`;
@@ -225,6 +242,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
             if (!validated.ok) {
               toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: `Error: ${validated.error}`, is_error: true });
             } else {
+              const currentProposal = pendingProposals.find((proposal) => proposal.id === String(proposal_id));
+              if (!currentProposal) {
+                toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: "Error: Proposal not found.", is_error: true });
+                continue;
+              }
+
+              const candidate = { ...currentProposal, ...validated.patch };
+              if (candidate.side === "BUY") {
+                if (cashAvailable == null) throw new Error("Live cash balance is unavailable, so this BUY proposal cannot be edited safely.");
+                assertCashAvailableForBuyProposal(candidate, allProposals, cashAvailable);
+              }
+
               const updated = await updateProposalFields(String(proposal_id), validated.patch);
               if (!updated) {
                 toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: "Error: Proposal not found.", is_error: true });
