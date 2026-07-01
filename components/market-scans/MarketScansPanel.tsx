@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AGENTS } from '@/lib/agents';
 
 interface MarketScanRow {
   syncedAt: string;
@@ -29,6 +30,8 @@ interface MarketScansPanelProps {
   showHeader?: boolean;
 }
 
+type ProposalSide = 'BUY' | 'SELL';
+
 const nf0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 const compactUsd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
@@ -53,12 +56,26 @@ function statusTone(status: ScanStatus | null) {
   return 'border-slate-300/20 bg-white/[0.03] text-slate-300';
 }
 
+function agentLabel(id: string) {
+  const agent = AGENTS.find((a) => a.id === id);
+  return agent?.name || `Agent ${id.split('-')[1]}`;
+}
+
+function defaultAgentFor(row: MarketScanRow) {
+  return AGENTS.some((agent) => agent.id === row.agentHint) ? row.agentHint : AGENTS[0].id;
+}
+
 export default function MarketScansPanel({ showHeader = true }: MarketScansPanelProps) {
   const [rows, setRows] = useState<MarketScanRow[]>([]);
   const [status, setStatus] = useState<ScanStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [proposalAmount, setProposalAmount] = useState('100');
+  const [proposalSide, setProposalSide] = useState<ProposalSide>('BUY');
+  const [rowAgents, setRowAgents] = useState<Record<string, string>>({});
+  const [creatingProposalFor, setCreatingProposalFor] = useState<string | null>(null);
+  const [createdProposalIds, setCreatedProposalIds] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setError(null);
@@ -99,6 +116,49 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function queueProposal(row: MarketScanRow) {
+    const rowKey = `${row.scanName}-${row.ticker}`;
+    const agentId = rowAgents[rowKey] ?? defaultAgentFor(row);
+    setCreatingProposalFor(rowKey);
+    setError(null);
+    try {
+      const rationale = [
+        `${agentLabel(agentId)} is queuing ${row.ticker} from the Robinhood MCP scan feed for manager review.`,
+        row.signal ? `Scan signal: ${row.signal}` : null,
+        row.notes ? `Notes: ${row.notes}` : null,
+        row.price != null ? `Last scanned price: ${usd.format(row.price)}.` : null,
+      ].filter(Boolean).join('\n');
+
+      const riskSummary = [
+        'Scan-origin proposal only. This has not placed an order and still requires FundManager acceptance.',
+        row.agentHint ? `Original scan route: ${row.agentHint}.` : 'Original scan route: open/unassigned.',
+        row.marketCap != null ? `Market cap: ${compactUsd.format(row.marketCap)}.` : null,
+        row.volume != null ? `Volume: ${nf0.format(row.volume)}.` : null,
+      ].filter(Boolean).join('\n');
+
+      const res = await fetch('/api/proposals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId,
+          ticker: row.ticker,
+          side: proposalSide,
+          amountDollars: proposalAmount,
+          maxPrice: proposalSide === 'BUY' && row.price != null ? Math.round(row.price * 1.02 * 100) / 100 : '',
+          rationale,
+          riskSummary,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Failed to queue proposal');
+      setCreatedProposalIds((current) => ({ ...current, [rowKey]: json.proposal.id }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setCreatingProposalFor(null);
     }
   }
 
@@ -163,6 +223,31 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
             <p className="mt-2 text-sm text-slate-300">{formatDate(lastSynced)}</p>
           </div>
         </div>
+        <div className="mt-4 flex flex-col gap-3 border border-white/10 bg-white/[0.025] p-3 sm:flex-row sm:items-end">
+          <label className="space-y-1">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Proposal Side</span>
+            <select
+              value={proposalSide}
+              onChange={(e) => setProposalSide(e.target.value as ProposalSide)}
+              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-cyan-300/50 focus:outline-none sm:w-32"
+            >
+              <option value="BUY">BUY</option>
+              <option value="SELL">SELL</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Proposal Dollars</span>
+            <input
+              value={proposalAmount}
+              onChange={(e) => setProposalAmount(e.target.value)}
+              inputMode="decimal"
+              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-cyan-300/50 focus:outline-none sm:w-36"
+            />
+          </label>
+          <p className="text-xs leading-5 text-slate-500">
+            Row actions create Pending approval proposals only. They do not accept, execute, or send orders to Robinhood.
+          </p>
+        </div>
         {status?.error && <p className="mt-4 border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{status.error}</p>}
       </section>
 
@@ -188,7 +273,7 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
                 </span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] text-left text-sm">
+                <table className="w-full min-w-[1120px] text-left text-sm">
                   <thead className="border-b border-white/10 bg-white/[0.025] font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3">Ticker</th>
@@ -198,26 +283,55 @@ export default function MarketScansPanel({ showHeader = true }: MarketScansPanel
                       <th className="px-4 py-3">Market Cap</th>
                       <th className="px-4 py-3">Signal</th>
                       <th className="px-4 py-3">Agent</th>
+                      <th className="px-4 py-3">Proposal</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.06]">
-                    {scanRows.map((row) => (
-                      <tr key={`${row.scanName}-${row.ticker}`} className="hover:bg-cyan-300/[0.025]">
-                        <td className="px-4 py-3">
-                          <p className="font-mono text-lg font-black text-white">{row.ticker}</p>
-                          <p className="max-w-[220px] truncate text-xs text-slate-500">{row.name || '—'}</p>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-slate-200">{row.price == null ? '—' : usd.format(row.price)}</td>
-                        <td className={`px-4 py-3 font-mono ${row.changePct != null && row.changePct >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{formatPct(row.changePct)}</td>
-                        <td className="px-4 py-3 font-mono text-slate-300">{row.volume == null ? '—' : nf0.format(row.volume)}</td>
-                        <td className="px-4 py-3 font-mono text-slate-300">{row.marketCap == null ? '—' : compactUsd.format(row.marketCap)}</td>
-                        <td className="px-4 py-3">
-                          <p className="max-w-xl text-slate-300">{row.signal || row.notes || 'Matched Robinhood scan'}</p>
-                          {row.score != null && <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200">Score {row.score}</p>}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs uppercase tracking-[0.12em] text-amber-200">{row.agentHint || 'open'}</td>
-                      </tr>
-                    ))}
+                    {scanRows.map((row) => {
+                      const rowKey = `${row.scanName}-${row.ticker}`;
+                      const selectedAgent = rowAgents[rowKey] ?? defaultAgentFor(row);
+                      const createdId = createdProposalIds[rowKey];
+                      return (
+                        <tr key={rowKey} className="hover:bg-cyan-300/[0.025]">
+                          <td className="px-4 py-3">
+                            <p className="font-mono text-lg font-black text-white">{row.ticker}</p>
+                            <p className="max-w-[220px] truncate text-xs text-slate-500">{row.name || '—'}</p>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-slate-200">{row.price == null ? '—' : usd.format(row.price)}</td>
+                          <td className={`px-4 py-3 font-mono ${row.changePct != null && row.changePct >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{formatPct(row.changePct)}</td>
+                          <td className="px-4 py-3 font-mono text-slate-300">{row.volume == null ? '—' : nf0.format(row.volume)}</td>
+                          <td className="px-4 py-3 font-mono text-slate-300">{row.marketCap == null ? '—' : compactUsd.format(row.marketCap)}</td>
+                          <td className="px-4 py-3">
+                            <p className="max-w-xl text-slate-300">{row.signal || row.notes || 'Matched Robinhood scan'}</p>
+                            {row.score != null && <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200">Score {row.score}</p>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <select
+                              value={selectedAgent}
+                              onChange={(e) => setRowAgents((current) => ({ ...current, [rowKey]: e.target.value }))}
+                              className="w-36 border border-white/10 bg-black/30 px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-amber-100 focus:border-cyan-300/50 focus:outline-none"
+                            >
+                              {AGENTS.map((agent) => (
+                                <option key={agent.id} value={agent.id}>{agentLabel(agent.id)}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            {createdId ? (
+                              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200">Queued</p>
+                            ) : (
+                              <button
+                                onClick={() => queueProposal(row)}
+                                disabled={creatingProposalFor === rowKey}
+                                className="border border-emerald-300/30 bg-emerald-300/[0.08] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200 transition-colors hover:bg-emerald-300/[0.14] disabled:opacity-40"
+                              >
+                                {creatingProposalFor === rowKey ? 'Queuing...' : 'Queue Proposal'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
