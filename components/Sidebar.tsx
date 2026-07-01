@@ -98,16 +98,6 @@ function ResearchIcon({ className }: { className?: string }) {
   );
 }
 
-function MarketScansIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 3v18h18" />
-      <path d="M7 16l3-4 3 2 4-7" />
-      <path d="M17 7h3v3" />
-    </svg>
-  );
-}
-
 function CompareIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -149,22 +139,21 @@ const linkGroups: NavItem[][] = [
   ],
   [
     { href: '/research', label: 'Lab', Icon: ResearchIcon, code: '04', roles: ['FundManager'] },
-    { href: '/market-scans', label: 'Scans', Icon: MarketScansIcon, code: '05', roles: ['FundManager'] },
   ],
   [
     {
       href: '/investors',
       label: { FundManager: 'Investors', Client: 'My Investment' },
       Icon: InvestorsIcon,
-      code: '06',
+      code: '05',
       roles: ['FundManager', 'Client'],
     },
   ],
   [
-    { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '07', roles: ['FundManager'] },
+    { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '06', roles: ['FundManager'] },
   ],
   [
-    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '08', roles: ['FundManager'] },
+    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '07', roles: ['FundManager'] },
   ],
 ];
 
