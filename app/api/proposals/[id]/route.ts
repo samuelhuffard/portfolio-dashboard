@@ -6,6 +6,7 @@ import {
   assertCashAvailableForBuyProposal,
   getProposal,
   listProposals,
+  NO_REASON_REJECTION,
   updateProposalDecision,
   updateProposalFields,
   validateProposalPatch,
@@ -40,16 +41,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const proposal = await updateProposalDecision(id, body?.status, body?.note, authz.context.userId);
     if (!proposal) return NextResponse.json({ error: "Proposal not found" }, { status: 404 });
-    await addAgentMemory({
-      agentId: proposal.agentId,
-      scope: "agent",
-      text:
-        proposal.status === "ApprovedForBrokerReview"
-          ? `Sam accepted this proposal style: ${proposal.side} ${proposal.ticker} for $${proposal.amountDollars}. Rationale: ${proposal.rationale.slice(0, 220)}`
-          : `Sam rejected this proposal style: ${proposal.side} ${proposal.ticker} for $${proposal.amountDollars}. Rationale: ${proposal.rationale.slice(0, 220)}`,
-      source: "proposal_decision",
-      importance: proposal.status === "ApprovedForBrokerReview" ? 4 : 3,
-    }).catch((err) => console.warn("[Proposals] failed to save decision memory:", err instanceof Error ? err.message : err));
+
+    // "No reason" is Sam explicitly opting out of giving the agent anything to learn from —
+    // skip the memory write entirely rather than recording an empty/placeholder lesson.
+    const skipMemory = proposal.status === "Rejected" && proposal.decisionNote === NO_REASON_REJECTION;
+    if (!skipMemory) {
+      await addAgentMemory({
+        agentId: proposal.agentId,
+        scope: "agent",
+        text:
+          proposal.status === "ApprovedForBrokerReview"
+            ? `Sam accepted this proposal style: ${proposal.side} ${proposal.ticker} for $${proposal.amountDollars}. Rationale: ${proposal.rationale.slice(0, 220)}`
+            : `Sam rejected this proposal style: ${proposal.side} ${proposal.ticker} for $${proposal.amountDollars}. Reason: ${proposal.decisionNote || "not given"}. Rationale: ${proposal.rationale.slice(0, 220)}`,
+        source: "proposal_decision",
+        importance: proposal.status === "ApprovedForBrokerReview" ? 4 : 3,
+      }).catch((err) => console.warn("[Proposals] failed to save decision memory:", err instanceof Error ? err.message : err));
+    }
     return NextResponse.json({ proposal });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 400 });

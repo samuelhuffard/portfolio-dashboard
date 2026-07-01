@@ -65,6 +65,7 @@ const baseProposal: AllocationProposal = {
   status: "Pending",
   createdAt: "2026-06-18T10:00:00.000Z",
   updatedAt: "2026-06-18T10:00:00.000Z",
+  expiresAt: "2026-06-20T10:00:00.000Z",
   createdByUserId: "user_creator",
   createdByEmail: "manager@example.com",
   decidedAt: null,
@@ -94,6 +95,13 @@ test("applyProposalDecision rejects direct changes to already-decided proposals"
   assert.throws(
     () => applyProposalDecision({ ...baseProposal, status: "ApprovedForBrokerReview" }, "Rejected", "", "user_decider"),
     /already been decided/
+  );
+});
+
+test("applyProposalDecision rejects deciding an expired proposal", () => {
+  assert.throws(
+    () => applyProposalDecision({ ...baseProposal, status: "Expired" }, "ApprovedForBrokerReview", "", "user_decider"),
+    /expired 48 hours/
   );
 });
 

@@ -2,7 +2,11 @@ import { randomUUID } from "crypto";
 import { getRedis } from "./redis";
 
 export type ProposalSide = "BUY" | "SELL";
-export type ProposalStatus = "Pending" | "ApprovedForBrokerReview" | "Rejected";
+export type ProposalStatus = "Pending" | "ApprovedForBrokerReview" | "Rejected" | "Expired";
+
+// Sentinel decisionNote for the "no reason, don't remember" rejection option — signals the
+// caller to skip writing an agent memory for this rejection, since there's nothing to learn.
+export const NO_REASON_REJECTION = "No reason";
 
 export interface AllocationProposal {
   id: string;
@@ -16,6 +20,9 @@ export interface AllocationProposal {
   status: ProposalStatus;
   createdAt: string;
   updatedAt: string;
+  // Pending proposals left undecided this long auto-expire so the approval queue
+  // doesn't accumulate stale research-agent signals. Decided proposals never expire.
+  expiresAt: string;
   createdByUserId: string;
   createdByEmail: string | null;
   decidedAt: string | null;
@@ -41,8 +48,9 @@ export interface ProposalInput {
 const LIST_KEY = "pm:approval_proposals";
 const MAX_PROPOSALS = 250;
 const MAX_AMOUNT_DOLLARS = 10000;
+const PROPOSAL_EXPIRY_MS = 48 * 60 * 60 * 1000;
 const AGENT_IDS = new Set(["agent-1", "agent-2", "agent-3"]);
-const STATUSES = new Set<ProposalStatus>(["Pending", "ApprovedForBrokerReview", "Rejected"]);
+const STATUSES = new Set<ProposalStatus>(["Pending", "ApprovedForBrokerReview", "Rejected", "Expired"]);
 
 function keyFor(id: string): string {
   return `pm:approval_proposal:${id}`;
@@ -57,7 +65,7 @@ function cleanText(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
-export function validateProposalInput(input: ProposalInput): { ok: true; value: Omit<AllocationProposal, "id" | "status" | "createdAt" | "updatedAt" | "createdByUserId" | "createdByEmail" | "decidedAt" | "decidedByUserId" | "decisionNote" | "fulfilledAt" | "fulfilledOrderId" | "fulfilledShares"> } | { ok: false; error: string } {
+export function validateProposalInput(input: ProposalInput): { ok: true; value: Omit<AllocationProposal, "id" | "status" | "createdAt" | "updatedAt" | "expiresAt" | "createdByUserId" | "createdByEmail" | "decidedAt" | "decidedByUserId" | "decisionNote" | "fulfilledAt" | "fulfilledOrderId" | "fulfilledShares"> } | { ok: false; error: string } {
   const agentId = cleanText(input.agentId);
   if (!AGENT_IDS.has(agentId)) return { ok: false, error: "Select a valid agent." };
 
@@ -103,6 +111,20 @@ function parseProposal(value: unknown): AllocationProposal | null {
   return parsed as AllocationProposal;
 }
 
+// A Pending proposal left undecided for 48h flips to Expired (persisted, mirrors
+// portfolio-manager's lib/redis.js expiry) so it stops showing as actionable in
+// the approval queue and stops reserving cash. Decided/fulfilled proposals never expire.
+async function expireIfNeeded(proposal: AllocationProposal | null): Promise<AllocationProposal | null> {
+  if (!proposal || proposal.status !== "Pending") return proposal;
+  const expiresAt = proposal.expiresAt ?? new Date(Date.parse(proposal.createdAt) + PROPOSAL_EXPIRY_MS).toISOString();
+  if (Date.now() < Date.parse(expiresAt)) return proposal;
+
+  const expired: AllocationProposal = { ...proposal, status: "Expired", expiresAt, updatedAt: new Date().toISOString() };
+  const redis = getRedis();
+  if (redis) await redis.set(keyFor(expired.id), JSON.stringify(expired)).catch(() => {});
+  return expired;
+}
+
 export function normalizeDecisionStatus(status: unknown): Exclude<ProposalStatus, "Pending"> {
   const normalizedStatus = cleanText(status);
   if (!STATUSES.has(normalizedStatus as ProposalStatus) || normalizedStatus === "Pending") {
@@ -118,6 +140,9 @@ export function applyProposalDecision(
   userId: string,
   now = new Date().toISOString()
 ): AllocationProposal {
+  if (current.status === "Expired") {
+    throw new Error("Proposal expired 48 hours after creation. Ask the agent to re-propose if the setup still holds.");
+  }
   if (current.status !== "Pending") {
     throw new Error("Proposal has already been decided. Create a new proposal for any correction.");
   }
@@ -183,14 +208,16 @@ export async function listProposals(limit = 100): Promise<AllocationProposal[]> 
   if (!redis) return [];
 
   const ids = await redis.lrange<string>(LIST_KEY, 0, limit - 1);
-  const proposals = await Promise.all(ids.map((id) => redis.get(keyFor(id)).then(parseProposal).catch(() => null)));
+  const proposals = await Promise.all(
+    ids.map((id) => redis.get(keyFor(id)).then(parseProposal).then(expireIfNeeded).catch(() => null))
+  );
   return proposals.filter((proposal): proposal is AllocationProposal => proposal !== null);
 }
 
 export async function getProposal(id: string): Promise<AllocationProposal | null> {
   const redis = getRedis();
   if (!redis) throw new Error("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for approval proposals.");
-  return parseProposal(await redis.get(keyFor(id)));
+  return expireIfNeeded(parseProposal(await redis.get(keyFor(id))));
 }
 
 export async function createProposal(input: ReturnType<typeof validateProposalInput> & { ok: true }, userId: string, email: string | null): Promise<AllocationProposal> {
@@ -204,6 +231,7 @@ export async function createProposal(input: ReturnType<typeof validateProposalIn
     status: "Pending",
     createdAt: now,
     updatedAt: now,
+    expiresAt: new Date(Date.parse(now) + PROPOSAL_EXPIRY_MS).toISOString(),
     createdByUserId: userId,
     createdByEmail: email,
     decidedAt: null,
@@ -224,7 +252,7 @@ export async function updateProposalDecision(id: string, status: unknown, note: 
   const redis = getRedis();
   if (!redis) throw new Error("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for approval proposals.");
 
-  const current = parseProposal(await redis.get(keyFor(id)));
+  const current = await expireIfNeeded(parseProposal(await redis.get(keyFor(id))));
   if (!current) return null;
 
   const updated = applyProposalDecision(current, status, note, userId);
@@ -299,7 +327,7 @@ export async function updateProposalFields(
   const redis = getRedis();
   if (!redis) throw new Error("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for approval proposals.");
 
-  const current = parseProposal(await redis.get(keyFor(id)));
+  const current = await expireIfNeeded(parseProposal(await redis.get(keyFor(id))));
   if (!current) return null;
   if (current.status !== "Pending") {
     throw new Error("Only Pending proposals can be edited. Create a new proposal to replace a decided one.");

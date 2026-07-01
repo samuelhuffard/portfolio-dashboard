@@ -6,7 +6,7 @@ import { fmtCurrency } from '@/lib/format';
 import type { ChatMessage } from '@/lib/agentChat';
 import type { AgentBook } from '@/lib/agent-books';
 import type { AgentMemory } from '@/lib/agentMemory';
-import type { AllocationProposal, ProposalSide, ProposalStatus } from '@/lib/proposals';
+import { NO_REASON_REJECTION, type AllocationProposal, type ProposalSide, type ProposalStatus } from '@/lib/proposals';
 
 // ─── shared helpers ──────────────────────────────────────────────────────────
 
@@ -64,12 +64,14 @@ const STATUS_STYLES: Record<ProposalStatus, string> = {
   Pending: 'border-amber-200/30 bg-amber-200/[0.06] text-amber-100',
   ApprovedForBrokerReview: 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-100',
   Rejected: 'border-red-300/30 bg-red-300/[0.06] text-red-100',
+  Expired: 'border-white/15 bg-white/[0.04] text-white/50',
 };
 
 const STATUS_LABELS: Record<ProposalStatus, string> = {
   Pending: 'Pending',
   ApprovedForBrokerReview: 'Accepted',
   Rejected: 'Rejected',
+  Expired: 'Expired (48h)',
 };
 
 function proposalStatusLabel(proposal: AllocationProposal): string {
@@ -81,6 +83,12 @@ const DIRECTION_STYLES = {
   below: 'border-cyan-300/30 bg-cyan-300/[0.06] text-cyan-100',
   above: 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-100',
 };
+
+const REJECT_REASONS = [
+  NO_REASON_REJECTION,
+  "I didn't like this proposal.",
+  'Liked another proposal better.',
+] as const;
 
 // ─── AgentBook strip ─────────────────────────────────────────────────────────
 
@@ -297,6 +305,9 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
   const [editError, setEditError] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [customReason, setCustomReason] = useState('');
+  const [showCustomReason, setShowCustomReason] = useState(false);
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
@@ -337,14 +348,14 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
     return () => clearInterval(id);
   }, [agentId, refreshKey]);
 
-  async function decide(id: string, status: Exclude<ProposalStatus, 'Pending'>) {
+  async function decide(id: string, status: Exclude<ProposalStatus, 'Pending'>, note?: string) {
     try {
       const res = await fetch(`/api/proposals/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status,
-          note: status === 'ApprovedForBrokerReview' ? 'Accepted for broker review. Dashboard did not submit this order.' : 'Rejected.',
+          note: note ?? (status === 'ApprovedForBrokerReview' ? 'Accepted for broker review. Dashboard did not submit this order.' : 'Rejected.'),
         }),
       });
       const json = await res.json();
@@ -353,6 +364,27 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     }
+  }
+
+  function startReject(id: string) {
+    setRejectingId(id);
+    setCustomReason('');
+    setShowCustomReason(false);
+  }
+
+  function cancelReject() {
+    setRejectingId(null);
+    setCustomReason('');
+    setShowCustomReason(false);
+  }
+
+  async function submitReject(reason: string) {
+    if (!rejectingId) return;
+    const id = rejectingId;
+    setRejectingId(null);
+    setShowCustomReason(false);
+    setCustomReason('');
+    await decide(id, 'Rejected', reason);
   }
 
   async function saveEdit(id: string) {
@@ -506,7 +538,7 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
                           className="border border-emerald-300/35 bg-emerald-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-emerald-200 hover:bg-emerald-300/15">
                           Accept
                         </button>
-                        <button onClick={() => decide(proposal.id, 'Rejected')}
+                        <button onClick={() => startReject(proposal.id)}
                           className="border border-red-300/35 bg-red-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15">
                           Reject
                         </button>
@@ -563,6 +595,55 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
           </article>
         );
       })}
+
+      {rejectingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={cancelReject}>
+          <div className="terminal-panel w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.24em] text-red-200/70">Reject Proposal</p>
+            <h2 className="mb-4 text-lg font-bold text-white">Why did you reject this proposal?</h2>
+            <div className="space-y-2">
+              {REJECT_REASONS.map((reason) => (
+                <button
+                  key={reason}
+                  onClick={() => submitReject(reason)}
+                  className="w-full border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm text-slate-200 hover:border-red-300/35 hover:bg-red-300/[0.06]"
+                >
+                  {reason}
+                </button>
+              ))}
+              {!showCustomReason ? (
+                <button
+                  onClick={() => setShowCustomReason(true)}
+                  className="w-full border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm text-slate-200 hover:border-red-300/35 hover:bg-red-300/[0.06]"
+                >
+                  Other (type a reason)
+                </button>
+              ) : (
+                <div className="space-y-2 border border-white/10 bg-white/[0.03] p-3">
+                  <textarea
+                    autoFocus
+                    value={customReason}
+                    onChange={(e) => setCustomReason(e.target.value)}
+                    rows={3}
+                    placeholder="Type your reason..."
+                    className="w-full resize-none border border-white/10 bg-black/30 p-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-red-300/50 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => submitReject(customReason.trim() || 'No reason given.')}
+                    disabled={!customReason.trim()}
+                    className="border border-red-300/35 bg-red-300/10 px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15 disabled:opacity-40"
+                  >
+                    Submit Reason
+                  </button>
+                </div>
+              )}
+            </div>
+            <button onClick={cancelReject} className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
