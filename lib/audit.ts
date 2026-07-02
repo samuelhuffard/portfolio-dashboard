@@ -32,6 +32,8 @@ export type AuditAction =
   | "ALERTS_READ"
   | "ALERT_CREATE"
   | "ALERT_DELETE"
+  | "COMPANION_TRIGGER"
+  | "COMPANION_STATUS_READ"
   | "RATE_LIMIT_REJECT";
 
 export interface AuditEventInput {

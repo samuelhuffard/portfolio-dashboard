@@ -18,6 +18,7 @@ import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 const execFileAsync = promisify(execFile);
 
@@ -112,6 +113,60 @@ async function releaseLock(id) {
   await redisCmd("del", `pm:exec_lock:${id}`);
 }
 
+// ── Approval signature verification ───────────────────────────────────────────
+// Mirrors lib/proposals.ts computeDecisionSignature and
+// portfolio-manager/lib/proposal-signature.js — keep the three in sync.
+// Without this, anything that can write to Redis could forge an "approved"
+// proposal and this process would trade real money on it.
+function computeDecisionSignature(p, secret) {
+  const payload = [
+    p.id,
+    p.status,
+    p.agentId,
+    p.ticker,
+    p.side,
+    String(p.amountDollars),
+    p.maxPrice == null ? "" : String(p.maxPrice),
+    p.decidedAt ?? "",
+    p.decidedByUserId ?? "",
+  ].join("|");
+  return createHmac("sha256", secret).update(payload).digest("hex");
+}
+
+function verifyApprovalSignature(proposal) {
+  const secret = process.env.AUDIT_HMAC_SECRET?.trim();
+  if (!secret) {
+    return { ok: false, reason: "AUDIT_HMAC_SECRET is not configured on this machine — cannot verify approvals" };
+  }
+  if (!proposal.decisionHmac) {
+    return { ok: false, reason: "proposal has no decision signature (not approved through the dashboard)" };
+  }
+  const expected = Buffer.from(computeDecisionSignature(proposal, secret), "hex");
+  const provided = Buffer.from(String(proposal.decisionHmac), "hex");
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+    return { ok: false, reason: "decision signature is INVALID (fields modified after approval, or forged)" };
+  }
+  return { ok: true };
+}
+
+// ── Telegram alerts ────────────────────────────────────────────────────────────
+// Execution problems must page Sam, not just sit in PM2 logs.
+async function alertTelegram(message) {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const chatId = process.env.TELEGRAM_CHAT_ID?.trim();
+  console.error(`[companion] ALERT: ${message}`);
+  if (!token || !chatId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: `🚨 Portfolio executor: ${message}` }),
+    });
+  } catch (err) {
+    console.error("[companion] Telegram alert failed:", err.message);
+  }
+}
+
 function extractJsonObject(stdout, predicate) {
   const starts = [];
   for (let i = 0; i < stdout.length; i++) {
@@ -149,24 +204,34 @@ function extractJsonObject(stdout, predicate) {
 // ── Claude executor ────────────────────────────────────────────────────────────
 async function executeViaClaude(proposal) {
   const { id, ticker, side, amountDollars, maxPrice } = proposal;
+  const isSell = side.toUpperCase() === "SELL";
 
-  const wholeShares = maxPrice ? Math.floor(amountDollars / maxPrice) : 0;
-  if (maxPrice && wholeShares < 1) {
-    console.warn(`[companion] ${id} limit order impossible: floor(${amountDollars}/${maxPrice})=0 shares — routing to market order instead`);
+  let orderInstructions;
+  if (isSell) {
+    // SELL: dollar-notional market order, hard-capped by the actual position.
+    // maxPrice is a BUY-side concept — never use it to derive SELL share counts.
+    orderInstructions = `MARKET ORDER — sell $${amountDollars} notional of ${ticker} using dollar-amount fractional sizing.
+First check current positions: if the ${ticker} position's market value is LESS than $${amountDollars}, sell the entire remaining position (by share quantity) instead of the dollar amount. Never sell more than currently held. If there is no ${ticker} position at all, place NO order and report failure.`;
+  } else {
+    const wholeShares = maxPrice ? Math.floor(amountDollars / maxPrice) : 0;
+    if (maxPrice && wholeShares < 1) {
+      console.warn(`[companion] ${id} limit order impossible: floor(${amountDollars}/${maxPrice})=0 shares — routing to market order instead`);
+    }
+    const useLimit = maxPrice && wholeShares >= 1;
+    orderInstructions = useLimit
+      ? `LIMIT ORDER — buy ${wholeShares} whole shares of ${ticker} at limit price $${maxPrice}. Use whole share quantity, NOT dollar amount.`
+      : `MARKET ORDER — buy $${amountDollars} notional of ${ticker} using dollar-amount fractional sizing.`;
   }
-  const useLimit = maxPrice && wholeShares >= 1;
-  const orderInstructions = useLimit
-    ? `LIMIT ORDER — buy ${wholeShares} whole shares of ${ticker} at limit price $${maxPrice}. Use whole share quantity, NOT dollar amount.`
-    : `MARKET ORDER — buy $${amountDollars} notional of ${ticker} using dollar-amount fractional sizing.`;
 
   const prompt = `Use the Robinhood MCP to place the following trade on my Agentic account (the one enabled for agentic trading, not margin or IRA):
 
 Ticker: ${ticker}
 Side: ${side.toUpperCase()}
 ${orderInstructions}
-Proposal ID (for reference): ${id}
 
-IMPORTANT: Place the order now — do not ask for confirmation. After placing, respond with ONLY this JSON (no other text):
+IDEMPOTENCY — CRITICAL: pass ref_id "${id}" (exactly this UUID) to place_equity_order. If you retry after a transient failure, re-send the SAME ref_id so the broker deduplicates.
+
+IMPORTANT: Place the order now — skip the review step, do not ask for confirmation. After placing, respond with ONLY this JSON (no other text):
 {"ok": true, "orderId": "...", "shares": 0.0, "price": 0.00, "message": "brief status"}
 
 Use the actual average fill price for "price". On failure respond with ONLY:
@@ -198,6 +263,38 @@ Use the actual average fill price for "price". On failure respond with ONLY:
   throw new Error(`No valid JSON in claude output: ${stdout.slice(0, 300)}`);
 }
 
+/**
+ * Reconciles a proposal stuck in executionState "Executing" (we started an order
+ * attempt but never confirmed the outcome — crash, timeout, sleep, or a failed
+ * record step). Asks the broker what actually happened instead of re-executing.
+ */
+async function reconcileViaClaude(proposal) {
+  const { id, ticker, executionStartedAt } = proposal;
+  const sinceIso = new Date(new Date(executionStartedAt ?? Date.now()).getTime() - 10 * 60 * 1000).toISOString();
+
+  const prompt = `Use the Robinhood MCP (read-only order tools) on my Agentic account. Do NOT place, cancel, or modify any order.
+
+Call get_equity_orders with symbol ${ticker} and created_at_gte ${sinceIso}, and look for the order whose ref_id is "${id}". If ref_id is not visible in the response, treat the most recent agentic ${ticker} order created after ${sinceIso} as the candidate.
+
+Respond with ONLY this JSON (no other text):
+{"found": true, "orderId": "...", "state": "filled|new|queued|confirmed|partially_filled|cancelled|rejected|failed", "shares": 0.0, "price": 0.00}
+or, if no matching order exists:
+{"found": false}`;
+
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;
+
+  const { stdout } = await execFileAsync(
+    CLAUDE_BIN,
+    ["-p", "--allowedTools", ROBINHOOD_MCP_TOOLS, "--disallowedTools", MARKET_SYNC_DISALLOWED_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    { env, timeout: 120_000 }
+  );
+
+  const extracted = extractJsonObject(stdout, (p) => typeof p.found === "boolean");
+  if (!extracted) throw new Error(`No valid reconcile JSON in claude output: ${stdout.slice(0, 300)}`);
+  return extracted.parsed;
+}
+
 // ── Market hours check ─────────────────────────────────────────────────────────
 function isMarketOpen() {
   const now = new Date();
@@ -223,10 +320,18 @@ function isMarketOpen() {
 const RECORD_SCRIPT = join(__dir, "../../portfolio-manager/scripts/record-trade.js");
 
 async function recordTrade(proposal, result) {
+  // A real order happened by the time this runs — failing to record it corrupts
+  // the FIFO/attribution books, so every problem here must THROW (the caller
+  // keeps the proposal in Executing state and retries), never silently skip.
   if (!existsSync(RECORD_SCRIPT)) {
-    console.warn("[companion] record-trade.js not found — skipping ledger entry");
-    return;
+    throw new Error(`record-trade.js not found at ${RECORD_SCRIPT} — cannot record executed trade`);
   }
+  if (!result.orderId) throw new Error("record-trade: missing orderId from execution result");
+  const shares = Number(result.shares);
+  if (!Number.isFinite(shares) || shares <= 0) throw new Error(`record-trade: invalid shares "${result.shares}"`);
+  const price = Number(result.price);
+  if (!Number.isFinite(price) || price <= 0) throw new Error(`record-trade: invalid price "${result.price}"`);
+
   const { stdout, stderr } = await execFileAsync(
     "node",
     [
@@ -235,8 +340,8 @@ async function recordTrade(proposal, result) {
       "--orderId",    result.orderId,
       "--ticker",     proposal.ticker,
       "--side",       proposal.side,
-      "--shares",     String(result.shares),
-      "--price",      String(result.price ?? (proposal.amountDollars / result.shares).toFixed(4)),
+      "--shares",     String(shares),
+      "--price",      String(price),
       "--agentId",    proposal.agentId,
     ],
     { cwd: join(__dir, "../../portfolio-manager"), timeout: 30_000 }
@@ -390,6 +495,106 @@ Use agentHint only when obvious: agent-1 for high-growth technology/software/sem
   console.log("[companion] ✓ Market scans synced to Google Sheets");
 }
 
+// ── Execution + reconciliation handlers ──────────────────────────────────────
+
+/** Records the trade in the ledger, then (only on success) marks fulfilled. */
+async function recordAndFulfill(id, proposal, { orderId, shares, price }) {
+  try {
+    await recordTrade(proposal, { orderId, shares, price });
+  } catch (err) {
+    // Money moved but the ledger write failed. Do NOT mark fulfilled — the
+    // Executing state + stored order fields make the next poll retry recording
+    // without touching the broker again.
+    await setProposalField(id, {
+      executionState: "Executing",
+      executionOrderId: orderId,
+      executionShares: shares,
+      executionPrice: price,
+    });
+    await alertTelegram(`Trade EXECUTED but ledger recording FAILED for ${proposal.side} $${proposal.amountDollars} ${proposal.ticker} (proposal ${id}, order ${orderId}): ${err.message}. Will retry recording next poll.`);
+    return false;
+  }
+  await setProposalField(id, {
+    fulfilledAt: new Date().toISOString(),
+    fulfilledOrderId: orderId,
+    fulfilledShares: shares,
+    executionState: null,
+  });
+  console.log(`[companion] ✓ ${id} fulfilled — order ${orderId}, ${shares} shares`);
+  syncHoldings().catch((err) => console.warn("[companion] sync error:", err.message));
+  return true;
+}
+
+async function executeProposal(id, proposal) {
+  console.log(`[companion] Executing proposal ${id}: ${proposal.side} $${proposal.amountDollars} ${proposal.ticker}`);
+
+  // Mark Executing BEFORE the order goes out. If we die mid-flight, the next
+  // poll reconciles against the broker instead of double-executing.
+  await setProposalField(id, {
+    executionState: "Executing",
+    executionStartedAt: new Date().toISOString(),
+  });
+
+  let result;
+  try {
+    result = await executeViaClaude(proposal);
+  } catch (err) {
+    // Unknown outcome (timeout/crash) — leave Executing; reconcile next poll.
+    await alertTelegram(`Order attempt for ${proposal.side} $${proposal.amountDollars} ${proposal.ticker} (proposal ${id}) ended with UNKNOWN outcome: ${err.message}. Will reconcile against the broker next poll.`);
+    throw err;
+  }
+
+  if (result.ok) {
+    await recordAndFulfill(id, proposal, {
+      orderId: result.orderId,
+      shares: result.shares,
+      price: result.price ?? (result.shares ? (proposal.amountDollars / result.shares).toFixed(4) : null),
+    });
+  } else {
+    // The model REPORTED failure, but that's not proof no order was placed —
+    // keep Executing so the next poll verifies with the broker before retrying.
+    console.error(`[companion] ✗ ${id} reported failure:`, result.error);
+    await alertTelegram(`Order attempt for ${proposal.side} $${proposal.amountDollars} ${proposal.ticker} (proposal ${id}) reported failure: ${result.error}. Verifying against broker next poll.`);
+  }
+}
+
+async function reconcileProposal(id, proposal) {
+  console.log(`[companion] Reconciling proposal ${id} (${proposal.side} ${proposal.ticker}) against broker...`);
+
+  // Case 1: order confirmed earlier, only the ledger write is outstanding.
+  if (proposal.executionOrderId) {
+    await recordAndFulfill(id, proposal, {
+      orderId: proposal.executionOrderId,
+      shares: proposal.executionShares,
+      price: proposal.executionPrice,
+    });
+    return;
+  }
+
+  // Case 2: outcome unknown — ask the broker.
+  const rec = await reconcileViaClaude(proposal);
+
+  if (!rec.found) {
+    // Broker has no matching order — safe to clear the marker and let the next
+    // poll re-execute (ref_id keeps even that idempotent upstream).
+    console.log(`[companion] ${id}: no broker order found — clearing Executing state for retry.`);
+    await setProposalField(id, { executionState: null, executionStartedAt: null });
+    return;
+  }
+
+  const state = String(rec.state ?? "").toLowerCase();
+  if (state === "filled") {
+    await recordAndFulfill(id, proposal, { orderId: rec.orderId, shares: rec.shares, price: rec.price });
+  } else if (["cancelled", "rejected", "failed", "voided"].includes(state)) {
+    console.log(`[companion] ${id}: broker order ${rec.orderId} ended ${state} — clearing Executing state for retry.`);
+    await setProposalField(id, { executionState: null, executionStartedAt: null });
+    await alertTelegram(`Order for ${proposal.side} ${proposal.ticker} (proposal ${id}) ended ${state} at the broker. Proposal returned to the execution queue.`);
+  } else {
+    // Still working (new/queued/confirmed/partially_filled) — leave Executing, check again next poll.
+    console.log(`[companion] ${id}: broker order ${rec.orderId} still ${state || "working"} — waiting.`);
+  }
+}
+
 // ── Main poll loop ─────────────────────────────────────────────────────────────
 async function poll(force = false) {
   if (!force && !isMarketOpen()) {
@@ -406,32 +611,28 @@ async function poll(force = false) {
       if (proposal.status !== "ApprovedForBrokerReview") continue;
       if (proposal.fulfilledAt) continue;
 
+      // Verify BEFORE any handler touches the broker: an unsigned/forged
+      // "approval" written straight into Redis must never trade.
+      const sig = verifyApprovalSignature(proposal);
+      if (!sig.ok) {
+        await alertTelegram(`REFUSED proposal ${id} (${proposal.side} $${proposal.amountDollars} ${proposal.ticker}): ${sig.reason}.`);
+        continue;
+      }
+
       const locked = await acquireLock(id);
       if (!locked) {
         console.log(`[companion] ${id} already being processed, skipping`);
         continue;
       }
 
-      console.log(`[companion] Executing proposal ${id}: ${proposal.side} $${proposal.amountDollars} ${proposal.ticker}`);
-
       try {
-        const result = await executeViaClaude(proposal);
-
-        if (result.ok) {
-          // 1. Record in trade ledger + open lot (runs while fulfilledAt is still null)
-          await recordTrade(proposal, result).catch((err) => console.warn("[companion] record-trade error:", err.message));
-          // 2. Mark fulfilled in dashboard Redis (adds fulfilledOrderId + fulfilledShares)
-          await setProposalField(id, {
-            fulfilledAt: new Date().toISOString(),
-            fulfilledOrderId: result.orderId,
-            fulfilledShares: result.shares,
-          });
-          console.log(`[companion] ✓ ${id} fulfilled — order ${result.orderId}, ${result.shares} shares`);
-          // 3. Sync holdings sheet in background
-          syncHoldings().catch((err) => console.warn("[companion] sync error:", err.message));
+        if (proposal.executionState === "Executing") {
+          // A previous attempt started but never confirmed its outcome (crash,
+          // sleep, timeout, or failed ledger recording). NEVER blindly re-execute
+          // — ask the broker what happened first.
+          await reconcileProposal(id, proposal);
         } else {
-          console.error(`[companion] ✗ ${id} failed:`, result.error);
-          // Don't mark fulfilled — will retry next poll unless manually rejected
+          await executeProposal(id, proposal);
         }
       } catch (err) {
         console.error(`[companion] ✗ ${id} exception:`, err.message);
@@ -445,6 +646,10 @@ async function poll(force = false) {
 }
 
 async function heartbeat() {
+  // Liveness beacon — the dashboard warns when this goes stale while approved
+  // proposals are waiting (Mac asleep = nothing executes, silently).
+  await redisPost(["set", "pm:companion:last-seen", new Date().toISOString(), "EX", 3600]).catch(() => null);
+
   const triggered = await redisCmd("getdel", "pm:exec_trigger").catch(() => null);
   if (triggered) {
     console.log(`[companion] Manual trigger received — running immediate poll`);

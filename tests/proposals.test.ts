@@ -6,6 +6,7 @@ import {
   assertCashAvailableForAcceptance,
   computeAcceptedBuyReserve,
   computeAvailableBuyCash,
+  computeDecisionSignature,
   validateProposalInput,
   type AllocationProposal,
 } from "../lib/proposals";
@@ -74,6 +75,7 @@ const baseProposal: AllocationProposal = {
   fulfilledAt: null,
   fulfilledOrderId: null,
   fulfilledShares: null,
+  decisionHmac: null,
 };
 
 test("applyProposalDecision records a one-way approval", () => {
@@ -137,4 +139,28 @@ test("accepting a BUY cannot reserve more idle cash than available", () => {
 
   assert.doesNotThrow(() => assertCashAvailableForAcceptance(current, proposals, 1100));
   assert.throws(() => assertCashAvailableForAcceptance(current, proposals, 1000), /idle cash is available/);
+});
+
+test("approval attaches a verifiable decision signature when secret is set", () => {
+  process.env.AUDIT_HMAC_SECRET = "test-secret";
+  try {
+    const approved = applyProposalDecision(baseProposal, "ApprovedForBrokerReview", "Looks good", "user_manager");
+    assert.ok(approved.decisionHmac, "approval should be signed");
+    assert.equal(approved.decisionHmac, computeDecisionSignature(approved, "test-secret"));
+    // Tampering with any trade-relevant field must break the signature.
+    const tampered = { ...approved, amountDollars: 9999 };
+    assert.notEqual(approved.decisionHmac, computeDecisionSignature(tampered, "test-secret"));
+  } finally {
+    delete process.env.AUDIT_HMAC_SECRET;
+  }
+});
+
+test("rejections stay unsigned", () => {
+  process.env.AUDIT_HMAC_SECRET = "test-secret";
+  try {
+    const rejected = applyProposalDecision(baseProposal, "Rejected", "Not now", "user_manager");
+    assert.equal(rejected.decisionHmac, null);
+  } finally {
+    delete process.env.AUDIT_HMAC_SECRET;
+  }
 });

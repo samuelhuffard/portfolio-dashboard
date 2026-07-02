@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHmac, randomUUID } from "crypto";
 import { getRedis } from "./redis";
 
 export type ProposalSide = "BUY" | "SELL";
@@ -33,6 +33,39 @@ export interface AllocationProposal {
   fulfilledAt: string | null;
   fulfilledOrderId: string | null;
   fulfilledShares: number | null;
+  // HMAC over the trade-relevant fields, attached when a manager approves.
+  // Executors verify it before placing an order, so a bare Redis write can no
+  // longer forge an "approved" proposal — approval authority stays with the
+  // dashboard (the only writer holding AUDIT_HMAC_SECRET at decision time).
+  decisionHmac: string | null;
+}
+
+/**
+ * Canonical signature payload. Every field that determines what trade gets
+ * executed is included; fulfillment bookkeeping fields are not (they change
+ * after approval and don't alter the authorized trade).
+ * Mirrored in portfolio-manager/lib/proposal-signature.js and
+ * scripts/mac-companion.mjs — keep the three in sync.
+ */
+export function computeDecisionSignature(
+  proposal: Pick<
+    AllocationProposal,
+    "id" | "status" | "agentId" | "ticker" | "side" | "amountDollars" | "maxPrice" | "decidedAt" | "decidedByUserId"
+  >,
+  secret: string
+): string {
+  const payload = [
+    proposal.id,
+    proposal.status,
+    proposal.agentId,
+    proposal.ticker,
+    proposal.side,
+    String(proposal.amountDollars),
+    proposal.maxPrice == null ? "" : String(proposal.maxPrice),
+    proposal.decidedAt ?? "",
+    proposal.decidedByUserId ?? "",
+  ].join("|");
+  return createHmac("sha256", secret).update(payload).digest("hex");
 }
 
 export interface ProposalInput {
@@ -65,7 +98,7 @@ function cleanText(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
-export function validateProposalInput(input: ProposalInput): { ok: true; value: Omit<AllocationProposal, "id" | "status" | "createdAt" | "updatedAt" | "expiresAt" | "createdByUserId" | "createdByEmail" | "decidedAt" | "decidedByUserId" | "decisionNote" | "fulfilledAt" | "fulfilledOrderId" | "fulfilledShares"> } | { ok: false; error: string } {
+export function validateProposalInput(input: ProposalInput): { ok: true; value: Omit<AllocationProposal, "id" | "status" | "createdAt" | "updatedAt" | "expiresAt" | "createdByUserId" | "createdByEmail" | "decidedAt" | "decidedByUserId" | "decisionNote" | "fulfilledAt" | "fulfilledOrderId" | "fulfilledShares" | "decisionHmac"> } | { ok: false; error: string } {
   const agentId = cleanText(input.agentId);
   if (!AGENT_IDS.has(agentId)) return { ok: false, error: "Select a valid agent." };
 
@@ -147,14 +180,28 @@ export function applyProposalDecision(
     throw new Error("Proposal has already been decided. Create a new proposal for any correction.");
   }
 
-  return {
+  const decided: AllocationProposal = {
     ...current,
     status: normalizeDecisionStatus(status),
     updatedAt: now,
     decidedAt: now,
     decidedByUserId: userId,
     decisionNote: cleanText(note) || null,
+    decisionHmac: null,
   };
+
+  // Sign approvals so executors can verify this decision came from the
+  // dashboard, not a bare Redis write. Rejections don't authorize anything,
+  // so they stay unsigned.
+  if (decided.status === "ApprovedForBrokerReview") {
+    const secret = process.env.AUDIT_HMAC_SECRET?.trim();
+    if (secret) {
+      decided.decisionHmac = computeDecisionSignature(decided, secret);
+    } else if (process.env.NODE_ENV === "production") {
+      throw new Error("AUDIT_HMAC_SECRET is not configured — cannot sign an approval. Refusing to approve.");
+    }
+  }
+  return decided;
 }
 
 export function computeAcceptedBuyReserve(proposals: AllocationProposal[], excludeId?: string): number {
@@ -240,6 +287,7 @@ export async function createProposal(input: ReturnType<typeof validateProposalIn
     fulfilledAt: null,
     fulfilledOrderId: null,
     fulfilledShares: null,
+    decisionHmac: null,
   };
 
   await redis.set(keyFor(proposal.id), JSON.stringify(proposal));

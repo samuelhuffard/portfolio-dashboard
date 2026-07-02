@@ -88,6 +88,7 @@ export default function ApprovalsPage() {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [customReason, setCustomReason] = useState('');
   const [showCustomReason, setShowCustomReason] = useState(false);
+  const [executorOnline, setExecutorOnline] = useState<boolean | null>(null);
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
@@ -118,6 +119,34 @@ export default function ApprovalsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  // Executor (Mac companion) liveness — approved proposals only execute while
+  // it's awake, so a stale heartbeat with accepted-unfilled proposals means
+  // "nothing is listening" and deserves a banner, not silence.
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      try {
+        const res = await fetch('/api/companion/trigger');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled) setExecutorOnline(Boolean(json.online));
+      } catch {
+        /* leave unknown */
+      }
+    }
+    check();
+    const interval = setInterval(check, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const awaitingExecution = useMemo(
+    () => proposals.filter((p) => p.status === 'ApprovedForBrokerReview' && !p.fulfilledAt).length,
+    [proposals]
+  );
 
   async function createProposal() {
     if (saving) return;
@@ -193,8 +222,9 @@ export default function ApprovalsPage() {
           <div>
             <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Proposed Allocations</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
-              Research agents can inform these tickets, but approval here only records manager authorization.
-              The dashboard does not submit anything to Robinhood or move money.
+              Accepting a proposal authorizes it for execution: the Mac executor picks it up and places the
+              order through the Robinhood MCP, then records the fill. The dashboard itself never submits
+              orders — it only records signed manager authorization.
             </p>
           </div>
           <div className="border border-amber-200/20 bg-amber-200/[0.04] px-4 py-3 font-mono text-xs uppercase tracking-[0.16em] text-amber-100">
@@ -204,6 +234,14 @@ export default function ApprovalsPage() {
       </section>
 
       {error && <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+
+      {executorOnline === false && awaitingExecution > 0 && (
+        <p className="border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          ⚠ The trade executor is offline (Mac companion heartbeat is stale) — {awaitingExecution} accepted{' '}
+          {awaitingExecution === 1 ? 'proposal is' : 'proposals are'} waiting and nothing is listening. Wake the Mac
+          running <span className="font-mono">portfolio-executor</span> to resume execution.
+        </p>
+      )}
 
       <section className="terminal-panel p-5">
         <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">New Proposal</p>
