@@ -18,7 +18,15 @@ import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import {
+  verifyApprovalSignature,
+  buildOrderInstructions,
+  decideReconcileAction,
+  isPlausibleOrderId,
+  isMarketOpen,
+  easternClock,
+  MARKET_HOLIDAYS,
+} from "./companion-core.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -113,42 +121,6 @@ async function releaseLock(id) {
   await redisCmd("del", `pm:exec_lock:${id}`);
 }
 
-// ── Approval signature verification ───────────────────────────────────────────
-// Mirrors lib/proposals.ts computeDecisionSignature and
-// portfolio-manager/lib/proposal-signature.js — keep the three in sync.
-// Without this, anything that can write to Redis could forge an "approved"
-// proposal and this process would trade real money on it.
-function computeDecisionSignature(p, secret) {
-  const payload = [
-    p.id,
-    p.status,
-    p.agentId,
-    p.ticker,
-    p.side,
-    String(p.amountDollars),
-    p.maxPrice == null ? "" : String(p.maxPrice),
-    p.decidedAt ?? "",
-    p.decidedByUserId ?? "",
-  ].join("|");
-  return createHmac("sha256", secret).update(payload).digest("hex");
-}
-
-function verifyApprovalSignature(proposal) {
-  const secret = process.env.AUDIT_HMAC_SECRET?.trim();
-  if (!secret) {
-    return { ok: false, reason: "AUDIT_HMAC_SECRET is not configured on this machine — cannot verify approvals" };
-  }
-  if (!proposal.decisionHmac) {
-    return { ok: false, reason: "proposal has no decision signature (not approved through the dashboard)" };
-  }
-  const expected = Buffer.from(computeDecisionSignature(proposal, secret), "hex");
-  const provided = Buffer.from(String(proposal.decisionHmac), "hex");
-  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
-    return { ok: false, reason: "decision signature is INVALID (fields modified after approval, or forged)" };
-  }
-  return { ok: true };
-}
-
 // ── Telegram alerts ────────────────────────────────────────────────────────────
 // Execution problems must page Sam, not just sit in PM2 logs.
 async function alertTelegram(message) {
@@ -203,25 +175,8 @@ function extractJsonObject(stdout, predicate) {
 
 // ── Claude executor ────────────────────────────────────────────────────────────
 async function executeViaClaude(proposal) {
-  const { id, ticker, side, amountDollars, maxPrice } = proposal;
-  const isSell = side.toUpperCase() === "SELL";
-
-  let orderInstructions;
-  if (isSell) {
-    // SELL: dollar-notional market order, hard-capped by the actual position.
-    // maxPrice is a BUY-side concept — never use it to derive SELL share counts.
-    orderInstructions = `MARKET ORDER — sell $${amountDollars} notional of ${ticker} using dollar-amount fractional sizing.
-First check current positions: if the ${ticker} position's market value is LESS than $${amountDollars}, sell the entire remaining position (by share quantity) instead of the dollar amount. Never sell more than currently held. If there is no ${ticker} position at all, place NO order and report failure.`;
-  } else {
-    const wholeShares = maxPrice ? Math.floor(amountDollars / maxPrice) : 0;
-    if (maxPrice && wholeShares < 1) {
-      console.warn(`[companion] ${id} limit order impossible: floor(${amountDollars}/${maxPrice})=0 shares — routing to market order instead`);
-    }
-    const useLimit = maxPrice && wholeShares >= 1;
-    orderInstructions = useLimit
-      ? `LIMIT ORDER — buy ${wholeShares} whole shares of ${ticker} at limit price $${maxPrice}. Use whole share quantity, NOT dollar amount.`
-      : `MARKET ORDER — buy $${amountDollars} notional of ${ticker} using dollar-amount fractional sizing.`;
-  }
+  const { id, ticker, side } = proposal;
+  const orderInstructions = buildOrderInstructions(proposal);
 
   const prompt = `Use the Robinhood MCP to place the following trade on my Agentic account (the one enabled for agentic trading, not margin or IRA):
 
@@ -295,26 +250,8 @@ or, if no matching order exists:
   return extracted.parsed;
 }
 
-// ── Market hours check ─────────────────────────────────────────────────────────
-function isMarketOpen() {
-  const now = new Date();
-  const day = now.getUTCDay(); // 0=Sun, 6=Sat
-  if (day === 0 || day === 6) return false;
-
-  // ET offset: UTC-5 (EST) or UTC-4 (EDT)
-  // Approximate: use UTC-4 (EDT) for summer, UTC-5 (EST) for winter
-  const jan = new Date(now.getUTCFullYear(), 0, 1);
-  const jul = new Date(now.getUTCFullYear(), 6, 1);
-  const stdOffset = Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
-  const isDST = now.getTimezoneOffset() < stdOffset;
-  const etOffset = isDST ? 4 : 5;
-
-  const etHour = (now.getUTCHours() - etOffset + 24) % 24;
-  const etMin = now.getUTCMinutes();
-  const etMinutes = etHour * 60 + etMin;
-
-  return etMinutes >= 9 * 60 + 30 && etMinutes < 16 * 60; // 9:30–16:00 ET
-}
+// Market-hours check now lives in companion-core.mjs (holiday-aware, proper
+// ET conversion via Intl instead of the old approximate DST math).
 
 // ── Trade ledger + lots ────────────────────────────────────────────────────────
 const RECORD_SCRIPT = join(__dir, "../../portfolio-manager/scripts/record-trade.js");
@@ -545,6 +482,13 @@ async function executeProposal(id, proposal) {
   }
 
   if (result.ok) {
+    // The result is regex-parsed from model stdout — a fabricated orderId must
+    // not reach the ledger. Robinhood order IDs are UUIDs; anything else means
+    // "outcome unknown": stay Executing and let reconciliation ask the broker.
+    if (!isPlausibleOrderId(result.orderId)) {
+      await alertTelegram(`Execution result for ${proposal.side} $${proposal.amountDollars} ${proposal.ticker} (proposal ${id}) reported a non-UUID orderId ("${String(result.orderId).slice(0, 40)}") — treating outcome as unknown; reconciling against the broker next poll.`);
+      return;
+    }
     await recordAndFulfill(id, proposal, {
       orderId: result.orderId,
       shares: result.shares,
@@ -571,27 +515,87 @@ async function reconcileProposal(id, proposal) {
     return;
   }
 
-  // Case 2: outcome unknown — ask the broker.
+  // Case 2: outcome unknown — ask the broker, then act per the decision table
+  // in companion-core.mjs (tested in tests/companion-core.test.ts).
   const rec = await reconcileViaClaude(proposal);
+  const decision = decideReconcileAction(rec);
 
-  if (!rec.found) {
-    // Broker has no matching order — safe to clear the marker and let the next
-    // poll re-execute (ref_id keeps even that idempotent upstream).
-    console.log(`[companion] ${id}: no broker order found — clearing Executing state for retry.`);
+  if (decision.action === "record") {
+    await recordAndFulfill(id, proposal, { orderId: decision.orderId, shares: decision.shares, price: decision.price });
+  } else if (decision.action === "retry") {
+    console.log(`[companion] ${id}: ${decision.alert ?? "no broker order found"} — clearing Executing state for retry.`);
     await setProposalField(id, { executionState: null, executionStartedAt: null });
+    if (decision.alert) {
+      await alertTelegram(`Order for ${proposal.side} ${proposal.ticker} (proposal ${id}): ${decision.alert}. Proposal returned to the execution queue.`);
+    }
+  } else {
+    // Still working (new/queued/confirmed/partially_filled) — leave Executing, check again next poll.
+    console.log(`[companion] ${id}: broker order ${rec.orderId ?? "?"} still ${rec.state ?? "working"} — waiting.`);
+  }
+}
+
+// ── Daily broker-vs-ledger reconciliation ─────────────────────────────────────
+// After each market close, fetch the day's equity orders (READ-ONLY) and diff
+// them against the Trade Ledger via portfolio-manager/scripts/reconcile-orders.js.
+// A filled order missing from the ledger means an execution/recording failure
+// slipped through — the script Telegrams the details. Report-only; never writes.
+const RECONCILE_SCRIPT = join(__dir, "../../portfolio-manager/scripts/reconcile-orders.js");
+let lastReconcileDate = null;
+
+async function runDailyReconciliation(todayEt) {
+  if (!existsSync(RECONCILE_SCRIPT)) {
+    console.warn("[companion] reconcile-orders.js not found — skipping daily reconciliation");
     return;
   }
 
-  const state = String(rec.state ?? "").toLowerCase();
-  if (state === "filled") {
-    await recordAndFulfill(id, proposal, { orderId: rec.orderId, shares: rec.shares, price: rec.price });
-  } else if (["cancelled", "rejected", "failed", "voided"].includes(state)) {
-    console.log(`[companion] ${id}: broker order ${rec.orderId} ended ${state} — clearing Executing state for retry.`);
-    await setProposalField(id, { executionState: null, executionStartedAt: null });
-    await alertTelegram(`Order for ${proposal.side} ${proposal.ticker} (proposal ${id}) ended ${state} at the broker. Proposal returned to the execution queue.`);
-  } else {
-    // Still working (new/queued/confirmed/partially_filled) — leave Executing, check again next poll.
-    console.log(`[companion] ${id}: broker order ${rec.orderId} still ${state || "working"} — waiting.`);
+  const prompt = `Use only Robinhood MCP READ-ONLY order tools on my Agentic account. Do NOT place, review, cancel, or modify anything.
+
+Call get_equity_orders with created_at_gte ${todayEt}T00:00:00Z and collect every order (paginate if needed).
+
+Respond with ONLY this JSON (no other text):
+{"orders":[{"orderId":"...","ticker":"NVDA","side":"BUY","state":"filled","shares":0.0,"price":0.00,"filledAt":"ISO timestamp"}]}
+Include ALL states as reported (filled, cancelled, rejected, ...). If there are no orders, respond {"orders":[]}.`;
+
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;
+
+  const { stdout } = await execFileAsync(
+    CLAUDE_BIN,
+    ["-p", "--allowedTools", ROBINHOOD_MCP_TOOLS, "--disallowedTools", MARKET_SYNC_DISALLOWED_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    { env, timeout: 180_000 }
+  );
+
+  const extracted = extractJsonObject(stdout, (p) => Array.isArray(p.orders));
+  if (!extracted) throw new Error(`No valid orders JSON in claude output: ${stdout.slice(0, 200)}`);
+
+  await new Promise((resolve, reject) => {
+    const child = execFile(
+      "node",
+      [RECONCILE_SCRIPT],
+      { env: process.env, cwd: join(__dir, "../../portfolio-manager") },
+      (err, out) => {
+        if (out) console.log(`[companion] reconcile: ${String(out).trim()}`);
+        // Exit code 2 = mismatches found; the script already Telegrammed them.
+        if (err && err.code !== 2) reject(err);
+        else resolve();
+      }
+    );
+    child.stdin.write(extracted.text);
+    child.stdin.end();
+  });
+}
+
+async function maybeReconcile() {
+  const { date, weekday, minutes } = easternClock();
+  if (weekday === "Sat" || weekday === "Sun" || MARKET_HOLIDAYS.has(date)) return;
+  if (minutes < 16 * 60 + 35) return; // wait until 4:35 PM ET, after the close + fill settle
+  if (lastReconcileDate === date) return;
+  lastReconcileDate = date; // set first so a hard failure doesn't hot-loop every 30s
+  console.log(`[companion] Running daily broker-vs-ledger reconciliation for ${date}...`);
+  try {
+    await runDailyReconciliation(date);
+  } catch (err) {
+    await alertTelegram(`Daily reconciliation FAILED for ${date}: ${err.message}. Run manually: fetch today's orders (read-only) and pipe into portfolio-manager/scripts/reconcile-orders.js.`);
   }
 }
 
@@ -613,7 +617,7 @@ async function poll(force = false) {
 
       // Verify BEFORE any handler touches the broker: an unsigned/forged
       // "approval" written straight into Redis must never trade.
-      const sig = verifyApprovalSignature(proposal);
+      const sig = verifyApprovalSignature(proposal, process.env.AUDIT_HMAC_SECRET?.trim());
       if (!sig.ok) {
         await alertTelegram(`REFUSED proposal ${id} (${proposal.side} $${proposal.amountDollars} ${proposal.ticker}): ${sig.reason}.`);
         continue;
@@ -661,6 +665,8 @@ async function heartbeat() {
     console.log(`[companion] Market scan trigger received — syncing Robinhood scans`);
     await runMarketScanSync();
   }
+
+  await maybeReconcile();
 }
 
 console.log(`[companion] Starting — polling every ${POLL_INTERVAL_MS / 1000}s`);
