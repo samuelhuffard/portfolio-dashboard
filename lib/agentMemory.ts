@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { getRedis } from "./redis";
 
 export type AgentMemoryScope = "agent" | "user-agent";
-export type AgentMemorySource = "chat" | "proposal_decision" | "manual" | "strategy";
+// "weekly_review" rows are written by the backend's jobs/weekly-review.js (calibration lessons).
+export type AgentMemorySource = "chat" | "proposal_decision" | "manual" | "strategy" | "weekly_review";
 
 export interface AgentMemory {
   id: string;
