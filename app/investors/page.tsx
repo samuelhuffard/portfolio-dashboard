@@ -53,7 +53,7 @@ export default function InvestorsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    fetch('/api/investors')
+    fetch('/api/investors', { cache: 'no-store' })
       .then((res) => res.json())
       .then((json) => {
         if (json.error) setError(json.error);

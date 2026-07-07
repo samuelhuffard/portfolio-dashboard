@@ -4,6 +4,8 @@ import { getServiceAccountClients, getSharedSpreadsheetId, readInvestorLedger, r
 import { currentInvestorNav, computeInvestorPosition, computeRoster, computeProRataHoldings, type InvestorPosition, type ProRataHolding } from "@/lib/investors";
 import { computeUnattributedCapital, getTodayInNewYork, type UnattributedCapital } from "@/lib/investor-ledger";
 
+export const dynamic = "force-dynamic";
+
 interface InvestorSummary {
   navPerUnit: number | null;
   unitsOutstanding: number | null;
@@ -79,5 +81,8 @@ export async function GET(req: Request) {
 
   const summary = await loadInvestorSummary(userId, email, isManager);
 
-  return NextResponse.json({ role, ...summary });
+  return NextResponse.json(
+    { role, ...summary },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
