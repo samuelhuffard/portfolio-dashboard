@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import type { PortfolioRole } from '@/lib/rbac';
+import LastActivity from './LastActivity';
 
 function HomeIcon({ className }: { className?: string }) {
   return (
@@ -203,12 +204,7 @@ export default function Sidebar({ role }: { role: PortfolioRole }) {
           })}
         </nav>
 
-        <div className="mt-auto border border-amber-200/15 bg-amber-200/[0.04] p-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber-200/70">Risk Console</p>
-          <p className="mt-2 text-xs leading-5 text-slate-400">
-            Recommendations become acceptance-gated broker-review proposals. Dashboard APIs never place orders.
-          </p>
-        </div>
+        <LastActivity />
       </aside>
 
       <nav className="fixed inset-x-2 bottom-2 z-50 grid grid-cols-4 gap-1 border border-white/10 bg-[#05080d]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,.55)] backdrop-blur-xl lg:hidden">
