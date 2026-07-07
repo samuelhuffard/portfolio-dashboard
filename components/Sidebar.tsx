@@ -23,25 +23,6 @@ function HoldingsIcon({ className }: { className?: string }) {
   );
 }
 
-function RecommendationsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 3v18h18" />
-      <path d="M18.7 8 13 13.7 9 9.7 3.7 15" />
-    </svg>
-  );
-}
-
-function NewsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 4h12v14a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2Z" />
-      <path d="M16 4h2a2 2 0 0 1 2 2v12" />
-      <path d="M8 8h6M8 12h6M8 16h4" />
-    </svg>
-  );
-}
-
 function StrategyIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -129,31 +110,24 @@ const linkGroups: NavItem[][] = [
   [
     { href: '/', label: 'Command', Icon: HomeIcon, code: '01', roles: ['FundManager'] },
     { href: '/holdings', label: 'Positions', Icon: HoldingsIcon, code: '02', roles: ['FundManager'] },
-    {
-      href: '/recommendations',
-      label: { FundManager: 'Signals', Client: 'Client Signals' },
-      Icon: RecommendationsIcon,
-      code: '03',
-      roles: ['FundManager', 'Client'],
-    },
   ],
   [
-    { href: '/research', label: 'Lab', Icon: ResearchIcon, code: '04', roles: ['FundManager'] },
+    { href: '/research', label: 'Lab', Icon: ResearchIcon, code: '03', roles: ['FundManager'] },
   ],
   [
     {
       href: '/investors',
       label: { FundManager: 'Investors', Client: 'My Investment' },
       Icon: InvestorsIcon,
-      code: '05',
+      code: '04',
       roles: ['FundManager', 'Client'],
     },
   ],
   [
-    { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '06', roles: ['FundManager'] },
+    { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '05', roles: ['FundManager'] },
   ],
   [
-    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '07', roles: ['FundManager'] },
+    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '06', roles: ['FundManager'] },
   ],
 ];
 

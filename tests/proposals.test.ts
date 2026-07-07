@@ -7,6 +7,9 @@ import {
   computeAcceptedBuyReserve,
   computeAvailableBuyCash,
   computeDecisionSignature,
+  isActiveViewProposal,
+  partitionProposalsForView,
+  RECENT_DECISION_WINDOW_MS,
   validateProposalInput,
   type AllocationProposal,
 } from "../lib/proposals";
@@ -153,6 +156,63 @@ test("approval attaches a verifiable decision signature when secret is set", () 
   } finally {
     delete process.env.AUDIT_HMAC_SECRET;
   }
+});
+
+test("active view keeps pending, accepted-unfilled, and recently decided proposals", () => {
+  const now = Date.parse("2026-07-06T12:00:00.000Z");
+  const recent = new Date(now - RECENT_DECISION_WINDOW_MS + 60_000).toISOString();
+  const old = new Date(now - RECENT_DECISION_WINDOW_MS - 60_000).toISOString();
+
+  // Pending is always active.
+  assert.equal(isActiveViewProposal(baseProposal, now), true);
+
+  // Accepted but unfilled stays active regardless of age (executor may still act).
+  assert.equal(
+    isActiveViewProposal(
+      { ...baseProposal, status: "ApprovedForBrokerReview", decidedAt: old, updatedAt: old },
+      now
+    ),
+    true
+  );
+
+  // Decided within the 7-day window stays active for context; older archives.
+  assert.equal(
+    isActiveViewProposal({ ...baseProposal, status: "Rejected", decidedAt: recent, updatedAt: recent }, now),
+    true
+  );
+  assert.equal(
+    isActiveViewProposal({ ...baseProposal, status: "Rejected", decidedAt: old, updatedAt: old }, now),
+    false
+  );
+
+  // Expired proposals have no decidedAt; the expiry bookkeeping time (updatedAt) governs.
+  assert.equal(isActiveViewProposal({ ...baseProposal, status: "Expired", updatedAt: recent }, now), true);
+  assert.equal(isActiveViewProposal({ ...baseProposal, status: "Expired", updatedAt: old }, now), false);
+
+  // Fulfilled + old archives.
+  assert.equal(
+    isActiveViewProposal(
+      { ...baseProposal, status: "ApprovedForBrokerReview", decidedAt: old, updatedAt: old, fulfilledAt: old },
+      now
+    ),
+    false
+  );
+});
+
+test("partitionProposalsForView splits without dropping anything and sorts archive newest first", () => {
+  const now = Date.parse("2026-07-06T12:00:00.000Z");
+  const daysAgo = (d: number) => new Date(now - d * 24 * 60 * 60 * 1000).toISOString();
+  const proposals: AllocationProposal[] = [
+    { ...baseProposal, id: "pending" },
+    { ...baseProposal, id: "old-reject", status: "Rejected", decidedAt: daysAgo(30), updatedAt: daysAgo(30) },
+    { ...baseProposal, id: "recent-reject", status: "Rejected", decidedAt: daysAgo(2), updatedAt: daysAgo(2) },
+    { ...baseProposal, id: "older-expired", status: "Expired", updatedAt: daysAgo(10) },
+  ];
+
+  const { active, archive } = partitionProposalsForView(proposals, now);
+  assert.deepEqual(active.map((p) => p.id), ["pending", "recent-reject"]);
+  assert.deepEqual(archive.map((p) => p.id), ["older-expired", "old-reject"]);
+  assert.equal(active.length + archive.length, proposals.length);
 });
 
 test("rejections stay unsigned", () => {

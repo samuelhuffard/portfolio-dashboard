@@ -204,6 +204,54 @@ export function applyProposalDecision(
   return decided;
 }
 
+// --- Approvals page view partition (display-only; nothing is ever deleted) ---
+
+/** Decided/expired proposals stay in the Active view this long for short-term context. */
+export const RECENT_DECISION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * When a proposal stopped being actionable, as epoch ms: the decision time for
+ * approved/rejected proposals, or the expiry bookkeeping time (updatedAt) for
+ * auto-expired ones. Pending proposals return null — they are still live work.
+ */
+export function proposalSettledAt(proposal: AllocationProposal): number | null {
+  if (proposal.status === "Pending") return null;
+  const stamp = proposal.decidedAt ?? proposal.updatedAt ?? proposal.createdAt;
+  const parsed = Date.parse(stamp);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Active view = live work: Pending proposals, accepted proposals still awaiting
+ * execution (the executor may not have picked them up yet), and anything decided
+ * or expired within the last RECENT_DECISION_WINDOW_MS for short-term context.
+ * Everything else belongs in the History (archive) view.
+ */
+export function isActiveViewProposal(proposal: AllocationProposal, now = Date.now()): boolean {
+  const settledAt = proposalSettledAt(proposal);
+  if (settledAt === null) return true;
+  if (proposal.status === "ApprovedForBrokerReview" && !proposal.fulfilledAt) return true;
+  return now - settledAt < RECENT_DECISION_WINDOW_MS;
+}
+
+/**
+ * Splits proposals into the Active view and the History archive. Purely a view
+ * concern — every proposal stays in Redis untouched. The archive is sorted by
+ * settle time, newest first.
+ */
+export function partitionProposalsForView(
+  proposals: AllocationProposal[],
+  now = Date.now()
+): { active: AllocationProposal[]; archive: AllocationProposal[] } {
+  const active: AllocationProposal[] = [];
+  const archive: AllocationProposal[] = [];
+  for (const proposal of proposals) {
+    (isActiveViewProposal(proposal, now) ? active : archive).push(proposal);
+  }
+  archive.sort((a, b) => (proposalSettledAt(b) ?? 0) - (proposalSettledAt(a) ?? 0));
+  return { active, archive };
+}
+
 export function computeAcceptedBuyReserve(proposals: AllocationProposal[], excludeId?: string): number {
   return proposals
     .filter(

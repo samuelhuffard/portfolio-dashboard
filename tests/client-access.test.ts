@@ -11,10 +11,13 @@ test("Clients cannot access pooled portfolio pages", () => {
   assert.equal(routeAllowed("Client", "/holdings"), false);
 });
 
-test("Clients can access scoped account and curated signal pages", () => {
+test("Clients can access their scoped capital account page", () => {
   assert.equal(routeAllowed("Client", "/investors"), true);
-  assert.equal(routeAllowed("Client", "/recommendations"), true);
-  assert.equal(routeAllowed("Client", "/news"), true);
+});
+
+test("Removed signal/news pages are no longer client-accessible", () => {
+  assert.equal(routeAllowed("Client", "/recommendations"), false);
+  assert.equal(routeAllowed("Client", "/news"), false);
 });
 
 test("FundManagers can access the full dashboard", () => {

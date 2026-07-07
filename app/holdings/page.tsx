@@ -44,15 +44,27 @@ export default function HoldingsPage() {
 
   if (!data) return null;
 
+  const holdingsValue = data.holdings.reduce((sum, h) => sum + (h.marketValue ?? 0), 0);
+  const totalPortfolio = holdingsValue + (data.cash ?? 0);
+  const pctOfPortfolio = (value: number | null) =>
+    value === null || totalPortfolio <= 0 ? null : (value / totalPortfolio) * 100;
+
   return (
     <div className="space-y-6">
       <div className="terminal-panel p-5 sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-emerald-300/75">Position Blotter</p>
             <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Holdings</h1>
+            {data.lastSynced && (
+              <p className="mt-2 font-mono text-xs uppercase tracking-[0.14em] text-slate-500">Last synced {data.lastSynced}</p>
+            )}
           </div>
-          {data.lastSynced && <span className="font-mono text-xs uppercase tracking-[0.14em] text-slate-500">Last synced {data.lastSynced}</span>}
+          <div className="border border-emerald-300/25 bg-emerald-300/[0.06] px-5 py-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-slate-400">Total Portfolio</p>
+            <p className="mt-1 text-3xl font-black tracking-[-0.03em] text-emerald-200">{fmtCurrency(totalPortfolio)}</p>
+            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">Holdings + Cash</p>
+          </div>
         </div>
       </div>
 
@@ -71,9 +83,10 @@ export default function HoldingsPage() {
                   <th className="px-4 py-3 text-left">Ticker</th>
                   <th className="px-4 py-3 text-left">Name</th>
                   <th className="px-4 py-3 text-right">Shares</th>
-                  <th className="px-4 py-3 text-right">Avg Cost</th>
+                  <th className="px-4 py-3 text-right">Initial Price</th>
                   <th className="px-4 py-3 text-right">Price</th>
                   <th className="px-4 py-3 text-right">Market Value</th>
+                  <th className="px-4 py-3 text-right">% of Portfolio</th>
                   <th className="px-4 py-3 text-right">Gain/Loss</th>
                   <th className="px-4 py-3 text-right">Return</th>
                 </tr>
@@ -87,6 +100,9 @@ export default function HoldingsPage() {
                     <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtCurrency(h.avgCost)}</td>
                     <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtCurrency(h.currentPrice)}</td>
                     <td className="px-4 py-3 text-right font-mono text-white">{fmtCurrency(h.marketValue)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-300">
+                      {pctOfPortfolio(h.marketValue) === null ? '—' : `${(pctOfPortfolio(h.marketValue) as number).toFixed(1)}%`}
+                    </td>
                     <td className={`px-4 py-3 text-right font-mono ${gainLossColor(h.gainLoss).replace('600', '300')}`}>
                       {fmtCurrency(h.gainLoss)}
                     </td>
@@ -96,10 +112,16 @@ export default function HoldingsPage() {
                   </tr>
                 ))}
                 {data.cash !== null && (
-                  <tr className="bg-amber-200/[0.04]">
-                    <td className="px-4 py-3 font-mono font-semibold text-amber-200">CASH</td>
-                    <td className="px-4 py-3 text-slate-500" colSpan={4}></td>
-                    <td className="px-4 py-3 text-right font-mono font-semibold text-amber-200">{fmtCurrency(data.cash)}</td>
+                  <tr>
+                    <td className="px-4 py-3 font-mono font-semibold text-white">CASH</td>
+                    <td className="px-4 py-3 text-slate-400">Cash</td>
+                    <td className="px-4 py-3 text-right text-slate-600">—</td>
+                    <td className="px-4 py-3 text-right text-slate-600">—</td>
+                    <td className="px-4 py-3 text-right text-slate-600">—</td>
+                    <td className="px-4 py-3 text-right font-mono text-white">{fmtCurrency(data.cash)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-300">
+                      {pctOfPortfolio(data.cash) === null ? '—' : `${(pctOfPortfolio(data.cash) as number).toFixed(1)}%`}
+                    </td>
                     <td className="px-4 py-3 text-right text-slate-600">—</td>
                     <td className="px-4 py-3 text-right text-slate-600">—</td>
                   </tr>

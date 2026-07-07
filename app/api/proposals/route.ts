@@ -12,7 +12,9 @@ export async function GET(req: Request) {
   if (!authz.ok) return authz.response;
 
   try {
-    const proposals = await listProposals();
+    // Full retained list (Redis keeps at most 250 ids) so the Approvals page's
+    // History tab sees everything; response shape is unchanged for other callers.
+    const proposals = await listProposals(250);
     return NextResponse.json({ proposals });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });

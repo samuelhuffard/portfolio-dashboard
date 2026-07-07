@@ -2,55 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AGENTS } from '@/lib/agents';
-import { fmtCurrency } from '@/lib/format';
-import { NO_REASON_REJECTION, type AllocationProposal, type ProposalSide, type ProposalStatus } from '@/lib/proposals';
-
-const SIGNAL_KEYWORDS: { label: string; terms: string[] }[] = [
-  { label: 'MOMENTUM', terms: ['momentum', 'breakout', 'surge', 'rally', 'acceleration'] },
-  { label: 'EARNINGS', terms: ['earnings', 'eps', 'beat', 'revenue', 'guidance'] },
-  { label: 'CATALYST', terms: ['catalyst', 'event', 'merger', 'acquisition', 'spinoff', 'announcement'] },
-  { label: 'VALUE', terms: ['undervalued', 'value', 'cheap', 'discount', 'p/e', 'pe ratio'] },
-  { label: 'GROWTH', terms: ['growth', 'expanding', 'market share', 'compounding'] },
-  { label: 'TECHNICAL', terms: ['technical', 'moving average', 'support', 'resistance', 'rsi', 'macd', 'chart'] },
-  { label: 'MACRO', terms: ['macro', 'fed', 'rate', 'inflation', 'gdp', 'recession', 'cycle'] },
-  { label: 'SECTOR', terms: ['sector', 'rotation', 'industry', 'thematic'] },
-  { label: 'TREND', terms: ['trend', 'uptrend', 'bullish', 'bearish', 'regime'] },
-  { label: 'HEDGE', terms: ['hedge', 'defensive', 'volatility', 'downside protection', 'risk-off'] },
-];
-
-function extractSignals(text: string): string[] {
-  const lower = text.toLowerCase();
-  return SIGNAL_KEYWORDS.filter(({ terms }) => terms.some((t) => lower.includes(t))).map(({ label }) => label);
-}
-
-function firstSentence(text: string): string {
-  const match = text.match(/^[^.!?\n]+[.!?]?/);
-  return match ? match[0].trim() : text.slice(0, 140);
-}
-
-const STATUS_STYLES: Record<ProposalStatus, string> = {
-  Pending: 'border-amber-200/30 bg-amber-200/[0.06] text-amber-100',
-  ApprovedForBrokerReview: 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-100',
-  Rejected: 'border-red-300/30 bg-red-300/[0.06] text-red-100',
-  Expired: 'border-white/15 bg-white/[0.04] text-white/50',
-};
-
-const STATUS_LABELS: Record<ProposalStatus, string> = {
-  Pending: 'Pending',
-  ApprovedForBrokerReview: 'Accepted for broker review',
-  Rejected: 'Rejected',
-  Expired: 'Expired (48h)',
-};
-
-function proposalStatusLabel(proposal: AllocationProposal): string {
-  if (proposal.fulfilledAt) return 'Fulfilled / tracked';
-  return STATUS_LABELS[proposal.status];
-}
-
-function agentLabel(id: string): string {
-  const agent = AGENTS.find((a) => a.id === id);
-  return agent?.name || `Agent ${id.split('-')[1]}`;
-}
+import {
+  NO_REASON_REJECTION,
+  partitionProposalsForView,
+  type AllocationProposal,
+  type ProposalSide,
+  type ProposalStatus,
+} from '@/lib/proposals';
+import ProposalCard, { agentLabel } from '@/components/approvals/ProposalCard';
 
 interface Draft {
   agentId: string;
@@ -78,6 +37,26 @@ const REJECT_REASONS = [
   'Liked another proposal better.',
 ] as const;
 
+type Tab = 'active' | 'history';
+
+// History filter chips. "Fulfilled" is derived (fulfilledAt set); the status
+// filters exclude fulfilled proposals so the two don't overlap.
+type HistoryFilter = 'All' | 'Fulfilled' | Exclude<ProposalStatus, 'Pending'>;
+
+const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
+  { id: 'All', label: 'All' },
+  { id: 'ApprovedForBrokerReview', label: 'Accepted' },
+  { id: 'Fulfilled', label: 'Fulfilled' },
+  { id: 'Rejected', label: 'Rejected' },
+  { id: 'Expired', label: 'Expired' },
+];
+
+function matchesHistoryFilter(proposal: AllocationProposal, filter: HistoryFilter): boolean {
+  if (filter === 'All') return true;
+  if (filter === 'Fulfilled') return !!proposal.fulfilledAt;
+  return proposal.status === filter && !proposal.fulfilledAt;
+}
+
 export default function ApprovalsPage() {
   const [proposals, setProposals] = useState<AllocationProposal[]>([]);
   const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);
@@ -89,6 +68,8 @@ export default function ApprovalsPage() {
   const [customReason, setCustomReason] = useState('');
   const [showCustomReason, setShowCustomReason] = useState(false);
   const [executorOnline, setExecutorOnline] = useState<boolean | null>(null);
+  const [tab, setTab] = useState<Tab>('active');
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('All');
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
@@ -99,7 +80,17 @@ export default function ApprovalsPage() {
     });
   }
 
-  const visibleProposals = useMemo(() => proposals.filter((p) => p.status !== 'Rejected'), [proposals]);
+  // View-only split: Pending + accepted-awaiting-execution + decided within 7
+  // days stay on the Active tab; older decided/expired/fulfilled proposals move
+  // to History. Nothing is deleted — everything stays in Redis.
+  const { active: activeProposals, archive: archivedProposals } = useMemo(
+    () => partitionProposalsForView(proposals),
+    [proposals]
+  );
+  const filteredArchive = useMemo(
+    () => archivedProposals.filter((p) => matchesHistoryFilter(p, historyFilter)),
+    [archivedProposals, historyFilter]
+  );
   const pendingCount = useMemo(() => proposals.filter((p) => p.status === 'Pending').length, [proposals]);
 
   async function load() {
@@ -243,198 +234,179 @@ export default function ApprovalsPage() {
         </p>
       )}
 
-      <section className="terminal-panel p-5">
-        <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">New Proposal</p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Agent</span>
-            <select
-              value={draft.agentId}
-              onChange={(e) => setDraft((d) => ({ ...d, agentId: e.target.value }))}
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
-            >
-              {AGENTS.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agentLabel(agent.id)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Ticker</span>
-            <input
-              value={draft.ticker}
-              onChange={(e) => setDraft((d) => ({ ...d, ticker: e.target.value.toUpperCase() }))}
-              placeholder="VTI"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm uppercase text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Side</span>
-            <select
-              value={draft.side}
-              onChange={(e) => setDraft((d) => ({ ...d, side: e.target.value as ProposalSide }))}
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
-            >
-              <option value="BUY">BUY</option>
-              <option value="SELL">SELL</option>
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Dollars</span>
-            <input
-              value={draft.amountDollars}
-              onChange={(e) => setDraft((d) => ({ ...d, amountDollars: e.target.value }))}
-              inputMode="decimal"
-              placeholder="2500"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Max Price</span>
-            <input
-              value={draft.maxPrice}
-              onChange={(e) => setDraft((d) => ({ ...d, maxPrice: e.target.value }))}
-              inputMode="decimal"
-              placeholder="optional"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
-            />
-          </label>
-        </div>
-
-        <div className="mt-3 grid gap-3 lg:grid-cols-2">
-          <textarea
-            value={draft.rationale}
-            onChange={(e) => setDraft((d) => ({ ...d, rationale: e.target.value }))}
-            rows={4}
-            placeholder="Why this allocation belongs in the portfolio..."
-            className="resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
-          />
-          <textarea
-            value={draft.riskSummary}
-            onChange={(e) => setDraft((d) => ({ ...d, riskSummary: e.target.value }))}
-            rows={4}
-            placeholder="Sizing, liquidity, concentration, and downside notes..."
-            className="resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
-          />
-        </div>
-
+      <div className="flex gap-2 border-b border-white/10">
         <button
-          onClick={createProposal}
-          disabled={saving}
-          className="mt-4 border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40"
+          onClick={() => setTab('active')}
+          className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] transition-colors ${
+            tab === 'active'
+              ? 'border-emerald-300/70 text-emerald-200'
+              : 'border-transparent text-slate-500 hover:text-slate-300'
+          }`}
         >
-          {saving ? 'Saving...' : 'Queue Proposal'}
+          Active{activeProposals.length > 0 ? ` (${activeProposals.length})` : ''}
         </button>
-      </section>
+        <button
+          onClick={() => setTab('history')}
+          className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] transition-colors ${
+            tab === 'history'
+              ? 'border-emerald-300/70 text-emerald-200'
+              : 'border-transparent text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          History{archivedProposals.length > 0 ? ` (${archivedProposals.length})` : ''}
+        </button>
+      </div>
 
-      <section className="space-y-3">
-        {loading ? (
-          <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading proposals...</p>
-        ) : visibleProposals.length === 0 ? (
-          <p className="terminal-panel p-5 text-sm text-slate-400">No proposals queued yet.</p>
-        ) : (
-          visibleProposals.map((proposal) => (
-            <article key={proposal.id} className="terminal-panel p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs uppercase tracking-[0.16em] text-slate-500">{agentLabel(proposal.agentId)}</span>
-                    <span className={`border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] ${STATUS_STYLES[proposal.status]}`}>
-                      {proposalStatusLabel(proposal)}
-                    </span>
-                  </div>
-                  <h2 className="font-mono text-2xl font-black tracking-[-0.03em] text-white">
-                    {proposal.side} {proposal.ticker} - {fmtCurrency(proposal.amountDollars)}
-                  </h2>
-                  <p className="mt-1 font-mono text-xs text-slate-500">
-                    Max price: {proposal.maxPrice == null ? 'none set' : fmtCurrency(proposal.maxPrice)} - Created {new Date(proposal.createdAt).toLocaleString()}
-                  </p>
-                </div>
-                {proposal.status === 'Pending' && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => decide(proposal.id, 'ApprovedForBrokerReview')}
-                      className="border border-emerald-300/35 bg-emerald-300/10 px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-emerald-200 hover:bg-emerald-300/15"
-                    >
-                      Accept Proposal
-                    </button>
-                    <button
-                      onClick={() => startReject(proposal.id)}
-                      className="border border-red-300/35 bg-red-300/10 px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )}
-              </div>
+      {tab === 'active' && (
+        <>
+          <section className="terminal-panel p-5">
+            <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">New Proposal</p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <label className="space-y-1">
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Agent</span>
+                <select
+                  value={draft.agentId}
+                  onChange={(e) => setDraft((d) => ({ ...d, agentId: e.target.value }))}
+                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
+                >
+                  {AGENTS.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agentLabel(agent.id)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Ticker</span>
+                <input
+                  value={draft.ticker}
+                  onChange={(e) => setDraft((d) => ({ ...d, ticker: e.target.value.toUpperCase() }))}
+                  placeholder="VTI"
+                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm uppercase text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Side</span>
+                <select
+                  value={draft.side}
+                  onChange={(e) => setDraft((d) => ({ ...d, side: e.target.value as ProposalSide }))}
+                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
+                >
+                  <option value="BUY">BUY</option>
+                  <option value="SELL">SELL</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Dollars</span>
+                <input
+                  value={draft.amountDollars}
+                  onChange={(e) => setDraft((d) => ({ ...d, amountDollars: e.target.value }))}
+                  inputMode="decimal"
+                  placeholder="2500"
+                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Max Price</span>
+                <input
+                  value={draft.maxPrice}
+                  onChange={(e) => setDraft((d) => ({ ...d, maxPrice: e.target.value }))}
+                  inputMode="decimal"
+                  placeholder="optional"
+                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+                />
+              </label>
+            </div>
 
-              <div className="mt-4">
-                {(() => {
-                  const isExpanded = expandedIds.has(proposal.id);
-                  const signals = extractSignals(proposal.rationale + ' ' + proposal.riskSummary);
-                  const hook = firstSentence(proposal.rationale);
-                  const hasMore = proposal.rationale.trim().length > hook.length + 2 || !!proposal.riskSummary;
-                  return (
-                    <>
-                      <div className="border border-white/10 bg-white/[0.025] p-3">
-                        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/70">Rationale</p>
-                        <p className="text-sm leading-6 text-slate-200">{hook}</p>
-                        {signals.length > 0 && (
-                          <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {signals.map((s) => (
-                              <span
-                                key={s}
-                                className="border border-cyan-300/20 bg-cyan-300/[0.06] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-200/60"
-                              >
-                                {s}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {hasMore && (
-                          <button
-                            onClick={() => toggleExpanded(proposal.id)}
-                            className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 transition-colors hover:text-slate-300"
-                          >
-                            {isExpanded ? '↑ collapse' : '↓ full rationale'}
-                          </button>
-                        )}
-                      </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <textarea
+                value={draft.rationale}
+                onChange={(e) => setDraft((d) => ({ ...d, rationale: e.target.value }))}
+                rows={4}
+                placeholder="Why this allocation belongs in the portfolio..."
+                className="resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+              />
+              <textarea
+                value={draft.riskSummary}
+                onChange={(e) => setDraft((d) => ({ ...d, riskSummary: e.target.value }))}
+                rows={4}
+                placeholder="Sizing, liquidity, concentration, and downside notes..."
+                className="resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+              />
+            </div>
 
-                      {isExpanded && (
-                        <div className="mt-2 grid gap-2 lg:grid-cols-2">
-                          <div className="border border-white/10 bg-white/[0.025] p-3">
-                            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/50">Full Rationale</p>
-                            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.rationale}</p>
-                          </div>
-                          <div className="border border-white/10 bg-white/[0.025] p-3">
-                            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200/70">Risk Notes</p>
-                            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.riskSummary || 'No risk notes recorded.'}</p>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
+            <button
+              onClick={createProposal}
+              disabled={saving}
+              className="mt-4 border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40"
+            >
+              {saving ? 'Saving...' : 'Queue Proposal'}
+            </button>
+          </section>
 
-              {proposal.decisionNote && (
-                <p className="mt-3 border border-white/10 bg-white/[0.025] px-3 py-2 text-xs leading-5 text-slate-400">
-                  {proposal.decisionNote}
-                </p>
-              )}
-              {proposal.fulfilledAt && (
-                <p className="mt-3 border border-emerald-300/20 bg-emerald-300/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200/80">
-                  Executed {new Date(proposal.fulfilledAt).toLocaleString()}
-                  {proposal.fulfilledOrderId ? ` · order ${proposal.fulfilledOrderId}` : ''}
-                  {proposal.fulfilledShares != null ? ` · ${proposal.fulfilledShares} shares` : ''}
-                </p>
-              )}
-            </article>
-          ))
-        )}
-      </section>
+          <section className="space-y-3">
+            {loading ? (
+              <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading proposals...</p>
+            ) : activeProposals.length === 0 ? (
+              <p className="terminal-panel p-5 text-sm text-slate-400">
+                No active proposals. Older decisions live in the History tab.
+              </p>
+            ) : (
+              activeProposals.map((proposal) => (
+                <ProposalCard
+                  key={proposal.id}
+                  proposal={proposal}
+                  expanded={expandedIds.has(proposal.id)}
+                  onToggleExpanded={toggleExpanded}
+                  onAccept={(id) => decide(id, 'ApprovedForBrokerReview')}
+                  onReject={startReject}
+                />
+              ))
+            )}
+          </section>
+        </>
+      )}
+
+      {tab === 'history' && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {HISTORY_FILTERS.map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setHistoryFilter(id)}
+                className={`border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors ${
+                  historyFilter === id
+                    ? 'border-cyan-300/40 bg-cyan-300/[0.08] text-cyan-100'
+                    : 'border-white/10 bg-white/[0.02] text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <section className="space-y-3">
+            {loading ? (
+              <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading proposals...</p>
+            ) : filteredArchive.length === 0 ? (
+              <p className="terminal-panel p-5 text-sm text-slate-400">
+                {archivedProposals.length === 0
+                  ? 'Nothing archived yet — decided proposals move here 7 days after their decision.'
+                  : 'No archived proposals match this filter.'}
+              </p>
+            ) : (
+              filteredArchive.map((proposal) => (
+                <ProposalCard
+                  key={proposal.id}
+                  proposal={proposal}
+                  expanded={expandedIds.has(proposal.id)}
+                  onToggleExpanded={toggleExpanded}
+                />
+              ))
+            )}
+          </section>
+        </>
+      )}
 
       {rejectingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={cancelReject}>

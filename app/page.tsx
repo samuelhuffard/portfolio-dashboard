@@ -14,6 +14,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import NewsPanel from '@/components/command/NewsPanel';
+import RunResearchButton from '@/components/command/RunResearchButton';
 import { fmtCurrency, fmtPercent, gainLossColor } from '@/lib/format';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
@@ -31,19 +33,41 @@ interface PortfolioResponse {
   };
 }
 
-function buildChartData(performance: PerformanceRow[]) {
-  const valid = performance.filter((p) => p.portfolioValue !== null && p.spyPrice !== null);
+/**
+ * Deposit-proof benchmark comparison: normalizes NAV per unit (not raw portfolio
+ * value) against SPY, both rebased to 100 at the first row that has NAV data.
+ * Rows without NAV data (older history from before unit accounting) are skipped.
+ * Returns [] when no row has NAV data — callers must not claim a vs-S&P
+ * comparison in that case.
+ */
+function buildNavComparison(performance: PerformanceRow[]) {
+  const valid = performance.filter((p) => p.navPerUnit !== null && p.navPerUnit > 0 && p.spyPrice !== null && p.spyPrice > 0);
   if (valid.length === 0) return [];
 
-  const basePortfolio = valid[0].portfolioValue as number;
+  const baseNav = valid[0].navPerUnit as number;
   const baseSpy = valid[0].spyPrice as number;
 
   return valid.map((p) => ({
     date: p.date,
-    Portfolio: ((p.portfolioValue as number) / basePortfolio) * 100,
+    Portfolio: ((p.navPerUnit as number) / baseNav) * 100,
     'S&P 500': ((p.spyPrice as number) / baseSpy) * 100,
-    spread: ((p.portfolioValue as number) / basePortfolio) * 100 - ((p.spyPrice as number) / baseSpy) * 100,
+    spread: ((p.navPerUnit as number) / baseNav) * 100 - ((p.spyPrice as number) / baseSpy) * 100,
   }));
+}
+
+/** Padded Y domain so small accounts don't render as a flat line pinned to zero. */
+function paddedDomain(values: number[], padRatio = 0.15, minPad = 0.5): [number, number] {
+  if (values.length === 0) return [0, 1];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = Math.max((max - min) * padRatio, minPad);
+  return [min - pad, max + pad];
+}
+
+function fmtAxisDollar(v: number): string {
+  if (Math.abs(v) >= 10_000) return `$${(v / 1000).toFixed(1)}k`;
+  if (Math.abs(v) >= 100) return `$${v.toFixed(0)}`;
+  return `$${v.toFixed(2)}`;
 }
 
 function buildGrowthData(performance: PerformanceRow[]) {
@@ -132,12 +156,27 @@ export default function OverviewPage() {
   if (!data) return null;
 
   const { totals, cash, lastSynced } = data;
-  const chartData = buildChartData(data.performance);
+  const navComparison = buildNavComparison(data.performance);
+  const hasNavData = navComparison.length > 0;
   const growthData = buildGrowthData(data.performance);
   const allocation = buildAllocation(data.holdings);
   const topMovers = getTopMovers(data.holdings);
   const investedRatio = totals.totalValue ? (totals.totalMarketValue / totals.totalValue) * 100 : null;
   const cashRatio = totals.totalValue && cash !== null ? (cash / totals.totalValue) * 100 : null;
+
+  // No NAV history yet → the deposit-proof comparison isn't possible; fall back
+  // to the raw-value chart and never claim a vs-S&P comparison.
+  const effectiveMode: ChartMode = hasNavData ? chartMode : 'growth';
+  const comparisonDomain = paddedDomain(
+    navComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]),
+    0.18,
+    0.75,
+  );
+  const growthDomain = paddedDomain(
+    growthData.map((d) => d.Value),
+    0.18,
+    1,
+  );
 
   return (
     <div className="space-y-6">
@@ -151,15 +190,18 @@ export default function OverviewPage() {
               Sam's Personal Investor
             </h1>
           </div>
-          <div className="grid min-w-full grid-cols-2 gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400 sm:min-w-[420px]">
-            <div className="border border-white/10 bg-white/[0.035] p-3">
-              <p>Last Sync</p>
-              <p className="mt-2 truncate text-emerald-200">{lastSynced ?? 'Awaiting data'}</p>
+          <div className="flex flex-col gap-3 sm:items-end">
+            <div className="grid min-w-full grid-cols-2 gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400 sm:min-w-[420px]">
+              <div className="border border-white/10 bg-white/[0.035] p-3">
+                <p>Last Sync</p>
+                <p className="mt-2 truncate text-emerald-200">{lastSynced ?? 'Awaiting data'}</p>
+              </div>
+              <div className="border border-white/10 bg-white/[0.035] p-3">
+                <p>Exposure</p>
+                <p className="mt-2 text-amber-200">{investedRatio === null ? '—' : `${investedRatio.toFixed(1)}% invested`}</p>
+              </div>
             </div>
-            <div className="border border-white/10 bg-white/[0.035] p-3">
-              <p>Exposure</p>
-              <p className="mt-2 text-amber-200">{investedRatio === null ? '—' : `${investedRatio.toFixed(1)}% invested`}</p>
-            </div>
+            <RunResearchButton />
           </div>
         </div>
       </section>
@@ -176,35 +218,42 @@ export default function OverviewPage() {
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">
-                {chartMode === 'normalized' ? 'Benchmark Spread' : 'Portfolio Growth'}
+                {effectiveMode === 'normalized' ? 'NAV Per Unit, Indexed' : 'Portfolio Growth'}
               </p>
               <h2 className="text-xl font-semibold text-white">
-                {chartMode === 'normalized' ? 'Portfolio vs S&P 500' : 'Total Portfolio Value'}
+                {effectiveMode === 'normalized' ? 'NAV vs S&P 500' : 'Total Portfolio Value'}
               </h2>
+              {!hasNavData && growthData.length > 0 && (
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  No NAV-per-unit history yet — benchmark comparison unavailable
+                </p>
+              )}
             </div>
-            <div className="flex gap-1 rounded border border-white/10 bg-white/[0.04] p-1">
-              <button
-                onClick={() => setChartMode('normalized')}
-                className={`px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] transition-colors ${chartMode === 'normalized' ? 'bg-cyan-400/20 text-cyan-200' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                vs S&P 500
-              </button>
-              <button
-                onClick={() => setChartMode('growth')}
-                className={`px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] transition-colors ${chartMode === 'growth' ? 'bg-emerald-400/20 text-emerald-200' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                Growth ($)
-              </button>
-            </div>
+            {hasNavData && (
+              <div className="flex gap-1 rounded border border-white/10 bg-white/[0.04] p-1">
+                <button
+                  onClick={() => setChartMode('normalized')}
+                  className={`px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] transition-colors ${effectiveMode === 'normalized' ? 'bg-cyan-400/20 text-cyan-200' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  vs S&P 500
+                </button>
+                <button
+                  onClick={() => setChartMode('growth')}
+                  className={`px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] transition-colors ${effectiveMode === 'growth' ? 'bg-emerald-400/20 text-emerald-200' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  Growth ($)
+                </button>
+              </div>
+            )}
           </div>
-          {(chartMode === 'normalized' ? chartData : growthData).length === 0 ? (
+          {(effectiveMode === 'normalized' ? navComparison : growthData).length === 0 ? (
             <p className="border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400">
               No performance history yet — run holdings-sync to start tracking.
             </p>
-          ) : chartMode === 'normalized' ? (
-            <div className="h-[360px]">
+          ) : effectiveMode === 'normalized' ? (
+            <div className="h-[260px] sm:h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+                <AreaChart data={navComparison} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="portfolioGlow" x1="0" x2="0" y1="0" y2="1">
                       <stop offset="5%" stopColor="#00ffb2" stopOpacity={0.36} />
@@ -213,17 +262,27 @@ export default function OverviewPage() {
                   </defs>
                   <CartesianGrid stroke="rgba(148,163,184,.12)" vertical={false} />
                   <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                  <Tooltip contentStyle={{ background: '#071019', border: '1px solid rgba(0,255,178,.22)', color: '#e5fff7' }} />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    axisLine={false}
+                    tickLine={false}
+                    domain={comparisonDomain}
+                    tickFormatter={(v) => Number(v).toFixed(1)}
+                    width={48}
+                  />
+                  <Tooltip
+                    formatter={(v) => Number(v).toFixed(2)}
+                    contentStyle={{ background: '#071019', border: '1px solid rgba(0,255,178,.22)', color: '#e5fff7' }}
+                  />
                   <Area type="monotone" dataKey="Portfolio" stroke="#00ffb2" strokeWidth={3} fill="url(#portfolioGlow)" dot={false} />
                   <Line type="monotone" dataKey="S&P 500" stroke="#7dd3fc" strokeWidth={2} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-[360px]">
+            <div className="h-[260px] sm:h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={growthData}>
+                <AreaChart data={growthData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="growthGlow" x1="0" x2="0" y1="0" y2="1">
                       <stop offset="5%" stopColor="#00ffb2" stopOpacity={0.36} />
@@ -236,8 +295,9 @@ export default function OverviewPage() {
                     tick={{ fontSize: 11, fill: '#64748b' }}
                     axisLine={false}
                     tickLine={false}
-                    domain={['auto', 'auto']}
-                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                    domain={growthDomain}
+                    tickFormatter={(v) => fmtAxisDollar(Number(v))}
+                    width={58}
                   />
                   <Tooltip
                     formatter={(v) => fmtCurrency(Number(v))}
@@ -258,7 +318,7 @@ export default function OverviewPage() {
           {allocation.length === 0 ? (
             <p className="text-sm text-slate-400">No holdings allocation available.</p>
           ) : (
-            <div className="h-[360px]">
+            <div className="h-[260px] sm:h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={allocation} layout="vertical" margin={{ left: 8, right: 18 }}>
                   <CartesianGrid stroke="rgba(148,163,184,.1)" horizontal={false} />
@@ -277,6 +337,7 @@ export default function OverviewPage() {
         </section>
       </div>
 
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(360px,0.85fr)]">
       <section className="terminal-panel overflow-hidden">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5">
           <div>
@@ -314,6 +375,9 @@ export default function OverviewPage() {
           </div>
         )}
       </section>
+
+      <NewsPanel />
+      </div>
     </div>
   );
 }

@@ -23,10 +23,13 @@ test("backend proxy routes use dashboard RBAC before forwarding", () => {
   assert.match(scan, /permission:\s*'research:run'/);
   assert.match(scan, /action:\s*'RESEARCH_GENERATE'/);
 
-  const marketScans = routeSource("app/api/market-scans/route.ts");
-  assert.match(marketScans, /requireApiPermission/);
-  assert.match(marketScans, /permission:\s*'portfolio:full'/);
-  assert.match(marketScans, /permission:\s*'research:run'/);
-  assert.match(marketScans, /action:\s*'MARKET_SCANS_READ'/);
-  assert.match(marketScans, /action:\s*'MARKET_SCAN_SYNC'/);
+  const labResearch = routeSource("app/api/lab-research/route.ts");
+  assert.match(labResearch, /requireApiPermission/);
+  assert.match(labResearch, /permission:\s*'research:run'/);
+  assert.match(labResearch, /action:\s*'LAB_RESEARCH_RUN'/);
+
+  const labResearchPoll = routeSource("app/api/lab-research/[requestId]/route.ts");
+  assert.match(labResearchPoll, /requireApiPermission/);
+  assert.match(labResearchPoll, /permission:\s*'research:run'/);
+  assert.match(labResearchPoll, /action:\s*'LAB_RESEARCH_POLL'/);
 });

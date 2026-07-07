@@ -1,4 +1,5 @@
 import { google, sheets_v4 } from "googleapis";
+import { investorLedgerRow, type SignedLedgerEntry } from "./investor-ledger";
 import { getRedis } from "./redis";
 
 export async function getServiceAccountClients(): Promise<sheets_v4.Sheets> {
@@ -77,12 +78,20 @@ export async function readHoldings(
     const [ticker, name, shares, avgCost, currentPrice, marketValue, costBasis, gainLoss, gainLossPct] = row;
     if (!ticker) continue;
 
-    if (ticker === "Last synced") {
-      lastSynced = name ?? null;
+    const label = String(ticker).trim();
+
+    // The backend appends a metadata row after holdings — either ["Last synced", ts]
+    // or a single "Last synced: <ts>" cell. Never let it render as a holding.
+    if (label.toLowerCase().startsWith("last synced")) {
+      const inline = label.replace(/^last synced:?\s*/i, "").trim();
+      lastSynced = inline || (name ? String(name) : null);
       continue;
     }
 
-    if (ticker === "Cash") {
+    // Sample/preview placeholder rows (see portfolio-manager lib/sheets.js).
+    if (label.startsWith("⚠️")) continue;
+
+    if (label === "Cash") {
       cash = parseNum(marketValue ?? shares);
       continue;
     }
@@ -308,6 +317,28 @@ export async function readInvestorLedger(
       entryId: row[8] ?? null,
       rowHmac: row[9] ?? null,
     }));
+}
+
+/**
+ * Append one signed row to the append-only Investors capital ledger.
+ * Column layout (A:J) mirrors portfolio-manager/lib/sheets.js
+ * appendInvestorLedgerEntry / INVESTOR_HEADERS exactly:
+ * Date, Investor Email, Investor Name, Type, Amount ($), NAV per Unit,
+ * Units, Investor ID, Entry ID, Row HMAC.
+ * The backend created the tab + headers; the dashboard only ever appends.
+ */
+export async function appendInvestorLedgerEntry(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  entry: SignedLedgerEntry
+): Promise<void> {
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: "Investors!A1",
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [investorLedgerRow(entry)] },
+  });
 }
 
 export interface TradeLedgerEntry {

@@ -10,7 +10,8 @@ export type Permission =
   | "audit:read"
   | "approvals:manage"
   | "alerts:manage"
-  | "withdrawals:preview";
+  | "withdrawals:preview"
+  | "investors:manage";
 
 const ROLES = new Set<PortfolioRole>(["FundManager", "Client"]);
 
@@ -26,6 +27,7 @@ export const ROLE_PERMISSIONS: Record<PortfolioRole, Permission[]> = {
     "approvals:manage",
     "alerts:manage",
     "withdrawals:preview",
+    "investors:manage",
   ],
   Client: ["portfolio:read", "signals:read"],
 };

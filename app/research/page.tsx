@@ -5,10 +5,10 @@ import ResearchForm from "@/components/research/ResearchForm";
 import AnalysisReport from "@/components/research/AnalysisReport";
 import TickerInput from "@/components/research/TickerInput";
 import ComparisonTable from "@/components/research/ComparisonTable";
-import MarketScansPanel from "@/components/market-scans/MarketScansPanel";
+import AgentResearchPanel from "@/components/research/AgentResearchPanel";
 import type { ResearchResponse, AnalyzeResponse } from "@/lib/research/types";
 
-type LabTab = "research" | "comps" | "scans";
+type LabTab = "research" | "comps";
 
 // ─── Single-name research ────────────────────────────────────────────────────
 
@@ -73,6 +73,7 @@ function ResearchTab() {
       <ResearchForm onAnalyze={handleAnalyze} loading={loading} />
       {error && <div className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
       {result && <AnalysisReport result={result} onExport={handleExport} exporting={exporting} />}
+      <AgentResearchPanel defaultTicker={result?.ticker} />
     </div>
   );
 }
@@ -167,7 +168,6 @@ function CompsTab() {
 const TABS: { id: LabTab; label: string; description: string }[] = [
   { id: "research", label: "Research", description: "Single-name fundamentals, focused read, export analyst note" },
   { id: "comps", label: "Comps", description: "Compare up to five companies side by side" },
-  { id: "scans", label: "Scans", description: "Robinhood MCP scanner feed for agent research candidates" },
 ];
 
 export default function LabPage() {
@@ -200,7 +200,6 @@ export default function LabPage() {
 
       {tab === "research" && <ResearchTab />}
       {tab === "comps" && <CompsTab />}
-      {tab === "scans" && <MarketScansPanel showHeader={false} />}
     </div>
   );
 }

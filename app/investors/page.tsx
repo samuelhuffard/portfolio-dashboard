@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fmtCurrency, fmtPercent, fmtNumber, gainLossColor } from '@/lib/format';
+import ContributionForm, { type RosterOption } from '@/components/investors/ContributionForm';
+import UnattributedCard from '@/components/investors/UnattributedCard';
 
 interface InvestorPosition {
   investorId: string | null;
@@ -23,12 +25,24 @@ interface ProRataHolding {
   marketValue: number;
 }
 
+interface UnattributedCapital {
+  amount: number;
+  capitalIn: number;
+  netContributions: number;
+  detected: boolean;
+}
+
 interface InvestorsResponse {
   role: 'FundManager' | 'Client';
   navPerUnit: number | null;
+  unitsOutstanding: number | null;
+  totalFundValue: number | null;
   position: InvestorPosition | null;
   roster: InvestorPosition[];
   proRataHoldings: ProRataHolding[];
+  unattributed: UnattributedCapital | null;
+  navIsCurrent: boolean;
+  latestNavDate: string | null;
 }
 
 const gl = (v: number | null) => gainLossColor(v).replace('600', '300');
@@ -38,7 +52,7 @@ export default function InvestorsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     fetch('/api/investors')
       .then((res) => res.json())
       .then((json) => {
@@ -48,6 +62,10 @@ export default function InvestorsPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading...</p>;
   if (error) return <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>;
@@ -69,7 +87,22 @@ export default function InvestorsPage() {
 
       {isManager ? (
         <>
-          <ManagerView navPerUnit={data.navPerUnit} roster={data.roster} />
+          {data.unattributed?.detected && (
+            <UnattributedCard
+              amount={data.unattributed.amount}
+              roster={rosterOptions(data.roster)}
+              latestNavDate={data.latestNavDate}
+              navIsCurrent={data.navIsCurrent}
+              onRecorded={load}
+            />
+          )}
+          <ManagerView
+            navPerUnit={data.navPerUnit}
+            unitsOutstanding={data.unitsOutstanding}
+            totalFundValue={data.totalFundValue}
+            roster={data.roster}
+          />
+          <ContributionForm roster={rosterOptions(data.roster)} onRecorded={load} />
           <WithdrawalPreviewPanel />
         </>
       ) : (
@@ -79,12 +112,29 @@ export default function InvestorsPage() {
   );
 }
 
-function ManagerView({ navPerUnit, roster }: { navPerUnit: number | null; roster: InvestorPosition[] }) {
+function rosterOptions(roster: InvestorPosition[]): RosterOption[] {
+  return roster.map((p) => ({ email: p.email, name: p.name, investorId: p.investorId }));
+}
+
+function ManagerView({
+  navPerUnit,
+  unitsOutstanding,
+  totalFundValue,
+  roster,
+}: {
+  navPerUnit: number | null;
+  unitsOutstanding: number | null;
+  totalFundValue: number | null;
+  roster: InvestorPosition[];
+}) {
+  const rosterValue = roster.reduce((s, p) => s + (p.value ?? 0), 0);
   return (
     <div className="terminal-panel overflow-hidden p-0">
-      <div className="flex items-center justify-between border-b border-white/10 p-4">
-        <p className="mt-1 text-xs text-slate-500">NAV per unit: {navPerUnit != null ? fmtCurrency(navPerUnit, 4) : 'no NAV yet'}</p>
-        <p className="font-mono text-sm text-slate-300">{fmtCurrency(roster.reduce((s, p) => s + (p.value ?? 0), 0))} total</p>
+      <div className="grid grid-cols-2 gap-4 border-b border-white/10 p-4 sm:grid-cols-4">
+        <Stat label="Total Fund Value" value={totalFundValue != null ? fmtCurrency(totalFundValue) : fmtCurrency(rosterValue)} />
+        <Stat label="NAV per Unit" value={navPerUnit != null ? fmtCurrency(navPerUnit, 4) : 'no NAV yet'} />
+        <Stat label="Units Outstanding" value={unitsOutstanding != null ? fmtNumber(unitsOutstanding, 4) : '—'} />
+        <Stat label="Investors" value={String(roster.length)} />
       </div>
       {roster.length === 0 ? (
         <p className="p-4 text-sm text-slate-500">No investors recorded yet.</p>
