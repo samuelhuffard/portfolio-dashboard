@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
 import { assertCashAvailableForBuyProposal, createProposal, listProposals, validateProposalInput } from "@/lib/proposals";
+import { getLatestResearchScanSummary } from "@/lib/researchScan";
 import { getServiceAccountClients, getSharedSpreadsheetId, readCashBalance } from "@/lib/sheets";
 
 export async function GET(req: Request) {
@@ -14,8 +15,11 @@ export async function GET(req: Request) {
   try {
     // Full retained list (Redis keeps at most 250 ids) so the Approvals page's
     // History tab sees everything; response shape is unchanged for other callers.
-    const proposals = await listProposals(250);
-    return NextResponse.json({ proposals });
+    const [proposals, researchScan] = await Promise.all([
+      listProposals(250),
+      getLatestResearchScanSummary(),
+    ]);
+    return NextResponse.json({ proposals, researchScan });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
   }

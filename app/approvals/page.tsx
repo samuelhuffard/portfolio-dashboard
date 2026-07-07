@@ -39,6 +39,45 @@ const REJECT_REASONS = [
 
 type Tab = 'active' | 'history';
 
+interface AgentResearchScanSummary {
+  agentId: string;
+  status: 'running' | 'completed' | 'failed';
+  recommendationsWritten: number;
+  attemptedReviews: number;
+  actionCounts: {
+    BUY: number;
+    SELL: number;
+    HOLD: number;
+  };
+  proposalsCreated: number;
+  proposalCounts: {
+    BUY: number;
+    SELL: number;
+  };
+  scanErrors: number;
+  evaluatorRejects: number;
+  startedAt: string;
+  completedAt: string | null;
+  error: string | null;
+}
+
+interface ResearchScanSummary {
+  source: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+  agents: AgentResearchScanSummary[];
+  totals?: {
+    recommendationsWritten: number;
+    attemptedReviews: number;
+    proposalsCreated: number;
+    scanErrors: number;
+    evaluatorRejects: number;
+  };
+  error: string | null;
+}
+
 // History filter chips. "Fulfilled" is derived (fulfilledAt set); the status
 // filters exclude fulfilled proposals so the two don't overlap.
 type HistoryFilter = 'All' | 'Fulfilled' | Exclude<ProposalStatus, 'Pending'>;
@@ -57,8 +96,97 @@ function matchesHistoryFilter(proposal: AllocationProposal, filter: HistoryFilte
   return proposal.status === filter && !proposal.fulfilledAt;
 }
 
+function formatRunTime(value: string | null): string {
+  if (!value) return 'In progress';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown';
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(date);
+}
+
+function describeAgentScan(agent: AgentResearchScanSummary): string {
+  if (agent.status === 'failed') return agent.error || 'Agent failed before writing a result.';
+  if (agent.status === 'running') return 'Research is still running.';
+  const pieces = [
+    `${agent.actionCounts.HOLD} hold${agent.actionCounts.HOLD === 1 ? '' : 's'}`,
+    agent.actionCounts.BUY ? `${agent.actionCounts.BUY} buy signal${agent.actionCounts.BUY === 1 ? '' : 's'}` : null,
+    agent.actionCounts.SELL ? `${agent.actionCounts.SELL} sell signal${agent.actionCounts.SELL === 1 ? '' : 's'}` : null,
+    `${agent.proposalsCreated} proposal${agent.proposalsCreated === 1 ? '' : 's'}`,
+  ].filter(Boolean);
+  return pieces.join(' · ');
+}
+
+function ResearchRunSummaryCard({ scan }: { scan: ResearchScanSummary | null }) {
+  const completedAt = scan?.completedAt ?? null;
+  const statusTone =
+    scan?.status === 'failed'
+      ? 'border-red-300/35 bg-red-300/[0.06] text-red-100'
+      : scan?.status === 'running'
+        ? 'border-cyan-300/35 bg-cyan-300/[0.06] text-cyan-100'
+        : 'border-emerald-300/25 bg-emerald-300/[0.05] text-emerald-100';
+
+  return (
+    <section className="terminal-panel p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">
+            Latest Research Run
+          </p>
+          <h2 className="text-xl font-black tracking-[-0.03em] text-white">
+            {scan ? formatRunTime(scan.status === 'running' ? scan.startedAt : completedAt) : 'No run recorded yet'}
+          </h2>
+          <p className="mt-1 text-sm text-slate-400">
+            {scan
+              ? `${scan.source === 'manual' ? 'Run Research button' : 'Scheduled scan'} · ${scan.totals?.recommendationsWritten ?? 0} recommendations · ${scan.totals?.proposalsCreated ?? 0} proposals`
+              : 'Run research once to populate this status.'}
+          </p>
+        </div>
+        <div className={`w-fit border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] ${statusTone}`}>
+          {scan?.status ?? 'waiting'}
+        </div>
+      </div>
+
+      {scan?.error && <p className="mt-3 text-sm text-red-200">{scan.error}</p>}
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        {AGENTS.map((agent) => {
+          const summary = scan?.agents.find((item) => item.agentId === agent.id);
+          return (
+            <div key={agent.id} className="border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                  {agentLabel(agent.id)}
+                </p>
+                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  {summary ? `${summary.recommendationsWritten}/${summary.attemptedReviews}` : 'no data'}
+                </span>
+              </div>
+              <p className="text-sm text-slate-200">
+                {summary ? describeAgentScan(summary) : 'No result recorded for this agent.'}
+              </p>
+              {summary && (summary.scanErrors > 0 || summary.evaluatorRejects > 0) && (
+                <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-200/80">
+                  {summary.scanErrors ? `${summary.scanErrors} scan error${summary.scanErrors === 1 ? '' : 's'}` : ''}
+                  {summary.scanErrors && summary.evaluatorRejects ? ' · ' : ''}
+                  {summary.evaluatorRejects ? `${summary.evaluatorRejects} evaluator reject${summary.evaluatorRejects === 1 ? '' : 's'}` : ''}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function ApprovalsPage() {
   const [proposals, setProposals] = useState<AllocationProposal[]>([]);
+  const [researchScan, setResearchScan] = useState<ResearchScanSummary | null>(null);
   const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -100,6 +228,7 @@ export default function ApprovalsPage() {
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || 'Failed to load proposals');
       setProposals(json.proposals ?? []);
+      setResearchScan(json.researchScan ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -225,6 +354,8 @@ export default function ApprovalsPage() {
       </section>
 
       {error && <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+
+      <ResearchRunSummaryCard scan={researchScan} />
 
       {executorOnline === false && awaitingExecution > 0 && (
         <p className="border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
