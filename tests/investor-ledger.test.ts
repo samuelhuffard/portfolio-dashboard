@@ -225,6 +225,43 @@ test("seed guard: explicit seed-owner confirmation seeds NAV at $1/unit", () => 
   assert.equal(result.ownershipPct, 100);
 });
 
+test("existing-capital attribution uses contribution-basis NAV instead of inflated market NAV", () => {
+  const result = calculateInvestorLedgerEntry({
+    agentId: "portfolio",
+    ledger: [
+      buildInvestorLedgerEntry(
+        {
+          date: "2026-07-07",
+          email: "owner@example.com",
+          name: "Owner",
+          type: "Contribution",
+          amount: 25,
+          navPerUnit: 1,
+          units: 25,
+          investorId: "user_owner",
+          entryId: "entry_owner",
+        },
+        secret
+      ),
+    ],
+    // Performance was written after only the owner's seed row, so market NAV is
+    // 74.55 / 25 = 2.9819. Delayed attribution of starting capital must not use it.
+    performanceHistory: [{ date: "2026-07-07", portfolioValue: 74.55, navPerUnit: 2.9819 }],
+    email: "friend@example.com",
+    name: "Friend",
+    amount: 25,
+    isExistingCapitalAttribution: true,
+    existingCapitalNavPerUnit: 1,
+    now: new Date("2026-07-07T16:00:00-04:00"),
+    secret,
+  });
+
+  assert.equal(result.entry.navPerUnit, 1);
+  assert.equal(result.entry.units, 25);
+  assert.equal(result.unitsOutstandingAfter, 50);
+  assert.equal(result.ownershipPct, 50);
+});
+
 test("withdrawals cannot exceed the investor's units", () => {
   assert.throws(
     () =>

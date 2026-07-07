@@ -20,9 +20,32 @@ interface InvestorIdentity {
 }
 
 /** Latest NAV per unit + units outstanding from a Performance series (oldest-first), or nulls if no NAV has been computed yet (no investors, or holdings-sync hasn't run since the first contribution). */
-export function latestNav(performance: PerformanceRow[]): { navPerUnit: number | null; unitsOutstanding: number | null } {
+export function latestNav(performance: PerformanceRow[]): { navPerUnit: number | null; unitsOutstanding: number | null; portfolioValue: number | null } {
   const last = performance[performance.length - 1];
-  return { navPerUnit: last?.navPerUnit ?? null, unitsOutstanding: last?.unitsOutstanding ?? null };
+  return { navPerUnit: last?.navPerUnit ?? null, unitsOutstanding: last?.unitsOutstanding ?? null, portfolioValue: last?.portfolioValue ?? null };
+}
+
+export function currentInvestorNav(
+  performance: PerformanceRow[],
+  ledger: Pick<InvestorLedgerEntry, "units">[]
+): { navPerUnit: number | null; unitsOutstanding: number | null; portfolioValue: number | null; performanceUnitsStale: boolean } {
+  const latest = latestNav(performance);
+  const ledgerUnits = ledger.reduce((sum, entry) => sum + entry.units, 0);
+  const roundedLedgerUnits = Math.round(ledgerUnits * 10000) / 10000;
+  const performanceUnits = latest.unitsOutstanding;
+  const performanceUnitsStale =
+    roundedLedgerUnits > 0 && (performanceUnits == null || Math.abs(roundedLedgerUnits - performanceUnits) > 0.0001);
+
+  if (performanceUnitsStale && latest.portfolioValue != null) {
+    return {
+      navPerUnit: latest.portfolioValue / roundedLedgerUnits,
+      unitsOutstanding: roundedLedgerUnits,
+      portfolioValue: latest.portfolioValue,
+      performanceUnitsStale,
+    };
+  }
+
+  return { ...latest, performanceUnitsStale };
 }
 
 /** One investor's position in one agent, computed from that agent's ledger + current NAV/unit. */

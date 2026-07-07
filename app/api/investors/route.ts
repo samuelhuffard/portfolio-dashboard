@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
 import { getServiceAccountClients, getSharedSpreadsheetId, readInvestorLedger, readPerformance, readHoldings } from "@/lib/sheets";
-import { latestNav, computeInvestorPosition, computeRoster, computeProRataHoldings, type InvestorPosition, type ProRataHolding } from "@/lib/investors";
+import { currentInvestorNav, computeInvestorPosition, computeRoster, computeProRataHoldings, type InvestorPosition, type ProRataHolding } from "@/lib/investors";
 import { computeUnattributedCapital, getTodayInNewYork, type UnattributedCapital } from "@/lib/investor-ledger";
 
 interface InvestorSummary {
@@ -27,7 +27,7 @@ async function loadInvestorSummary(userId: string, email: string | null, isManag
       readHoldings(sheets, spreadsheetId).catch(() => ({ holdings: [], cash: null, lastSynced: null })),
     ]);
 
-    const { navPerUnit, unitsOutstanding } = latestNav(performance);
+    const { navPerUnit, unitsOutstanding } = currentInvestorNav(performance, ledger);
     const position = computeInvestorPosition(ledger, { userId, email }, navPerUnit, unitsOutstanding);
     const roster = isManager ? computeRoster(ledger, navPerUnit, unitsOutstanding) : [];
     const proRataHoldings = !isManager && position?.ownershipPct != null ? computeProRataHoldings(holdingsResult.holdings, position.ownershipPct) : [];

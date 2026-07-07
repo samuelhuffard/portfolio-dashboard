@@ -171,6 +171,8 @@ export interface CalculateEntryInput {
   investorId?: string | null;
   navDate?: string | null;
   allowStaleNav?: boolean;
+  isExistingCapitalAttribution?: boolean;
+  existingCapitalNavPerUnit?: number | null;
   now?: Date;
   secret: string;
 }
@@ -203,6 +205,8 @@ export function calculateInvestorLedgerEntry({
   investorId,
   navDate,
   allowStaleNav = false,
+  isExistingCapitalAttribution = false,
+  existingCapitalNavPerUnit = null,
   now = new Date(),
   secret,
 }: CalculateEntryInput): CalculateEntryResult {
@@ -214,7 +218,7 @@ export function calculateInvestorLedgerEntry({
   let seeded = false;
 
   if (unitsOutstandingBefore <= 0) {
-    if (!isSeedOwner) {
+    if (!isSeedOwner && !isExistingCapitalAttribution) {
       const existingValue = performanceHistory[performanceHistory.length - 1]?.portfolioValue ?? 0;
       if (existingValue > 1) {
         throw new Error(
@@ -224,6 +228,11 @@ export function calculateInvestorLedgerEntry({
     }
     navPerUnit = 1;
     seeded = true;
+  } else if (isExistingCapitalAttribution) {
+    if (!Number.isFinite(existingCapitalNavPerUnit) || (existingCapitalNavPerUnit as number) <= 0) {
+      throw new Error(`[${agentId}] Existing-capital attribution requires a positive contribution-basis NAV per unit.`);
+    }
+    navPerUnit = existingCapitalNavPerUnit as number;
   } else {
     const latest = performanceHistory[performanceHistory.length - 1];
     if (!latest?.portfolioValue) {

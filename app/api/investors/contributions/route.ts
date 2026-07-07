@@ -5,9 +5,10 @@ import {
   getSharedSpreadsheetId,
   readInvestorLedger,
   readPerformance,
+  readHoldings,
   appendInvestorLedgerEntry,
 } from "@/lib/sheets";
-import { calculateInvestorLedgerEntry, getInvestorLedgerSecret, getTodayInNewYork } from "@/lib/investor-ledger";
+import { calculateInvestorLedgerEntry, computeUnattributedCapital, getInvestorLedgerSecret, getTodayInNewYork } from "@/lib/investor-ledger";
 
 // Records a real contribution or withdrawal into the shared portfolio's
 // capital ledger — the dashboard twin of portfolio-manager's
@@ -26,6 +27,7 @@ interface ContributionBody {
   date?: unknown; // YYYY-MM-DD; defaults to today (America/New_York)
   investorId?: unknown;
   seedOwner?: unknown; // explicit initial-owner-seed confirmation (mirrors --seed-owner)
+  attributeExistingCapital?: unknown; // true only from the unattributed-capital card
 }
 
 export async function POST(req: Request) {
@@ -50,6 +52,7 @@ export async function POST(req: Request) {
   const date = typeof body.date === "string" && body.date.trim() ? body.date.trim() : getTodayInNewYork();
   const investorId = typeof body.investorId === "string" && body.investorId.trim() ? body.investorId.trim() : undefined;
   const seedOwner = body.seedOwner === true;
+  const attributeExistingCapital = body.attributeExistingCapital === true;
 
   if (!email || !email.includes("@")) return NextResponse.json({ error: "A valid investor email is required." }, { status: 400 });
   if (!name) return NextResponse.json({ error: "Investor name is required." }, { status: 400 });
@@ -72,10 +75,33 @@ export async function POST(req: Request) {
   try {
     const spreadsheetId = await getSharedSpreadsheetId();
     const sheets = await getServiceAccountClients();
-    const [ledger, performance] = await Promise.all([
+    const [ledger, performance, holdingsResult] = await Promise.all([
       readInvestorLedger(sheets, spreadsheetId),
       readPerformance(sheets, spreadsheetId),
+      attributeExistingCapital ? readHoldings(sheets, spreadsheetId) : Promise.resolve({ holdings: [], cash: null }),
     ]);
+    const unitsOutstandingBefore = ledger.reduce((sum, entry) => sum + entry.units, 0);
+    const netContributions = ledger.reduce((sum, entry) => {
+      if (entry.type === "Contribution") return sum + entry.amount;
+      if (entry.type === "Withdrawal") return sum - entry.amount;
+      return sum;
+    }, 0);
+    const unattributed = attributeExistingCapital ? computeUnattributedCapital(holdingsResult.holdings, holdingsResult.cash, ledger) : null;
+    if (attributeExistingCapital) {
+      if (!unattributed?.detected) {
+        return NextResponse.json({ error: "No unattributed capital is available to assign." }, { status: 409 });
+      }
+      if (amount > unattributed.amount + 0.01) {
+        return NextResponse.json(
+          { error: `Only $${unattributed.amount.toFixed(2)} of unattributed capital is available to assign.` },
+          { status: 409 }
+        );
+      }
+    }
+    const existingCapitalNavPerUnit =
+      attributeExistingCapital && unitsOutstandingBefore > 0 && netContributions > 0
+        ? netContributions / unitsOutstandingBefore
+        : 1;
 
     const today = getTodayInNewYork();
     const result = calculateInvestorLedgerEntry({
@@ -88,6 +114,8 @@ export async function POST(req: Request) {
       isWithdrawal: type === "Withdrawal",
       isSeedOwner: seedOwner,
       investorId,
+      isExistingCapitalAttribution: attributeExistingCapital,
+      existingCapitalNavPerUnit,
       // A backdated deposit is recorded at that day's NAV only if the latest
       // Performance row actually carries that date — same rule as the CLI's
       // --nav-date. Today's date means "current NAV required" (stale refusal).

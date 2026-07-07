@@ -45,7 +45,7 @@ export default function UnattributedCard({
     setError(null);
     setResult(null);
     try {
-      const json = await postContribution({ email, name, amount: Number(entryAmount), type: 'Contribution', date, seedOwner });
+      const json = await postContribution({ email, name, amount: Number(entryAmount), type: 'Contribution', date, seedOwner, attributeExistingCapital: true });
       if (json.error) {
         if (json.needsSeedOwner) setSeedPrompt(json.error);
         else setError(json.error);
