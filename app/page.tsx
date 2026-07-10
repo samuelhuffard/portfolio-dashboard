@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Cell,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -17,6 +18,7 @@ import {
 import NewsPanel from '@/components/command/NewsPanel';
 import RunResearchButton from '@/components/command/RunResearchButton';
 import { fmtCurrency, fmtPercent, gainLossColor } from '@/lib/format';
+import { buildNavComparison, paddedReturnDomain } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
 interface PortfolioResponse {
@@ -31,28 +33,6 @@ interface PortfolioResponse {
     totalGainLoss: number;
     totalGainLossPct: number | null;
   };
-}
-
-/**
- * Deposit-proof benchmark comparison: normalizes NAV per unit (not raw portfolio
- * value) against SPY, both rebased to 100 at the first row that has NAV data.
- * Rows without NAV data (older history from before unit accounting) are skipped.
- * Returns [] when no row has NAV data — callers must not claim a vs-S&P
- * comparison in that case.
- */
-function buildNavComparison(performance: PerformanceRow[]) {
-  const valid = performance.filter((p) => p.navPerUnit !== null && p.navPerUnit > 0 && p.spyPrice !== null && p.spyPrice > 0);
-  if (valid.length === 0) return [];
-
-  const baseNav = valid[0].navPerUnit as number;
-  const baseSpy = valid[0].spyPrice as number;
-
-  return valid.map((p) => ({
-    date: p.date,
-    Portfolio: ((p.navPerUnit as number) / baseNav) * 100,
-    'S&P 500': ((p.spyPrice as number) / baseSpy) * 100,
-    spread: ((p.navPerUnit as number) / baseNav) * 100 - ((p.spyPrice as number) / baseSpy) * 100,
-  }));
 }
 
 /** Padded Y domain so small accounts don't render as a flat line pinned to zero. */
@@ -167,11 +147,7 @@ export default function OverviewPage() {
   // No NAV history yet → the deposit-proof comparison isn't possible; fall back
   // to the raw-value chart and never claim a vs-S&P comparison.
   const effectiveMode: ChartMode = hasNavData ? chartMode : 'growth';
-  const comparisonDomain = paddedDomain(
-    navComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]),
-    0.18,
-    0.75,
-  );
+  const comparisonDomain = paddedReturnDomain(navComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]));
   const growthDomain = paddedDomain(
     growthData.map((d) => d.Value),
     0.18,
@@ -218,10 +194,10 @@ export default function OverviewPage() {
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">
-                {effectiveMode === 'normalized' ? 'NAV Per Unit, Indexed' : 'Portfolio Growth'}
+                {effectiveMode === 'normalized' ? 'NAV Per Unit Return' : 'Portfolio Growth'}
               </p>
               <h2 className="text-xl font-semibold text-white">
-                {effectiveMode === 'normalized' ? 'NAV vs S&P 500' : 'Total Portfolio Value'}
+                {effectiveMode === 'normalized' ? 'Return vs S&P 500' : 'Total Portfolio Value'}
               </h2>
               {!hasNavData && growthData.length > 0 && (
                 <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
@@ -267,13 +243,14 @@ export default function OverviewPage() {
                     axisLine={false}
                     tickLine={false}
                     domain={comparisonDomain}
-                    tickFormatter={(v) => Number(v).toFixed(1)}
+                    tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
                     width={48}
                   />
                   <Tooltip
-                    formatter={(v) => Number(v).toFixed(2)}
+                    formatter={(v) => `${Number(v).toFixed(2)}%`}
                     contentStyle={{ background: '#071019', border: '1px solid rgba(0,255,178,.22)', color: '#e5fff7' }}
                   />
+                  <ReferenceLine y={0} stroke="rgba(148,163,184,.35)" strokeDasharray="4 4" />
                   <Area type="monotone" dataKey="Portfolio" stroke="#00ffb2" strokeWidth={3} fill="url(#portfolioGlow)" dot={false} />
                   <Line type="monotone" dataKey="S&P 500" stroke="#7dd3fc" strokeWidth={2} dot={false} />
                 </AreaChart>

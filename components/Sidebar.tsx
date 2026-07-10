@@ -99,6 +99,17 @@ function HistoryIcon({ className }: { className?: string }) {
   );
 }
 
+function FunnelIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5h16" />
+      <path d="M7 10h10" />
+      <path d="M10 15h4" />
+      <path d="M12 15v5" />
+    </svg>
+  );
+}
+
 type NavItem = {
   href: string;
   label: string | Record<PortfolioRole, string>;
@@ -126,9 +137,10 @@ const linkGroups: NavItem[][] = [
   ],
   [
     { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '05', roles: ['FundManager'] },
+    { href: '/funnel', label: 'Funnel', Icon: FunnelIcon, code: '06', roles: ['FundManager'] },
   ],
   [
-    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '06', roles: ['FundManager'] },
+    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '07', roles: ['FundManager'] },
   ],
 ];
 
