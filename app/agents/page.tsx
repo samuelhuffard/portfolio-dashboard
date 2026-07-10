@@ -254,11 +254,49 @@ function AlertsSection({ agentId }: { agentId: string }) {
 // ─── Robinhood connect banner ─────────────────────────────────────────────────
 
 function CompanionStatusBanner() {
+  const [status, setStatus] = useState<'online' | 'offline' | 'unknown'>('unknown');
+  const [lastSeen, setLastSeen] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      try {
+        const res = await fetch('/api/companion/trigger');
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Status unavailable');
+        if (!cancelled) {
+          setStatus(json.online ? 'online' : 'offline');
+          setLastSeen(json.lastSeen ?? null);
+        }
+      } catch {
+        if (!cancelled) setStatus('unknown');
+      }
+    }
+    check();
+    const interval = setInterval(check, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const styles = {
+    online: 'border-emerald-300/20 bg-emerald-300/[0.04] text-emerald-300/80',
+    offline: 'border-red-300/25 bg-red-300/[0.04] text-red-300/85',
+    unknown: 'border-amber-300/20 bg-amber-300/[0.04] text-amber-200/80',
+  }[status];
+  const dot = status === 'online' ? 'bg-emerald-400' : status === 'offline' ? 'bg-red-400' : 'bg-amber-300';
+  const label = status === 'online'
+    ? 'Execution companion online'
+    : status === 'offline'
+      ? `Execution companion offline${lastSeen ? ` · last seen ${new Date(lastSeen).toLocaleString()}` : ''}`
+      : 'Execution companion status unavailable';
+
   return (
-    <div className="flex items-center gap-2 border border-emerald-300/20 bg-emerald-300/[0.04] px-4 py-2">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-300/80">
-        Mac companion active · Robinhood ••••4149
+    <div className={`flex items-center gap-2 border px-4 py-2 ${styles}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em]">
+        {label}
       </span>
     </div>
   );

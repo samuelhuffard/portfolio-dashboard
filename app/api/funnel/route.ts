@@ -4,7 +4,7 @@ import { readFunnelHistory, readFunnelSnapshots } from "@/lib/funnel";
 
 export async function GET(req: Request) {
   const authz = await requireApiPermission({
-    permission: "signals:read",
+    permission: "portfolio:full",
     action: "SIGNALS_READ",
     request: req,
   });

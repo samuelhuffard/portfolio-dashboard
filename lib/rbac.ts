@@ -29,7 +29,7 @@ export const ROLE_PERMISSIONS: Record<PortfolioRole, Permission[]> = {
     "withdrawals:preview",
     "investors:manage",
   ],
-  Client: ["portfolio:read", "signals:read"],
+  Client: ["portfolio:read"],
 };
 
 export interface ResolveRoleInput {

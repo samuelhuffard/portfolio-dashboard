@@ -6,7 +6,7 @@ import { getAgent } from "@/lib/agents";
 
 export async function GET(req: Request, { params }: { params: Promise<{ agentId: string }> }) {
   const authz = await requireApiPermission({
-    permission: "signals:read",
+    permission: "portfolio:full",
     action: "AGENT_BOOK_READ",
     request: req,
   });
