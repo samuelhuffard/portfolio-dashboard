@@ -229,7 +229,7 @@ async function reconcileViaClaude(proposal) {
 
   const prompt = `Use the Robinhood MCP (read-only order tools) on my Agentic account. Do NOT place, cancel, or modify any order.
 
-Call get_equity_orders with symbol ${ticker} and created_at_gte ${sinceIso}, and look for the order whose ref_id is "${id}". If ref_id is not visible in the response, treat the most recent agentic ${ticker} order created after ${sinceIso} as the candidate.
+Call get_equity_orders with symbol ${ticker} and created_at_gte ${sinceIso}. Return found=true ONLY for the order whose ref_id is exactly "${id}". If ref_id is missing or not visible, return found=false. Never guess from ticker, time, or recency.
 
 Respond with ONLY this JSON (no other text):
 {"found": true, "orderId": "...", "state": "filled|new|queued|confirmed|partially_filled|cancelled|rejected|failed", "shares": 0.0, "price": 0.00}
@@ -489,10 +489,21 @@ async function executeProposal(id, proposal) {
       await alertTelegram(`Execution result for ${proposal.side} $${proposal.amountDollars} ${proposal.ticker} (proposal ${id}) reported a non-UUID orderId ("${String(result.orderId).slice(0, 40)}") — treating outcome as unknown; reconciling against the broker next poll.`);
       return;
     }
+    const brokerResult = await reconcileViaClaude({
+      ...proposal,
+      executionStartedAt: new Date().toISOString(),
+    });
+    const decision = decideReconcileAction(brokerResult);
+    if (decision.action !== "record" || decision.orderId !== result.orderId) {
+      await alertTelegram(
+        `Order result for ${proposal.side} ${proposal.ticker} (proposal ${id}) was not independently confirmed as an exact filled broker order. Leaving it in Executing for reconciliation.`
+      );
+      return;
+    }
     await recordAndFulfill(id, proposal, {
-      orderId: result.orderId,
-      shares: result.shares,
-      price: result.price ?? (result.shares ? (proposal.amountDollars / result.shares).toFixed(4) : null),
+      orderId: decision.orderId,
+      shares: decision.shares,
+      price: decision.price,
     });
   } else {
     // The model REPORTED failure, but that's not proof no order was placed —
@@ -505,22 +516,17 @@ async function executeProposal(id, proposal) {
 async function reconcileProposal(id, proposal) {
   console.log(`[companion] Reconciling proposal ${id} (${proposal.side} ${proposal.ticker}) against broker...`);
 
-  // Case 1: order confirmed earlier, only the ledger write is outstanding.
-  if (proposal.executionOrderId) {
-    await recordAndFulfill(id, proposal, {
-      orderId: proposal.executionOrderId,
-      shares: proposal.executionShares,
-      price: proposal.executionPrice,
-    });
-    return;
-  }
-
-  // Case 2: outcome unknown — ask the broker, then act per the decision table
+  // Ask the broker on every retry, even if an earlier process stored an order
+  // ID. Stored process state is not broker confirmation.
   // in companion-core.mjs (tested in tests/companion-core.test.ts).
   const rec = await reconcileViaClaude(proposal);
   const decision = decideReconcileAction(rec);
 
   if (decision.action === "record") {
+    if (proposal.executionOrderId && proposal.executionOrderId !== decision.orderId) {
+      await alertTelegram(`Reconciliation order mismatch for proposal ${id}: stored ${proposal.executionOrderId}, broker returned ${decision.orderId}. Manual review required.`);
+      return;
+    }
     await recordAndFulfill(id, proposal, { orderId: decision.orderId, shares: decision.shares, price: decision.price });
   } else if (decision.action === "retry") {
     console.log(`[companion] ${id}: ${decision.alert ?? "no broker order found"} — clearing Executing state for retry.`);

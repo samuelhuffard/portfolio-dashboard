@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   computeDecisionSignature as companionSignature,
   verifyApprovalSignature,
@@ -93,6 +94,14 @@ test("fabricated order IDs are rejected before recording", () => {
   assert.equal(isPlausibleOrderId(""), false);
   assert.equal(isPlausibleOrderId(undefined), false);
   assert.equal(isPlausibleOrderId("I placed the order successfully"), false);
+});
+
+test("companion reconciliation requires exact ref_id and broker confirmation before accounting", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /Return found=true ONLY for the order whose ref_id is exactly/);
+  assert.match(source, /Never guess from ticker, time, or recency/);
+  assert.doesNotMatch(source, /treat the most recent agentic/);
+  assert.match(source, /decision\.action !== "record" \|\| decision\.orderId !== result\.orderId/);
 });
 
 test("market clock: weekends, holidays, and hours", () => {
