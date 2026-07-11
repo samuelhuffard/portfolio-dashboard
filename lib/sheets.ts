@@ -1,6 +1,7 @@
 import { google, sheets_v4 } from "googleapis";
-import { investorLedgerRow, type SignedLedgerEntry } from "./investor-ledger";
+import { assertInvestorLedgerEntries, investorLedgerRow, type SignedLedgerEntry } from "./investor-ledger";
 import { getRedis } from "./redis";
+import { assertOperationalLedgerEntries } from "./operational-ledger";
 
 export async function getServiceAccountClients(): Promise<sheets_v4.Sheets> {
   const scopes = ["https://www.googleapis.com/auth/spreadsheets"];
@@ -193,6 +194,7 @@ export interface PerformanceRow {
   spyPrice: number | null;
   unitsOutstanding: number | null;
   navPerUnit: number | null;
+  rowHmac?: string | null;
 }
 
 export async function readPerformance(
@@ -201,11 +203,12 @@ export async function readPerformance(
 ): Promise<PerformanceRow[]> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "Performance!A2:E",
+    range: "Performance!A2:F",
+    valueRenderOption: "UNFORMATTED_VALUE",
   });
 
   const rows = res.data.values ?? [];
-  return rows
+  const entries = rows
     .filter((row) => row[0])
     .map((row) => ({
       date: row[0],
@@ -213,7 +216,9 @@ export async function readPerformance(
       spyPrice: parseNum(row[2]),
       unitsOutstanding: parseNum(row[3]),
       navPerUnit: parseNum(row[4]),
+      rowHmac: row[5] || null,
     }));
+  return assertOperationalLedgerEntries("performance", entries);
 }
 
 export interface Recommendation {
@@ -290,7 +295,7 @@ export interface InvestorLedgerEntry {
   units: number;
   investorId: string | null;
   entryId: string | null;
-  rowHmac: string | null;
+  rowHmac?: string | null;
 }
 
 /** Full capital ledger for one agent — every contribution/withdrawal ever recorded via record-contribution.js. */
@@ -301,9 +306,10 @@ export async function readInvestorLedger(
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: "Investors!A2:J",
+    valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = res.data.values ?? [];
-  return rows
+  const entries = rows
     .filter((row) => row[0])
     .map((row) => ({
       date: row[0],
@@ -317,6 +323,7 @@ export async function readInvestorLedger(
       entryId: row[8] ?? null,
       rowHmac: row[9] ?? null,
     }));
+  return assertInvestorLedgerEntries(entries);
 }
 
 /**
@@ -352,12 +359,13 @@ export interface TradeLedgerEntry {
   agentId: string;
   proposalId: string | null;
   realizedGain: number | null;
+  rowHmac?: string | null;
 }
 
 export async function readTradeLedger(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<TradeLedgerEntry[]> {
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Trade Ledger!A2:J" });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Trade Ledger!A2:K", valueRenderOption: "UNFORMATTED_VALUE" });
   const rows = res.data.values ?? [];
-  return rows
+  const entries = rows
     .filter((row) => row[0])
     .map((row) => ({
       date: row[0],
@@ -370,7 +378,9 @@ export async function readTradeLedger(sheets: sheets_v4.Sheets, spreadsheetId: s
       agentId: row[7] || "unattributed",
       proposalId: row[8] || null,
       realizedGain: parseNum(row[9]),
+      rowHmac: row[10] || null,
     }));
+  return assertOperationalLedgerEntries("trade", entries);
 }
 
 export interface Lot {
@@ -382,12 +392,13 @@ export interface Lot {
   sharesOriginal: number;
   sharesOpen: number;
   status: string;
+  rowHmac?: string | null;
 }
 
 export async function readLots(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<Lot[]> {
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Lots!A2:H" });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Lots!A2:I", valueRenderOption: "UNFORMATTED_VALUE" });
   const rows = res.data.values ?? [];
-  return rows
+  const entries = rows
     .filter((row) => row[0])
     .map((row) => ({
       lotId: row[0],
@@ -398,7 +409,9 @@ export async function readLots(sheets: sheets_v4.Sheets, spreadsheetId: string):
       sharesOriginal: parseNum(row[5]) ?? 0,
       sharesOpen: parseNum(row[6]) ?? 0,
       status: row[7] || "OPEN",
+      rowHmac: row[8] || null,
     }));
+  return assertOperationalLedgerEntries("lot", entries);
 }
 
 export interface TrackRecordRow {

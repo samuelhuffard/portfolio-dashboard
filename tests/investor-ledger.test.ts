@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  assertInvestorLedgerEntries,
   buildInvestorLedgerEntry,
   calculateInvestorLedgerEntry,
   computeInvestorLedgerHmac,
@@ -13,6 +14,16 @@ import {
 } from "../lib/investor-ledger";
 
 const secret = "test-secret";
+
+test("investor money-state reads fail closed on unsigned or modified rows", () => {
+  const entry = buildInvestorLedgerEntry({
+    date: "2026-07-10", email: "investor@example.com", name: "Investor", type: "Contribution",
+    amount: 1000, navPerUnit: 1, units: 1000, investorId: "user_123", entryId: "entry_1",
+  }, secret);
+  assert.equal(assertInvestorLedgerEntries([entry], secret).length, 1);
+  assert.throws(() => assertInvestorLedgerEntries([{ ...entry, rowHmac: null }], secret), /1 unsigned/);
+  assert.throws(() => assertInvestorLedgerEntries([{ ...entry, amount: 999 }], secret), /1 mismatched/);
+});
 
 // ── HMAC cross-check vs the backend implementation ──────────────────────────
 // The canonical signer lives in portfolio-manager/lib/investor-ledger.js.

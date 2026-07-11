@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { InvestorLedgerEntry as LedgerRow, PerformanceRow, Holding } from "./sheets";
 
 // Faithful TypeScript port of portfolio-manager/lib/investor-ledger.js — the
@@ -86,6 +86,25 @@ export function computeInvestorLedgerHmac(
     units: entry.units,
   };
   return createHmac("sha256", secret).update(stableJson(canonical)).digest("hex");
+}
+
+export function assertInvestorLedgerEntries<T extends {
+  amount: number; date: string; email: string; entryId: string | null; investorId: string | null;
+  name: string; navPerUnit: number | null; type: string; units: number; rowHmac: string | null;
+}>(entries: T[], secret = getInvestorLedgerSecret()): T[] {
+  let unsigned = 0;
+  let mismatched = 0;
+  for (const entry of entries) {
+    if (!entry.rowHmac || !entry.entryId || !entry.investorId || entry.navPerUnit === null) {
+      unsigned += 1;
+      continue;
+    }
+    const expected = Buffer.from(computeInvestorLedgerHmac({ ...entry, entryId: entry.entryId, investorId: entry.investorId, navPerUnit: entry.navPerUnit }, secret), "hex");
+    const provided = Buffer.from(entry.rowHmac, "hex");
+    if (provided.length !== expected.length || provided.length === 0 || !timingSafeEqual(provided, expected)) mismatched += 1;
+  }
+  if (unsigned || mismatched) throw new Error(`investor ledger integrity check failed: ${unsigned} unsigned, ${mismatched} mismatched row(s).`);
+  return entries;
 }
 
 export interface BuildEntryInput {

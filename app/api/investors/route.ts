@@ -24,8 +24,8 @@ async function loadInvestorSummary(userId: string, email: string | null, isManag
     const sheets = await getServiceAccountClients();
 
     const [ledger, performance, holdingsResult] = await Promise.all([
-      readInvestorLedger(sheets, spreadsheetId).catch(() => []),
-      readPerformance(sheets, spreadsheetId).catch(() => []),
+      readInvestorLedger(sheets, spreadsheetId),
+      readPerformance(sheets, spreadsheetId),
       readHoldings(sheets, spreadsheetId).catch(() => ({ holdings: [], cash: null, lastSynced: null })),
     ]);
 
@@ -52,7 +52,8 @@ async function loadInvestorSummary(userId: string, email: string | null, isManag
       navIsCurrent,
       latestNavDate,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && /ledger integrity check failed|unverified money state/.test(error.message)) throw error;
     // Shared spreadsheet not provisioned yet — treat as having no investor data rather than erroring the whole response.
     return {
       navPerUnit: null,
