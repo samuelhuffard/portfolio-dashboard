@@ -96,7 +96,7 @@ export function ResultLine({ result }: { result: RecordResponse }) {
   return (
     <p className="border border-emerald-300/30 bg-emerald-300/5 px-4 py-3 font-mono text-xs text-emerald-200">
       {result.seeded ? 'SEEDED @ $1.0000/unit — ' : ''}
-      {result.entry.type === 'Withdrawal' ? 'WITHDRAWAL' : 'CONTRIBUTION'} recorded: {fmtCurrency(result.entry.amount)} for{' '}
+      CONTRIBUTION recorded: {fmtCurrency(result.entry.amount)} for{' '}
       {result.entry.name} → {fmtNumber(result.entry.units, 4)} units @ {fmtCurrency(result.entry.navPerUnit, 4)}/unit
       {result.ownershipPct != null ? ` · ownership ${fmtPercent(result.ownershipPct, 2).replace('+', '')}` : ''}
     </p>
@@ -136,7 +136,6 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
   const [email, setEmail] = useState(roster[0]?.email ?? '');
   const [name, setName] = useState(roster[0]?.name ?? '');
   const [amount, setAmount] = useState('');
-  const [type, setType] = useState<'Contribution' | 'Withdrawal'>('Contribution');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +147,7 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
     setError(null);
     setResult(null);
     try {
-      const json = await postContribution({ email, name, amount: Number(amount), type, date, seedOwner });
+      const json = await postContribution({ email, name, amount: Number(amount), type: 'Contribution', date, seedOwner });
       if (json.error) {
         if (json.needsSeedOwner) setSeedPrompt(json.error);
         else setError(json.error);
@@ -185,10 +184,6 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
           className={inputClass}
           aria-label="Amount"
         />
-        <select value={type} onChange={(e) => setType(e.target.value as 'Contribution' | 'Withdrawal')} className={inputClass} aria-label="Entry type">
-          <option value="Contribution">Contribution</option>
-          <option value="Withdrawal">Withdrawal</option>
-        </select>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} aria-label="Date" />
       </div>
 
@@ -200,7 +195,7 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
           disabled={busy || !email || !name || !amount}
           className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40"
         >
-          {busy ? 'Recording...' : type === 'Withdrawal' ? 'Record withdrawal' : 'Record contribution'}
+          {busy ? 'Recording...' : 'Record contribution'}
         </button>
       )}
 

@@ -364,4 +364,6 @@ test("contributions route enforces investors:manage + INVESTOR_CONTRIBUTION_RECO
   assert.match(source, /calculateInvestorLedgerEntry/); // rules enforced server-side
   assert.match(source, /getInvestorLedgerSecret/); // signing fails closed
   assert.doesNotMatch(source, /ALLOW_UNSIGNED/); // no unsigned escape hatch in the dashboard
+  assert.match(source, /Only confirmed Contributions may be recorded here/);
+  assert.doesNotMatch(source, /body\.type === "Withdrawal"/);
 });

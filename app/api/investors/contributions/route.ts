@@ -10,7 +10,7 @@ import {
 } from "@/lib/sheets";
 import { calculateInvestorLedgerEntry, computeUnattributedCapital, getInvestorLedgerSecret, getTodayInNewYork } from "@/lib/investor-ledger";
 
-// Records a real contribution or withdrawal into the shared portfolio's
+// Records a confirmed contribution into the shared portfolio's
 // capital ledger — the dashboard twin of portfolio-manager's
 // scripts/record-contribution.js. Never moves money; only records what Sam
 // confirms already happened. Every rule (stale NAV, seed-owner guard,
@@ -23,7 +23,7 @@ interface ContributionBody {
   email?: unknown;
   name?: unknown;
   amount?: unknown;
-  type?: unknown; // "Contribution" | "Withdrawal"
+  type?: unknown; // must be "Contribution"
   date?: unknown; // YYYY-MM-DD; defaults to today (America/New_York)
   investorId?: unknown;
   seedOwner?: unknown; // explicit initial-owner-seed confirmation (mirrors --seed-owner)
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   const email = typeof body.email === "string" ? body.email.trim() : "";
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const amount = typeof body.amount === "number" ? body.amount : Number(body.amount);
-  const type = body.type === "Withdrawal" ? "Withdrawal" : body.type === "Contribution" ? "Contribution" : null;
+  const type = body.type === "Contribution" ? "Contribution" : null;
   const date = typeof body.date === "string" && body.date.trim() ? body.date.trim() : getTodayInNewYork();
   const investorId = typeof body.investorId === "string" && body.investorId.trim() ? body.investorId.trim() : undefined;
   const seedOwner = body.seedOwner === true;
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   if (!email || !email.includes("@")) return NextResponse.json({ error: "A valid investor email is required." }, { status: 400 });
   if (!name) return NextResponse.json({ error: "Investor name is required." }, { status: 400 });
   if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: "Amount must be a positive number." }, { status: 400 });
-  if (!type) return NextResponse.json({ error: 'Type must be "Contribution" or "Withdrawal".' }, { status: 400 });
+  if (!type) return NextResponse.json({ error: 'Only confirmed Contributions may be recorded here. Use the canonical withdrawal workflow after previewing the sell-down.' }, { status: 400 });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "Date must be YYYY-MM-DD." }, { status: 400 });
 
   // Fail CLOSED: no secret, no write — the dashboard has no unsigned escape hatch.
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
       email,
       name,
       amount,
-      isWithdrawal: type === "Withdrawal",
+      isWithdrawal: false,
       isSeedOwner: seedOwner,
       investorId,
       isExistingCapitalAttribution: attributeExistingCapital,
