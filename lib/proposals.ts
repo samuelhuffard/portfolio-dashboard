@@ -1,5 +1,19 @@
 import { createHmac, randomUUID } from "crypto";
 import { getRedis } from "./redis";
+// Shared cross-repo contract (canonical: ../portfolio-manager/contracts/, mirrored
+// here by `npm run contracts:sync`, enforced by tests/contracts-drift.test.ts).
+// The runtime membership/limits/validation live there so they cannot drift from
+// the backend + companion.
+import {
+  PROPOSAL_STATUSES,
+  MAX_PROPOSALS,
+  MAX_AMOUNT_DOLLARS,
+  PROPOSAL_EXPIRY_MS,
+  TICKER_RE,
+  validateProposalInput,
+} from "./contracts/proposal.js";
+
+export { validateProposalInput };
 
 export type ProposalSide = "BUY" | "SELL";
 export type ProposalStatus = "Pending" | "ApprovedForBrokerReview" | "Rejected" | "Expired";
@@ -79,11 +93,6 @@ export interface ProposalInput {
 }
 
 const LIST_KEY = "pm:approval_proposals";
-const MAX_PROPOSALS = 250;
-const MAX_AMOUNT_DOLLARS = 10000;
-const PROPOSAL_EXPIRY_MS = 48 * 60 * 60 * 1000;
-const AGENT_IDS = new Set(["agent-1", "agent-2", "agent-3"]);
-const STATUSES = new Set<ProposalStatus>(["Pending", "ApprovedForBrokerReview", "Rejected", "Expired"]);
 
 function keyFor(id: string): string {
   return `pm:approval_proposal:${id}`;
@@ -96,46 +105,6 @@ function toFinitePositiveNumber(value: unknown): number | null {
 
 function cleanText(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value.trim() : fallback;
-}
-
-export function validateProposalInput(input: ProposalInput): { ok: true; value: Omit<AllocationProposal, "id" | "status" | "createdAt" | "updatedAt" | "expiresAt" | "createdByUserId" | "createdByEmail" | "decidedAt" | "decidedByUserId" | "decisionNote" | "fulfilledAt" | "fulfilledOrderId" | "fulfilledShares" | "decisionHmac"> } | { ok: false; error: string } {
-  const agentId = cleanText(input.agentId);
-  if (!AGENT_IDS.has(agentId)) return { ok: false, error: "Select a valid agent." };
-
-  const ticker = cleanText(input.ticker).toUpperCase();
-  if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker)) return { ok: false, error: "Enter a valid ticker." };
-
-  const side = cleanText(input.side).toUpperCase();
-  if (side !== "BUY" && side !== "SELL") return { ok: false, error: "Side must be BUY or SELL." };
-
-  const amountDollars = toFinitePositiveNumber(input.amountDollars);
-  if (amountDollars == null) return { ok: false, error: "Amount must be a positive dollar value." };
-  if (amountDollars > MAX_AMOUNT_DOLLARS) return { ok: false, error: `Amount cannot exceed $${MAX_AMOUNT_DOLLARS.toLocaleString()} per proposal.` };
-
-  const maxPriceRaw = input.maxPrice === "" || input.maxPrice == null ? null : toFinitePositiveNumber(input.maxPrice);
-  if (input.maxPrice !== "" && input.maxPrice != null && maxPriceRaw == null) {
-    return { ok: false, error: "Max price must be blank or a positive number." };
-  }
-
-  const rationale = cleanText(input.rationale);
-  if (rationale.length < 12) return { ok: false, error: "Rationale must explain the setup." };
-  if (rationale.length > 2000) return { ok: false, error: "Rationale is too long." };
-
-  const riskSummary = cleanText(input.riskSummary, "Manager reviewed standard sizing and liquidity constraints.");
-  if (riskSummary.length > 2000) return { ok: false, error: "Risk summary is too long." };
-
-  return {
-    ok: true,
-    value: {
-      agentId,
-      ticker,
-      side,
-      amountDollars: Math.round(amountDollars * 100) / 100,
-      maxPrice: maxPriceRaw == null ? null : Math.round(maxPriceRaw * 100) / 100,
-      rationale,
-      riskSummary,
-    },
-  };
 }
 
 function parseProposal(value: unknown): AllocationProposal | null {
@@ -160,7 +129,7 @@ async function expireIfNeeded(proposal: AllocationProposal | null): Promise<Allo
 
 export function normalizeDecisionStatus(status: unknown): Exclude<ProposalStatus, "Pending"> {
   const normalizedStatus = cleanText(status);
-  if (!STATUSES.has(normalizedStatus as ProposalStatus) || normalizedStatus === "Pending") {
+  if (!PROPOSAL_STATUSES.includes(normalizedStatus) || normalizedStatus === "Pending") {
     throw new Error("Decision must approve or reject the proposal.");
   }
   return normalizedStatus as Exclude<ProposalStatus, "Pending">;
