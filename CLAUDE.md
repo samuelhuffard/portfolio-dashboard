@@ -17,4 +17,6 @@ System docs live in the backend repo: `../portfolio-manager/docs/` — `ONBOARDI
 
 ## Verify + deploy
 
-`npm test && npm run lint && npm run build` (lint = `tsc --noEmit`). Deploy: `npx vercel --prod --scope samuelhuffard-9533s-projects`; smoke: `/sign-in` 200, `/api/portfolio` 401 signed-out. Executor "deploy" = `git pull` + `pm2 restart portfolio-executor --update-env` on the Mac (needs a `../portfolio-manager` sibling checkout with `.env`).
+`npm test && npm run lint && npm run build` (lint = `tsc --noEmit`). Deploy: `npx vercel --prod --scope samuelhuffard-9533s-projects`; smoke: `/sign-in` 200, `/api/portfolio` 401 signed-out.
+
+**Contracts drift guard (must run locally before deploy):** `lib/contracts/` is a mechanically-synced mirror of `../portfolio-manager/contracts/`. `tests/contracts-drift.test.ts` byte-checks it, but **Vercel cannot run that test** (it has no sibling backend checkout). So run `npm run predeploy` (contracts drift + tsc) locally before `vercel --prod` — a drifted mirror would otherwise ship silently. `npm test` also covers it. Executor "deploy" = `git pull` + `pm2 restart portfolio-executor --update-env` on the Mac (needs a `../portfolio-manager` sibling checkout with `.env`).
