@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { getRedis } from "./redis";
 import { computeDecisionSignature } from "./contracts/signature.js";
+import { shadowProposalLifecycle } from "./proposal-shadow";
 // Shared cross-repo contract (canonical: ../portfolio-manager/contracts/, mirrored
 // here by `npm run contracts:sync`, enforced by tests/contracts-drift.test.ts).
 // The runtime membership/limits/validation live there so they cannot drift from
@@ -103,7 +104,15 @@ async function expireIfNeeded(proposal: AllocationProposal | null): Promise<Allo
 
   const expired: AllocationProposal = { ...proposal, status: "Expired", expiresAt, updatedAt: new Date().toISOString() };
   const redis = getRedis();
-  if (redis) await redis.set(keyFor(expired.id), JSON.stringify(expired)).catch(() => {});
+  if (redis) {
+    try {
+      await redis.set(keyFor(expired.id), JSON.stringify(expired));
+      await shadowProposalLifecycle(expired);
+    } catch {
+      // Preserve the existing read-path behavior, but never shadow a lifecycle
+      // transition that failed to land in authoritative Redis.
+    }
+  }
   return expired;
 }
 
@@ -290,6 +299,7 @@ export async function createProposal(input: ReturnType<typeof validateProposalIn
   await redis.set(keyFor(proposal.id), JSON.stringify(proposal));
   await redis.lpush(LIST_KEY, proposal.id);
   await redis.ltrim(LIST_KEY, 0, MAX_PROPOSALS - 1);
+  await shadowProposalLifecycle(proposal);
   return proposal;
 }
 
@@ -303,6 +313,7 @@ export async function updateProposalDecision(id: string, status: unknown, note: 
   const updated = applyProposalDecision(current, status, note, userId);
 
   await redis.set(keyFor(updated.id), JSON.stringify(updated));
+  await shadowProposalLifecycle(updated);
   return updated;
 }
 
@@ -385,5 +396,6 @@ export async function updateProposalFields(
   };
 
   await redis.set(keyFor(id), JSON.stringify(updated));
+  await shadowProposalLifecycle(updated);
   return updated;
 }

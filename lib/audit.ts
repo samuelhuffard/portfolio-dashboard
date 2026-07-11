@@ -38,6 +38,7 @@ export type AuditAction =
   | "LAB_RESEARCH_POLL"
   | "INVESTOR_CONTRIBUTION_RECORD"
   | "ACTIVITY_READ"
+  | "PORTFOLIO_MANAGER_SHADOW_READ"
   | "RATE_LIMIT_REJECT";
 
 export interface AuditEventInput {

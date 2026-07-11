@@ -137,12 +137,13 @@ const linkGroups: NavItem[][] = [
   ],
   [
     { href: '/agents', label: 'Agents', Icon: AgentsIcon, code: '05', roles: ['FundManager'] },
-    { href: '/approvals', label: 'Approvals', Icon: HoldingsIcon, code: '06', roles: ['FundManager'] },
-    { href: '/strategy', label: 'Strategy', Icon: ResearchIcon, code: '07', roles: ['FundManager'] },
-    { href: '/funnel', label: 'Funnel', Icon: FunnelIcon, code: '08', roles: ['FundManager'] },
+    { href: '/portfolio-manager', label: 'Agent 4', Icon: ApprovalsIcon, code: '06', roles: ['FundManager'] },
+    { href: '/approvals', label: 'Approvals', Icon: HoldingsIcon, code: '07', roles: ['FundManager'] },
+    { href: '/strategy', label: 'Strategy', Icon: ResearchIcon, code: '08', roles: ['FundManager'] },
+    { href: '/funnel', label: 'Funnel', Icon: FunnelIcon, code: '09', roles: ['FundManager'] },
   ],
   [
-    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '09', roles: ['FundManager'] },
+    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '10', roles: ['FundManager'] },
   ],
 ];
 

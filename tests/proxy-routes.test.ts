@@ -48,4 +48,9 @@ test("backend proxy routes use dashboard RBAC before forwarding", () => {
   assert.match(activity, /requireApiPermission/);
   assert.match(activity, /permission:\s*'portfolio:read'/);
   assert.match(activity, /action:\s*'ACTIVITY_READ'/);
+
+  const portfolioManager = routeSource("app/api/portfolio-manager/route.ts");
+  assert.match(portfolioManager, /requireApiPermission/);
+  assert.match(portfolioManager, /permission:\s*['"]approvals:manage['"]/);
+  assert.match(portfolioManager, /action:\s*['"]PORTFOLIO_MANAGER_SHADOW_READ['"]/);
 });
