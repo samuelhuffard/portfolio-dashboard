@@ -1,5 +1,6 @@
-import { createHmac, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import { getRedis } from "./redis";
+import { computeDecisionSignature } from "./contracts/signature.js";
 // Shared cross-repo contract (canonical: ../portfolio-manager/contracts/, mirrored
 // here by `npm run contracts:sync`, enforced by tests/contracts-drift.test.ts).
 // The runtime membership/limits/validation live there so they cannot drift from
@@ -54,33 +55,12 @@ export interface AllocationProposal {
   decisionHmac: string | null;
 }
 
-/**
- * Canonical signature payload. Every field that determines what trade gets
- * executed is included; fulfillment bookkeeping fields are not (they change
- * after approval and don't alter the authorized trade).
- * Mirrored in portfolio-manager/lib/proposal-signature.js and
- * scripts/mac-companion.mjs — keep the three in sync.
- */
-export function computeDecisionSignature(
-  proposal: Pick<
-    AllocationProposal,
-    "id" | "status" | "agentId" | "ticker" | "side" | "amountDollars" | "maxPrice" | "decidedAt" | "decidedByUserId"
-  >,
-  secret: string
-): string {
-  const payload = [
-    proposal.id,
-    proposal.status,
-    proposal.agentId,
-    proposal.ticker,
-    proposal.side,
-    String(proposal.amountDollars),
-    proposal.maxPrice == null ? "" : String(proposal.maxPrice),
-    proposal.decidedAt ?? "",
-    proposal.decidedByUserId ?? "",
-  ].join("|");
-  return createHmac("sha256", secret).update(payload).digest("hex");
-}
+// The signature payload + HMAC now live single-source in the shared contract
+// (lib/contracts/signature.js). Re-exported so existing importers of this module
+// are unaffected. Every trade-defining field is included; fulfillment
+// bookkeeping fields are not (they change after approval without altering the
+// authorized trade).
+export { computeDecisionSignature };
 
 export interface ProposalInput {
   agentId: unknown;

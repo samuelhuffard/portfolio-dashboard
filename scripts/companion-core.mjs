@@ -4,26 +4,12 @@
  * No I/O, no env reads at module level, no side effects.
  */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
-
-// ── Approval signature ─────────────────────────────────────────────────────
-// Mirrors lib/proposals.ts computeDecisionSignature and
-// portfolio-manager/lib/proposal-signature.js. tests/companion-core.test.ts
-// cross-checks all three implementations against the same proposal.
-export function computeDecisionSignature(p, secret) {
-  const payload = [
-    p.id,
-    p.status,
-    p.agentId,
-    p.ticker,
-    p.side,
-    String(p.amountDollars),
-    p.maxPrice == null ? "" : String(p.maxPrice),
-    p.decidedAt ?? "",
-    p.decidedByUserId ?? "",
-  ].join("|");
-  return createHmac("sha256", secret).update(payload).digest("hex");
-}
+import { timingSafeEqual } from "node:crypto";
+// The signature payload + HMAC now live single-source in the shared contract
+// (../lib/contracts/signature.js). tests/companion-core.test.ts still cross-checks
+// that this, the dashboard, and the backend all agree.
+import { computeDecisionSignature } from "../lib/contracts/signature.js";
+export { computeDecisionSignature };
 
 export function verifyApprovalSignature(proposal, secret) {
   if (!secret) {

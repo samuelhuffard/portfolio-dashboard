@@ -10,8 +10,8 @@ System docs live in the backend repo: `../portfolio-manager/docs/` — `ONBOARDI
 
 - Every `app/api/**` route starts with `requireApiPermission` (permission + audit action) — zero exceptions. New audit actions go in the `AuditAction` union in `lib/audit.ts`.
 - FundManager = Clerk `publicMetadata.role` AND `FUND_MANAGER_EMAILS`. Clients never see pooled-fund data (`lib/client-access.ts` is a fail-closed allowlist — new pages are manager-only by default).
-- Approvals are signed (`computeDecisionSignature` in `lib/proposals.ts`). The signature payload is mirrored in `scripts/companion-core.mjs` and `../portfolio-manager/lib/proposal-signature.js`; `tests/companion-core.test.ts` cross-checks all three — any payload change updates all copies in one commit.
-- The proposal schema itself is also triplicated (here `lib/proposals.ts` is canonical) — see the cross-repo checklist in `../portfolio-manager/docs/CHANGE_MAP.md`.
+- Approvals are signed. The signature payload + HMAC are single-source in `lib/contracts/signature.js` (a mirror of `../portfolio-manager/contracts/`, synced by `npm run contracts:sync`, drift-tested by `tests/contracts-drift.test.ts`); `lib/proposals.ts`, `scripts/companion-core.mjs`, and the backend all delegate to it, and `tests/companion-core.test.ts` still cross-checks they agree. Change the payload only in `contracts/signature.js`.
+- Proposal enums/limits/validation and lot ownership are likewise shared in `lib/contracts/`. The `AllocationProposal` shape stays a local interface but `tests/proposal-shape.test.ts` pins its field set to the shared `ProposalSchema` — see the checklist in `../portfolio-manager/docs/CHANGE_MAP.md`.
 - Executor changes: keep the ordering (verify signature → `Executing` marker → order with `ref_id = proposal.id` → ledger record → fulfill; unknown outcomes reconcile against the broker, never re-execute). Pure logic goes in `companion-core.mjs` so it stays testable.
 - Dashboard never places orders itself and keeps working when the Jetson is down (only `/api/scan` + alerts proxy to :3200) — preserve both properties.
 
