@@ -439,7 +439,7 @@ Include every open position. Use the actual live values from the MCP.`;
   try {
     ({ stdout } = await execFileAsync(
       CLAUDE_BIN,
-      ["-p", "--output-format", "stream-json", "--allowedTools", MCP_SNAPSHOT_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+      ["-p", "--verbose", "--output-format", "stream-json", "--allowedTools", MCP_SNAPSHOT_TOOLS, "--permission-mode", "bypassPermissions", prompt],
       { env, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 }
     ));
   } catch (err) {
@@ -711,7 +711,7 @@ Include ALL states as reported (filled, cancelled, rejected, ...). If there are 
 
   const { stdout } = await execFileAsync(
     CLAUDE_BIN,
-    ["-p", "--output-format", "stream-json", "--allowedTools", MCP_RECONCILE_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    ["-p", "--verbose", "--output-format", "stream-json", "--allowedTools", MCP_RECONCILE_TOOLS, "--permission-mode", "bypassPermissions", prompt],
     { env, timeout: 180_000, maxBuffer: 5 * 1024 * 1024 }
   );
 
