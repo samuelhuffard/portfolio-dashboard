@@ -704,7 +704,7 @@ First call get_accounts and verify that account ${AGENTIC_ACCOUNT_NUMBER} is the
 
 Respond with ONLY this JSON (no other text):
 {"accountNumber":"the account number returned by get_accounts","orders":[{"orderId":"...","ticker":"NVDA","side":"BUY","state":"filled","shares":0.0,"price":0.00,"filledAt":"ISO timestamp"}]}
-Include ALL states as reported (filled, cancelled, rejected, ...). If there are no orders, respond {"orders":[]}.`;
+Include ALL states as reported (filled, cancelled, rejected, ...). If there are no orders, respond {"accountNumber":"the account number returned by get_accounts","orders":[]}.`;
 
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
