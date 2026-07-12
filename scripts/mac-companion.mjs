@@ -24,9 +24,8 @@ import {
   decideReconcileAction,
   isPlausibleOrderId,
   isMarketOpen,
-  easternClock,
-  MARKET_HOLIDAYS,
 } from "./companion-core.mjs";
+import { McpReadJobKindSchema, McpReadReceiptSchema, McpReadRequestSchema } from "../lib/contracts/mcp-read-job.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,6 +56,20 @@ const LOCK_TTL_SECONDS = 300; // 5 min — prevents double-execution if companio
 const LIST_KEY = "pm:approval_proposals";
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "/Users/samhuffard/.local/bin/claude";
 const ROBINHOOD_MCP_TOOLS = "mcp__robinhood-trading__*";
+const AGENTIC_ACCOUNT_NUMBER = process.env.ROBINHOOD_ACCOUNT_NUMBER?.trim();
+// Fixed, non-mutating allowlists for scheduled broker data work. Do not widen
+// these to a wildcard: the execution path has separate, signed authority.
+const MCP_SNAPSHOT_TOOLS = [
+  "mcp__robinhood-trading__get_accounts",
+  "mcp__robinhood-trading__get_portfolio",
+  "mcp__robinhood-trading__get_equity_positions",
+].join(",");
+const MCP_RECONCILE_TOOLS = [
+  "mcp__robinhood-trading__get_accounts",
+  "mcp__robinhood-trading__get_equity_orders",
+].join(",");
+const MCP_READ_LEASE_SECONDS = 5 * 60;
+const MCP_READ_RECEIPT_TTL_SECONDS = 8 * 24 * 3600;
 const MARKET_SYNC_DISALLOWED_TOOLS = [
   "mcp__robinhood-trading__place_equity_order",
   "mcp__robinhood-trading__place_option_order",
@@ -95,6 +108,72 @@ async function redisPost(body) {
   });
   const json = await res.json();
   return json.result;
+}
+
+function mcpReadRequestKey(kind) {
+  return `pm:mcp-read:${McpReadJobKindSchema.parse(kind)}:request`;
+}
+
+function mcpReadLeaseKey(kind) {
+  return `pm:mcp-read:${McpReadJobKindSchema.parse(kind)}:lease`;
+}
+
+function mcpReadReceiptKey(kind) {
+  return `pm:mcp-read:${McpReadJobKindSchema.parse(kind)}:last-run`;
+}
+
+async function claimMcpReadRequest(kind) {
+  const parsedKind = McpReadJobKindSchema.parse(kind);
+  const raw = await redisCmd("get", mcpReadRequestKey(parsedKind));
+  if (!raw) return null;
+  let request;
+  try {
+    request = McpReadRequestSchema.parse(typeof raw === "string" ? JSON.parse(raw) : raw);
+  } catch (error) {
+    console.error(`[companion] refusing malformed ${parsedKind} request: ${error.message}`);
+    return null;
+  }
+  const lock = await redisPost(["set", mcpReadLeaseKey(parsedKind), request.id, "NX", "EX", MCP_READ_LEASE_SECONDS]);
+  return lock === "OK" ? request : null;
+}
+
+async function recordMcpReadReceipt(request, { ok, outcome, error = null }) {
+  const receipt = McpReadReceiptSchema.parse({
+    requestId: request.id,
+    kind: request.kind,
+    requestedAt: request.requestedAt,
+    completedAt: new Date().toISOString(),
+    ok,
+    outcome,
+    error: error ? String(error).slice(0, 500) : null,
+  });
+  await redisPost(["set", mcpReadReceiptKey(request.kind), JSON.stringify(receipt), "EX", MCP_READ_RECEIPT_TTL_SECONDS]);
+  await redisPost(["set", `pm:job:${request.kind}:last-run`, JSON.stringify({
+    ts: receipt.completedAt,
+    dateET: request.requestedForET,
+    ok,
+    durationMs: Math.max(0, Date.parse(receipt.completedAt) - Date.parse(request.requestedAt)),
+    error: receipt.error,
+    outcome: receipt.outcome,
+    source: "mac-robinhood-mcp",
+  })]);
+  if (ok) await redisCmd("del", mcpReadRequestKey(request.kind));
+  await redisCmd("del", mcpReadLeaseKey(request.kind));
+}
+
+async function processMcpReadRequest(kind, run) {
+  const request = await claimMcpReadRequest(kind);
+  if (!request) return;
+  try {
+    const outcome = await run(request);
+    await recordMcpReadReceipt(request, { ok: outcome !== "mismatch", outcome: outcome ?? "ok" });
+  } catch (error) {
+    console.error(`[companion] ${kind} MCP read failed:`, error.message);
+    await recordMcpReadReceipt(request, { ok: false, outcome: "failed", error: error.message });
+    // Leave the request durable. The next heartbeat may retry after the lease
+    // expires; request-id idempotency prevents a duplicate Performance row.
+    await redisPost(["set", mcpReadLeaseKey(request.kind), request.id, "EX", MCP_READ_LEASE_SECONDS]).catch(() => null);
+  }
 }
 
 async function getProposal(id) {
@@ -171,6 +250,56 @@ function extractJsonObject(stdout, predicate) {
     }
   }
   return null;
+}
+
+/**
+ * Scheduled reads are allowed to write our internal projections only after we
+ * can prove which broker account each MCP query targeted. Claude's final prose
+ * is not evidence: stream-json includes the actual tool-use inputs.
+ */
+function extractMcpToolCalls(stdout) {
+  const calls = [];
+  const visit = (value) => {
+    if (!value || typeof value !== "object") return;
+    if (
+      typeof value.name === "string"
+      && value.name.startsWith("mcp__robinhood-trading__")
+      && value.input
+      && typeof value.input === "object"
+      && !Array.isArray(value.input)
+    ) {
+      calls.push({ name: value.name, input: value.input });
+    }
+    for (const child of Object.values(value)) visit(child);
+  };
+
+  for (const line of stdout.split("\n")) {
+    try { visit(JSON.parse(line)); } catch {}
+  }
+  return calls;
+}
+
+function extractClaudeFinalText(stdout) {
+  const resultTexts = [];
+  for (const line of stdout.split("\n")) {
+    try {
+      const event = JSON.parse(line);
+      if (event.type === "result" && typeof event.result === "string") resultTexts.push(event.result);
+    } catch {}
+  }
+  if (!resultTexts.length) throw new Error("Claude stream did not include a final result");
+  return resultTexts.at(-1);
+}
+
+function assertScheduledMcpAccountBinding(stdout, requiredToolNames) {
+  const calls = extractMcpToolCalls(stdout);
+  for (const name of requiredToolNames) {
+    const toolCalls = calls.filter((call) => call.name === name);
+    if (!toolCalls.length) throw new Error(`MCP trace did not include required ${name}`);
+    if (toolCalls.some((call) => call.input.account_number !== AGENTIC_ACCOUNT_NUMBER)) {
+      throw new Error(`MCP trace shows ${name} without the configured Agentic account_number`);
+    }
+  }
 }
 
 // ── Claude executor ────────────────────────────────────────────────────────────
@@ -290,15 +419,17 @@ async function recordTrade(proposal, result) {
 // ── Holdings sync ─────────────────────────────────────────────────────────────
 const SYNC_SCRIPT = join(__dir, "../../portfolio-manager/scripts/sync-holdings-from-mcp.js");
 
-async function syncHoldings() {
+async function syncHoldings({ requestId = null } = {}) {
   if (!existsSync(SYNC_SCRIPT)) {
-    console.warn("[companion] sync-holdings-from-mcp.js not found — skipping sheet update");
-    return;
+    throw new Error("sync-holdings-from-mcp.js not found");
   }
+  if (!AGENTIC_ACCOUNT_NUMBER) throw new Error("ROBINHOOD_ACCOUNT_NUMBER is required for an MCP holdings sync.");
 
-  const prompt = `Use the Robinhood MCP to get all current positions and buying power in my Agentic account.
+  const prompt = `Use ONLY the Robinhood MCP read tools available to you. Do not place, review, cancel, or modify any order or saved broker object.
+
+First call get_accounts and verify that account ${AGENTIC_ACCOUNT_NUMBER} is the active Agentic account. Then call get_equity_positions and get_portfolio with account_number exactly ${AGENTIC_ACCOUNT_NUMBER}. Do not query another account. Stop with an error if that account is not agentic_allowed.
 Return ONLY this JSON — no other text, no markdown:
-{"positions":[{"ticker":"NVDA","name":"NVIDIA Corporation","shares":0.076,"avgCost":196.38,"currentPrice":196.40}],"cash":12.34}
+{"accountNumber":"the account number returned by get_accounts","positions":[{"ticker":"NVDA","name":"NVIDIA Corporation","shares":0.076,"avgCost":196.38,"currentPrice":196.40}],"cash":12.34}
 Include every open position. Use the actual live values from the MCP.`;
 
   const env = { ...process.env };
@@ -308,40 +439,45 @@ Include every open position. Use the actual live values from the MCP.`;
   try {
     ({ stdout } = await execFileAsync(
       CLAUDE_BIN,
-      ["-p", "--allowedTools", "mcp__robinhood-trading__*", "--permission-mode", "bypassPermissions", prompt],
-      { env, timeout: 120_000 }
+      ["-p", "--output-format", "stream-json", "--allowedTools", MCP_SNAPSHOT_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+      { env, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 }
     ));
   } catch (err) {
-    console.warn("[companion] sync: failed to fetch positions from Robinhood:", err.message);
-    return;
+    throw new Error(`failed to fetch positions from Robinhood: ${err.message}`);
   }
+
+  assertScheduledMcpAccountBinding(stdout, [
+    "mcp__robinhood-trading__get_equity_positions",
+    "mcp__robinhood-trading__get_portfolio",
+  ]);
+  const finalText = extractClaudeFinalText(stdout);
 
   // Extract the JSON blob from claude output
   let positionsJson;
-  const blocks = [...stdout.matchAll(/\{(?:[^{}]|\{[^{}]*\})*\}/gs)];
+  const blocks = [...finalText.matchAll(/\{(?:[^{}]|\{[^{}]*\})*\}/gs)];
   for (const b of blocks.reverse()) {
     try {
       const p = JSON.parse(b[0]);
-      if (Array.isArray(p.positions)) { positionsJson = b[0]; break; }
+      if (Array.isArray(p.positions) && p.accountNumber === AGENTIC_ACCOUNT_NUMBER) { positionsJson = b[0]; break; }
     } catch {}
   }
   if (!positionsJson) {
-    console.warn("[companion] sync: could not parse positions from claude output");
-    return;
+    throw new Error("could not parse a verified account positions response from Robinhood MCP");
   }
 
   // Pipe positions JSON into sync-holdings-from-mcp.js, run from portfolio-manager dir so
   // dotenv + credentials.json resolve correctly
   const syncDir = join(__dir, "../../portfolio-manager");
   await new Promise((resolve, reject) => {
-    const child = execFile("node", [SYNC_SCRIPT], { env: process.env, cwd: syncDir }, (err) => {
+    const args = [SYNC_SCRIPT, ...(requestId ? ["--request-id", requestId] : [])];
+    const child = execFile("node", args, { env: process.env, cwd: syncDir }, (err) => {
       if (err) reject(err); else resolve();
     });
     child.stdin.write(positionsJson);
     child.stdin.end();
   });
 
-  console.log("[companion] ✓ Holdings synced to Google Sheets");
+  console.log(`[companion] ✓ Holdings synced to Google Sheets${requestId ? ` (request ${requestId})` : ""}`);
 }
 
 // ── Market scan sync ─────────────────────────────────────────────────────────
@@ -546,20 +682,28 @@ async function reconcileProposal(id, proposal) {
 // A filled order missing from the ledger means an execution/recording failure
 // slipped through — the script Telegrams the details. Report-only; never writes.
 const RECONCILE_SCRIPT = join(__dir, "../../portfolio-manager/scripts/reconcile-orders.js");
-let lastReconcileDate = null;
+
+function easternStartIso(dateEt) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "longOffset",
+  }).formatToParts(new Date(`${dateEt}T12:00:00.000Z`));
+  const offset = parts.find((part) => part.type === "timeZoneName")?.value?.replace("GMT", "") || "-05:00";
+  return `${dateEt}T00:00:00${offset}`;
+}
 
 async function runDailyReconciliation(todayEt) {
   if (!existsSync(RECONCILE_SCRIPT)) {
-    console.warn("[companion] reconcile-orders.js not found — skipping daily reconciliation");
-    return;
+    throw new Error("reconcile-orders.js not found");
   }
+  if (!AGENTIC_ACCOUNT_NUMBER) throw new Error("ROBINHOOD_ACCOUNT_NUMBER is required for MCP reconciliation.");
 
-  const prompt = `Use only Robinhood MCP READ-ONLY order tools on my Agentic account. Do NOT place, review, cancel, or modify anything.
+  const prompt = `Use ONLY the Robinhood MCP read tools available to you. Do not place, review, cancel, or modify any order or saved broker object.
 
-Call get_equity_orders with created_at_gte ${todayEt}T00:00:00Z and collect every order (paginate if needed).
+First call get_accounts and verify that account ${AGENTIC_ACCOUNT_NUMBER} is the active Agentic account. Then call get_equity_orders with account_number exactly ${AGENTIC_ACCOUNT_NUMBER} and created_at_gte ${easternStartIso(todayEt)}; collect every order (paginate if needed). Do not query another account. Stop with an error if that account is not agentic_allowed.
 
 Respond with ONLY this JSON (no other text):
-{"orders":[{"orderId":"...","ticker":"NVDA","side":"BUY","state":"filled","shares":0.0,"price":0.00,"filledAt":"ISO timestamp"}]}
+{"accountNumber":"the account number returned by get_accounts","orders":[{"orderId":"...","ticker":"NVDA","side":"BUY","state":"filled","shares":0.0,"price":0.00,"filledAt":"ISO timestamp"}]}
 Include ALL states as reported (filled, cancelled, rejected, ...). If there are no orders, respond {"orders":[]}.`;
 
   const env = { ...process.env };
@@ -567,14 +711,16 @@ Include ALL states as reported (filled, cancelled, rejected, ...). If there are 
 
   const { stdout } = await execFileAsync(
     CLAUDE_BIN,
-    ["-p", "--allowedTools", ROBINHOOD_MCP_TOOLS, "--disallowedTools", MARKET_SYNC_DISALLOWED_TOOLS, "--permission-mode", "bypassPermissions", prompt],
-    { env, timeout: 180_000 }
+    ["-p", "--output-format", "stream-json", "--allowedTools", MCP_RECONCILE_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    { env, timeout: 180_000, maxBuffer: 5 * 1024 * 1024 }
   );
 
-  const extracted = extractJsonObject(stdout, (p) => Array.isArray(p.orders));
-  if (!extracted) throw new Error(`No valid orders JSON in claude output: ${stdout.slice(0, 200)}`);
+  assertScheduledMcpAccountBinding(stdout, ["mcp__robinhood-trading__get_equity_orders"]);
 
-  await new Promise((resolve, reject) => {
+  const extracted = extractJsonObject(extractClaudeFinalText(stdout), (p) => Array.isArray(p.orders) && p.accountNumber === AGENTIC_ACCOUNT_NUMBER);
+  if (!extracted) throw new Error("No valid verified-account orders JSON in Claude output.");
+
+  return new Promise((resolve, reject) => {
     const child = execFile(
       "node",
       [RECONCILE_SCRIPT],
@@ -583,26 +729,12 @@ Include ALL states as reported (filled, cancelled, rejected, ...). If there are 
         if (out) console.log(`[companion] reconcile: ${String(out).trim()}`);
         // Exit code 2 = mismatches found; the script already Telegrammed them.
         if (err && err.code !== 2) reject(err);
-        else resolve();
+        else resolve(err?.code === 2 ? "mismatch" : "ok");
       }
     );
     child.stdin.write(extracted.text);
     child.stdin.end();
   });
-}
-
-async function maybeReconcile() {
-  const { date, weekday, minutes } = easternClock();
-  if (weekday === "Sat" || weekday === "Sun" || MARKET_HOLIDAYS.has(date)) return;
-  if (minutes < 16 * 60 + 35) return; // wait until 4:35 PM ET, after the close + fill settle
-  if (lastReconcileDate === date) return;
-  lastReconcileDate = date; // set first so a hard failure doesn't hot-loop every 30s
-  console.log(`[companion] Running daily broker-vs-ledger reconciliation for ${date}...`);
-  try {
-    await runDailyReconciliation(date);
-  } catch (err) {
-    await alertTelegram(`Daily reconciliation FAILED for ${date}: ${err.message}. Run manually: fetch today's orders (read-only) and pipe into portfolio-manager/scripts/reconcile-orders.js.`);
-  }
 }
 
 // ── Main poll loop ─────────────────────────────────────────────────────────────
@@ -672,7 +804,11 @@ async function heartbeat() {
     await runMarketScanSync();
   }
 
-  await maybeReconcile();
+  await processMcpReadRequest("holdings-sync", async (request) => {
+    await syncHoldings({ requestId: request.id });
+    return "ok";
+  });
+  await processMcpReadRequest("order-reconciliation", (request) => runDailyReconciliation(request.requestedForET));
 }
 
 console.log(`[companion] Starting — polling every ${POLL_INTERVAL_MS / 1000}s`);
