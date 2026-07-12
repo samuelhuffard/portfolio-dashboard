@@ -16,6 +16,13 @@ interface InvestorSummary {
   unattributed: UnattributedCapital | null; // FundManager only: deposits not yet in the ledger
   navIsCurrent: boolean; // FundManager only: latest Performance row is dated today (NY)
   latestNavDate: string | null; // FundManager only
+  performance: Array<Pick<Awaited<ReturnType<typeof readPerformance>>[number], "date" | "spyPrice" | "navPerUnit">>;
+  history: Array<Pick<Awaited<ReturnType<typeof readInvestorLedger>>[number], "date" | "type" | "amount" | "navPerUnit" | "units">>;
+}
+
+function matchesInvestor(entry: Awaited<ReturnType<typeof readInvestorLedger>>[number], userId: string, email: string | null): boolean {
+  if (entry.investorId && entry.investorId === userId) return true;
+  return Boolean(email && entry.email.toLowerCase() === email.toLowerCase());
 }
 
 async function loadInvestorSummary(userId: string, email: string | null, isManager: boolean): Promise<InvestorSummary> {
@@ -40,6 +47,21 @@ async function loadInvestorSummary(userId: string, email: string | null, isManag
     const unattributed = isManager ? computeUnattributedCapital(holdingsResult.holdings, holdingsResult.cash, ledger) : null;
     const latestNavDate = isManager ? latestPerf?.date ?? null : null;
     const navIsCurrent = isManager && latestNavDate === getTodayInNewYork();
+    const scopedHistory = ledger
+      .filter((entry) => matchesInvestor(entry, userId, email))
+      .map(({ date, type, amount, navPerUnit: entryNavPerUnit, units }) => ({
+        date,
+        type,
+        amount,
+        navPerUnit: entryNavPerUnit,
+        units,
+      }))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const scopedPerformance = performance.map(({ date, spyPrice, navPerUnit: performanceNavPerUnit }) => ({
+      date,
+      spyPrice,
+      navPerUnit: performanceNavPerUnit,
+    }));
 
     return {
       navPerUnit,
@@ -51,6 +73,8 @@ async function loadInvestorSummary(userId: string, email: string | null, isManag
       unattributed,
       navIsCurrent,
       latestNavDate,
+      performance: scopedPerformance,
+      history: isManager ? [] : scopedHistory,
     };
   } catch (error) {
     if (error instanceof Error && /ledger integrity check failed|unverified money state/.test(error.message)) throw error;
@@ -65,6 +89,8 @@ async function loadInvestorSummary(userId: string, email: string | null, isManag
       unattributed: null,
       navIsCurrent: false,
       latestNavDate: null,
+      performance: [],
+      history: [],
     };
   }
 }

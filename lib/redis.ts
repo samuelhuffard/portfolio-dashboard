@@ -85,3 +85,38 @@ export async function getHistory(limit = 25): Promise<ReportSummary[]> {
     return [];
   }
 }
+
+export interface InvestorUpdate {
+  isoWeek: string;
+  generatedAt: string;
+  investorId: string;
+  email: string;
+  name: string;
+  value: number | null;
+  netContributed: number | null;
+  gainLoss: number | null;
+  gainLossPct: number | null;
+  units: number;
+  navPerUnit: number | null;
+  navAsOf: string | null;
+  weeklyTrades: Array<{ date: string; ticker: string; side: string; amount: number; price: number }>;
+  topHoldings: Array<{ ticker: string; marketValue: number }>;
+}
+
+export async function getInvestorUpdate(investorId: string | null, email: string | null): Promise<InvestorUpdate | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  const keys = [
+    investorId ? `pm:investor-update:latest:${investorId}` : null,
+    email ? `pm:investor-update:latest:email:${email.toLowerCase()}` : null,
+  ].filter((key): key is string => Boolean(key));
+  try {
+    for (const key of keys) {
+      const raw = await redis.get<InvestorUpdate | string>(key);
+      if (raw) return typeof raw === "string" ? JSON.parse(raw) as InvestorUpdate : raw;
+    }
+  } catch (e) {
+    console.warn("[Redis] getInvestorUpdate failed:", e instanceof Error ? e.message : e);
+  }
+  return null;
+}
