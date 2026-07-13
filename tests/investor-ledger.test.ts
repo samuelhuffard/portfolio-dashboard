@@ -151,6 +151,28 @@ test("units = amount / current NAV per unit from the latest Performance row", ()
   assert.ok(Math.abs(result.ownershipPct - (20 / 1020) * 100) < 1e-9);
 });
 
+test("a verified new-cash deposit uses the pre-deposit NAV, not the post-deposit portfolio value", () => {
+  const result = calculateInvestorLedgerEntry({
+    agentId: "portfolio",
+    ledger: seedLedger(),
+    // The second row already includes the new $25 cash. It must not determine
+    // the new investor's unit price.
+    performanceHistory: [
+      { date: "2026-06-18", portfolioValue: 1012.1, navPerUnit: 1.0121 },
+      { date: "2026-06-19", portfolioValue: 1037.1, navPerUnit: 1.0371 },
+    ],
+    email: "friend@example.com",
+    name: "Friend",
+    amount: 25,
+    pricingNavPerUnit: 1.0121,
+    now: new Date("2026-06-19T16:00:00-04:00"),
+    secret,
+  });
+
+  assert.equal(result.entry.navPerUnit, 1.0121);
+  assert.equal(result.entry.units, 24.7011);
+});
+
 test("stale NAV is refused — contribution requires a Performance row dated today", () => {
   assert.throws(
     () =>

@@ -35,6 +35,7 @@ export default function UnattributedCard({
   const [name, setName] = useState(roster[0]?.name ?? '');
   const [entryAmount, setEntryAmount] = useState(amount.toFixed(2));
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [capitalOrigin, setCapitalOrigin] = useState<'new_cash' | 'pre_ledger'>('new_cash');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seedPrompt, setSeedPrompt] = useState<string | null>(null);
@@ -45,7 +46,17 @@ export default function UnattributedCard({
     setError(null);
     setResult(null);
     try {
-      const json = await postContribution({ email, name, amount: Number(entryAmount), type: 'Contribution', date, seedOwner, attributeExistingCapital: true });
+      const historicCapital = capitalOrigin === 'pre_ledger';
+      const json = await postContribution({
+        email,
+        name,
+        amount: Number(entryAmount),
+        type: 'Contribution',
+        date,
+        seedOwner,
+        attributeExistingCapital: historicCapital,
+        pricingMode: historicCapital ? undefined : 'prior_nav',
+      });
       if (json.error) {
         if (json.needsSeedOwner) setSeedPrompt(json.error);
         else setError(json.error);
@@ -68,8 +79,7 @@ export default function UnattributedCard({
         <span className="font-mono text-lg font-bold text-amber-100">{fmtCurrency(amount)}</span>
       </div>
       <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-        The account holds {fmtCurrency(amount)} more than the investor ledger accounts for — who deposited this? Attributing it issues
-        units at the current NAV per unit and writes a signed ledger row.
+        The account holds {fmtCurrency(amount)} more than the investor ledger accounts for. Identify whether this is a new deposit or money that predates the ledger before issuing units.
       </p>
       {!navIsCurrent && (
         <p className="mt-2 font-mono text-xs text-amber-200/80">
@@ -89,6 +99,18 @@ export default function UnattributedCard({
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} aria-label="Deposit date" />
       </div>
 
+      <fieldset className="mt-4 grid gap-2 border-l border-amber-300/30 pl-3 text-sm text-slate-300">
+        <legend className="font-mono text-[10px] uppercase tracking-[0.2em] text-amber-200/80">Capital origin</legend>
+        <label className="flex cursor-pointer items-start gap-2">
+          <input type="radio" name="capital-origin" checked={capitalOrigin === 'new_cash'} onChange={() => setCapitalOrigin('new_cash')} className="mt-1" />
+          <span><strong className="text-slate-100">New deposit</strong> — issue units at the last NAV recorded before this deposit date, so prior gains stay with existing investors.</span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-2">
+          <input type="radio" name="capital-origin" checked={capitalOrigin === 'pre_ledger'} onChange={() => setCapitalOrigin('pre_ledger')} className="mt-1" />
+          <span><strong className="text-amber-100">Capital that predates this ledger</strong> — use only to assign historic, already-held capital; this is not for a new transfer.</span>
+        </label>
+      </fieldset>
+
       <div className="mt-4">
         {seedPrompt ? (
           <SeedOwnerConfirm message={seedPrompt} onConfirm={() => submit(true)} onCancel={() => setSeedPrompt(null)} busy={busy} />
@@ -98,7 +120,7 @@ export default function UnattributedCard({
             disabled={busy || !email || !name || !entryAmount}
             className="border border-amber-300/40 bg-amber-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-amber-200 transition-colors hover:bg-amber-300/20 disabled:opacity-40"
           >
-            {busy ? 'Recording...' : 'Attribute deposit'}
+            {busy ? 'Recording...' : capitalOrigin === 'new_cash' ? 'Record new deposit' : 'Attribute historic capital'}
           </button>
         )}
       </div>

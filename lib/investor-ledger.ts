@@ -192,6 +192,12 @@ export interface CalculateEntryInput {
   allowStaleNav?: boolean;
   isExistingCapitalAttribution?: boolean;
   existingCapitalNavPerUnit?: number | null;
+  /**
+   * A verified pre-deposit NAV supplied only by the unmatched-cash workflow.
+   * It prevents a new cash deposit from receiving shares at a post-deposit NAV
+   * (or at the historic-capital $1 basis).
+   */
+  pricingNavPerUnit?: number | null;
   now?: Date;
   secret: string;
 }
@@ -226,6 +232,7 @@ export function calculateInvestorLedgerEntry({
   allowStaleNav = false,
   isExistingCapitalAttribution = false,
   existingCapitalNavPerUnit = null,
+  pricingNavPerUnit = null,
   now = new Date(),
   secret,
 }: CalculateEntryInput): CalculateEntryResult {
@@ -252,6 +259,11 @@ export function calculateInvestorLedgerEntry({
       throw new Error(`[${agentId}] Existing-capital attribution requires a positive contribution-basis NAV per unit.`);
     }
     navPerUnit = existingCapitalNavPerUnit as number;
+  } else if (pricingNavPerUnit != null) {
+    if (isWithdrawal || !Number.isFinite(pricingNavPerUnit) || pricingNavPerUnit <= 0) {
+      throw new Error(`[${agentId}] A new-cash contribution requires a positive pre-deposit NAV per unit.`);
+    }
+    navPerUnit = pricingNavPerUnit;
   } else {
     const latest = performanceHistory[performanceHistory.length - 1];
     if (!latest?.portfolioValue) {

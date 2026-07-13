@@ -28,6 +28,7 @@ interface ContributionBody {
   investorId?: unknown;
   seedOwner?: unknown; // explicit initial-owner-seed confirmation (mirrors --seed-owner)
   attributeExistingCapital?: unknown; // true only from the unattributed-capital card
+  pricingMode?: unknown; // "prior_nav" only for a verified new-cash deposit detected after it reaches the account
 }
 
 export async function POST(req: Request) {
@@ -53,12 +54,16 @@ export async function POST(req: Request) {
   const investorId = typeof body.investorId === "string" && body.investorId.trim() ? body.investorId.trim() : undefined;
   const seedOwner = body.seedOwner === true;
   const attributeExistingCapital = body.attributeExistingCapital === true;
+  const priceAtPriorNav = body.pricingMode === "prior_nav";
 
   if (!email || !email.includes("@")) return NextResponse.json({ error: "A valid investor email is required." }, { status: 400 });
   if (!name) return NextResponse.json({ error: "Investor name is required." }, { status: 400 });
   if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: "Amount must be a positive number." }, { status: 400 });
   if (!type) return NextResponse.json({ error: 'Only confirmed Contributions may be recorded here. Use the canonical withdrawal workflow after previewing the sell-down.' }, { status: 400 });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "Date must be YYYY-MM-DD." }, { status: 400 });
+  if (attributeExistingCapital && priceAtPriorNav) {
+    return NextResponse.json({ error: "Choose either pre-ledger capital attribution or new-cash pricing, never both." }, { status: 400 });
+  }
 
   // Fail CLOSED: no secret, no write — the dashboard has no unsigned escape hatch.
   let secret: string;
@@ -78,7 +83,7 @@ export async function POST(req: Request) {
     const [ledger, performance, holdingsResult] = await Promise.all([
       readInvestorLedger(sheets, spreadsheetId),
       readPerformance(sheets, spreadsheetId),
-      attributeExistingCapital ? readHoldings(sheets, spreadsheetId) : Promise.resolve({ holdings: [], cash: null }),
+      attributeExistingCapital || priceAtPriorNav ? readHoldings(sheets, spreadsheetId) : Promise.resolve({ holdings: [], cash: null }),
     ]);
     const unitsOutstandingBefore = ledger.reduce((sum, entry) => sum + entry.units, 0);
     const netContributions = ledger.reduce((sum, entry) => {
@@ -86,8 +91,9 @@ export async function POST(req: Request) {
       if (entry.type === "Withdrawal") return sum - entry.amount;
       return sum;
     }, 0);
-    const unattributed = attributeExistingCapital ? computeUnattributedCapital(holdingsResult.holdings, holdingsResult.cash, ledger) : null;
-    if (attributeExistingCapital) {
+    const unmatchedCashFlow = attributeExistingCapital || priceAtPriorNav;
+    const unattributed = unmatchedCashFlow ? computeUnattributedCapital(holdingsResult.holdings, holdingsResult.cash, ledger) : null;
+    if (unmatchedCashFlow) {
       if (!unattributed?.detected) {
         return NextResponse.json({ error: "No unattributed capital is available to assign." }, { status: 409 });
       }
@@ -102,6 +108,20 @@ export async function POST(req: Request) {
       attributeExistingCapital && unitsOutstandingBefore > 0 && netContributions > 0
         ? netContributions / unitsOutstandingBefore
         : 1;
+    // Once cash has reached the broker account it is already in the latest
+    // portfolio value. Pricing a NEW deposit at that post-deposit NAV would
+    // under-issue units; pricing it at the historic-capital basis transfers
+    // prior gains to the newcomer. Use the last recorded NAV strictly before
+    // the deposit date, or fail closed when that observation is unavailable.
+    const priorNav = priceAtPriorNav
+      ? [...performance].reverse().find((row) => row.date < date && Number.isFinite(row.navPerUnit) && (row.navPerUnit as number) > 0)
+      : null;
+    if (priceAtPriorNav && !priorNav?.navPerUnit) {
+      return NextResponse.json(
+        { error: "No pre-deposit NAV is available. Record a NAV snapshot before attributing this new cash deposit." },
+        { status: 409 }
+      );
+    }
 
     const today = getTodayInNewYork();
     const result = calculateInvestorLedgerEntry({
@@ -116,6 +136,7 @@ export async function POST(req: Request) {
       investorId,
       isExistingCapitalAttribution: attributeExistingCapital,
       existingCapitalNavPerUnit,
+      pricingNavPerUnit: priorNav?.navPerUnit ?? null,
       // A backdated deposit is recorded at that day's NAV only if the latest
       // Performance row actually carries that date — same rule as the CLI's
       // --nav-date. Today's date means "current NAV required" (stale refusal).
