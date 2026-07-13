@@ -7,6 +7,7 @@ import {
   ResultLine,
   SeedOwnerConfirm,
   postContribution,
+  newYorkDate,
   type RosterOption,
 } from './ContributionForm';
 
@@ -34,7 +35,7 @@ export default function UnattributedCard({
   const [email, setEmail] = useState(roster[0]?.email ?? '');
   const [name, setName] = useState(roster[0]?.name ?? '');
   const [entryAmount, setEntryAmount] = useState(amount.toFixed(2));
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => newYorkDate());
   const [capitalOrigin, setCapitalOrigin] = useState<'new_cash' | 'pre_ledger'>('new_cash');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

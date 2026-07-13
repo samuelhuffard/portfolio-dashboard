@@ -40,6 +40,14 @@ export async function postContribution(body: Record<string, unknown>): Promise<R
 const inputClass =
   'border border-white/10 bg-black/30 p-2 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/40 focus:outline-none';
 
+export function newYorkDate(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
 export function InvestorPicker({
   roster,
   email,
@@ -136,7 +144,7 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
   const [email, setEmail] = useState(roster[0]?.email ?? '');
   const [name, setName] = useState(roster[0]?.name ?? '');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => newYorkDate());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seedPrompt, setSeedPrompt] = useState<string | null>(null);

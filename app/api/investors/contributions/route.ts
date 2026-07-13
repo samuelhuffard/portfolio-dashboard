@@ -10,6 +10,7 @@ import {
 } from "@/lib/sheets";
 import { calculateInvestorLedgerEntry, computeUnattributedCapital, getInvestorLedgerSecret, getTodayInNewYork } from "@/lib/investor-ledger";
 import { withCapitalLedgerLock } from "@/lib/redis";
+import { shadowCapitalEntry } from "@/lib/capital-shadow";
 
 // Records a confirmed contribution into the shared portfolio's
 // capital ledger — the dashboard twin of portfolio-manager's
@@ -94,9 +95,11 @@ export async function POST(req: Request) {
     ]);
     const priorWrite = ledger.find((entry) => entry.entryId === idempotencyKey);
     if (priorWrite) {
+      const projection = await shadowCapitalEntry(priorWrite);
       return NextResponse.json({
         recorded: true,
         idempotent: true,
+        projectionPending: !projection.ok,
         entry: { date: priorWrite.date, email: priorWrite.email, name: priorWrite.name, type: priorWrite.type, amount: priorWrite.amount, navPerUnit: priorWrite.navPerUnit, units: priorWrite.units, entryId: priorWrite.entryId },
       });
     }
@@ -164,8 +167,14 @@ export async function POST(req: Request) {
 
     await appendInvestorLedgerEntry(sheets, spreadsheetId, result.entry);
 
+    // Sheets is the signed, append-only source of truth during the Neon
+    // observation period. A projection failure is surfaced and repaired by a
+    // retry with this same immutable entry ID; it never causes another append.
+    const projection = await shadowCapitalEntry(result.entry);
+
     return NextResponse.json({
       recorded: true,
+      projectionPending: !projection.ok,
       seeded: result.seeded,
       entry: {
         date: result.entry.date,
