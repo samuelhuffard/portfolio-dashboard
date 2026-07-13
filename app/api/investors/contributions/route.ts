@@ -9,6 +9,7 @@ import {
   appendInvestorLedgerEntry,
 } from "@/lib/sheets";
 import { calculateInvestorLedgerEntry, computeUnattributedCapital, getInvestorLedgerSecret, getTodayInNewYork } from "@/lib/investor-ledger";
+import { withCapitalLedgerLock } from "@/lib/redis";
 
 // Records a confirmed contribution into the shared portfolio's
 // capital ledger — the dashboard twin of portfolio-manager's
@@ -29,6 +30,7 @@ interface ContributionBody {
   seedOwner?: unknown; // explicit initial-owner-seed confirmation (mirrors --seed-owner)
   attributeExistingCapital?: unknown; // true only from the unattributed-capital card
   pricingMode?: unknown; // "prior_nav" only for a verified new-cash deposit detected after it reaches the account
+  idempotencyKey?: unknown;
 }
 
 export async function POST(req: Request) {
@@ -55,6 +57,7 @@ export async function POST(req: Request) {
   const seedOwner = body.seedOwner === true;
   const attributeExistingCapital = body.attributeExistingCapital === true;
   const priceAtPriorNav = body.pricingMode === "prior_nav";
+  const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
 
   if (!email || !email.includes("@")) return NextResponse.json({ error: "A valid investor email is required." }, { status: 400 });
   if (!name) return NextResponse.json({ error: "Investor name is required." }, { status: 400 });
@@ -63,6 +66,9 @@ export async function POST(req: Request) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "Date must be YYYY-MM-DD." }, { status: 400 });
   if (attributeExistingCapital && priceAtPriorNav) {
     return NextResponse.json({ error: "Choose either pre-ledger capital attribution or new-cash pricing, never both." }, { status: 400 });
+  }
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+    return NextResponse.json({ error: "A valid immutable idempotency key is required for every capital write." }, { status: 400 });
   }
 
   // Fail CLOSED: no secret, no write — the dashboard has no unsigned escape hatch.
@@ -78,6 +84,7 @@ export async function POST(req: Request) {
   }
 
   try {
+    return await withCapitalLedgerLock(async () => {
     const spreadsheetId = await getSharedSpreadsheetId();
     const sheets = await getServiceAccountClients();
     const [ledger, performance, holdingsResult] = await Promise.all([
@@ -85,6 +92,14 @@ export async function POST(req: Request) {
       readPerformance(sheets, spreadsheetId),
       attributeExistingCapital || priceAtPriorNav ? readHoldings(sheets, spreadsheetId) : Promise.resolve({ holdings: [], cash: null }),
     ]);
+    const priorWrite = ledger.find((entry) => entry.entryId === idempotencyKey);
+    if (priorWrite) {
+      return NextResponse.json({
+        recorded: true,
+        idempotent: true,
+        entry: { date: priorWrite.date, email: priorWrite.email, name: priorWrite.name, type: priorWrite.type, amount: priorWrite.amount, navPerUnit: priorWrite.navPerUnit, units: priorWrite.units, entryId: priorWrite.entryId },
+      });
+    }
     const unitsOutstandingBefore = ledger.reduce((sum, entry) => sum + entry.units, 0);
     const netContributions = ledger.reduce((sum, entry) => {
       if (entry.type === "Contribution") return sum + entry.amount;
@@ -114,7 +129,9 @@ export async function POST(req: Request) {
     // prior gains to the newcomer. Use the last recorded NAV strictly before
     // the deposit date, or fail closed when that observation is unavailable.
     const priorNav = priceAtPriorNav
-      ? [...performance].reverse().find((row) => row.date < date && Number.isFinite(row.navPerUnit) && (row.navPerUnit as number) > 0)
+      ? performance
+          .filter((row) => row.date < date && Number.isFinite(row.navPerUnit) && (row.navPerUnit as number) > 0)
+          .sort((a, b) => b.date.localeCompare(a.date))[0]
       : null;
     if (priceAtPriorNav && !priorNav?.navPerUnit) {
       return NextResponse.json(
@@ -137,6 +154,7 @@ export async function POST(req: Request) {
       isExistingCapitalAttribution: attributeExistingCapital,
       existingCapitalNavPerUnit,
       pricingNavPerUnit: priorNav?.navPerUnit ?? null,
+      entryId: idempotencyKey,
       // A backdated deposit is recorded at that day's NAV only if the latest
       // Performance row actually carries that date — same rule as the CLI's
       // --nav-date. Today's date means "current NAV required" (stale refusal).
@@ -161,6 +179,7 @@ export async function POST(req: Request) {
       },
       ownershipPct: result.ownershipPct,
       unitsOutstandingAfter: result.unitsOutstandingAfter,
+    });
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to record the ledger entry.";

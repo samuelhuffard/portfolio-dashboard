@@ -40,6 +40,7 @@ export default function UnattributedCard({
   const [error, setError] = useState<string | null>(null);
   const [seedPrompt, setSeedPrompt] = useState<string | null>(null);
   const [result, setResult] = useState<Awaited<ReturnType<typeof postContribution>> | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   async function submit(seedOwner = false) {
     setBusy(true);
@@ -56,6 +57,7 @@ export default function UnattributedCard({
         seedOwner,
         attributeExistingCapital: historicCapital,
         pricingMode: historicCapital ? undefined : 'prior_nav',
+        idempotencyKey,
       });
       if (json.error) {
         if (json.needsSeedOwner) setSeedPrompt(json.error);
@@ -63,6 +65,7 @@ export default function UnattributedCard({
       } else {
         setSeedPrompt(null);
         setResult(json);
+        if (json.recorded) setIdempotencyKey(crypto.randomUUID());
         onRecorded();
       }
     } catch (err) {

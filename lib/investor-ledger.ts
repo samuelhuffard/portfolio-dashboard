@@ -198,6 +198,7 @@ export interface CalculateEntryInput {
    * (or at the historic-capital $1 basis).
    */
   pricingNavPerUnit?: number | null;
+  entryId?: string | null;
   now?: Date;
   secret: string;
 }
@@ -233,6 +234,7 @@ export function calculateInvestorLedgerEntry({
   isExistingCapitalAttribution = false,
   existingCapitalNavPerUnit = null,
   pricingNavPerUnit = null,
+  entryId = null,
   now = new Date(),
   secret,
 }: CalculateEntryInput): CalculateEntryResult {
@@ -304,6 +306,7 @@ export function calculateInvestorLedgerEntry({
       navPerUnit: round4(navPerUnit),
       units: round4(units),
       investorId: resolvedInvestorId,
+      entryId: entryId ?? undefined,
     },
     secret
   );

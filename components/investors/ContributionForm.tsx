@@ -141,19 +141,21 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
   const [error, setError] = useState<string | null>(null);
   const [seedPrompt, setSeedPrompt] = useState<string | null>(null);
   const [result, setResult] = useState<RecordResponse | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   async function submit(seedOwner = false) {
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const json = await postContribution({ email, name, amount: Number(amount), type: 'Contribution', date, seedOwner });
+      const json = await postContribution({ email, name, amount: Number(amount), type: 'Contribution', date, seedOwner, pricingMode: 'prior_nav', idempotencyKey });
       if (json.error) {
         if (json.needsSeedOwner) setSeedPrompt(json.error);
         else setError(json.error);
       } else {
         setSeedPrompt(null);
         setResult(json);
+        if (json.recorded) setIdempotencyKey(crypto.randomUUID());
         setAmount('');
         onRecorded();
       }
@@ -170,7 +172,7 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
         <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Record Capital Entry</p>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
           Writes a signed, append-only row to the Investors ledger. Record only money that has actually arrived or left — this never moves money itself.
-          Units are issued at today&apos;s NAV per unit; if today&apos;s NAV hasn&apos;t synced yet, the write is refused.
+          New cash is issued at the last NAV recorded before its deposit date; the account must already reflect the cash so the write can be reconciled.
         </p>
       </div>
 

@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { randomUUID } from "node:crypto";
 import type { StoredReport, ReportSummary } from "@/lib/research/types";
 
 let _redis: Redis | null = null;
@@ -10,6 +11,23 @@ export function getRedis(): Redis | null {
   if (!url || !token) return null;
   _redis = new Redis({ url, token });
   return _redis;
+}
+
+const CAPITAL_LOCK_KEY = "pm:workflow-lock:capital-ledger";
+const RELEASE_IF_OWNER = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0";
+
+/** Serializes every dashboard capital mutation against the backend's shared lock. */
+export async function withCapitalLedgerLock<T>(fn: () => Promise<T>): Promise<T> {
+  const redis = getRedis();
+  if (!redis) throw new Error("Redis is required for capital-ledger writes.");
+  const token = randomUUID();
+  const acquired = await redis.set(CAPITAL_LOCK_KEY, token, { nx: true, ex: 120 });
+  if (acquired !== "OK") throw new Error("A capital-ledger write is already in progress. Retry shortly.");
+  try {
+    return await fn();
+  } finally {
+    await redis.eval(RELEASE_IF_OWNER, [CAPITAL_LOCK_KEY], [token]);
+  }
 }
 
 const DEFAULT_TAX_RESERVE_RATE_PCT = 0.2; // fallback if portfolio-manager hasn't cached config/tax.json yet
