@@ -1,5 +1,6 @@
 import { google, sheets_v4 } from "googleapis";
 import { assertInvestorLedgerEntries, investorLedgerRow, type SignedLedgerEntry } from "./investor-ledger";
+import { holdingRowLabel, isSecurityHoldingRow } from "./holdingRows";
 import { getRedis } from "./redis";
 import { assertOperationalLedgerEntries } from "./operational-ledger";
 
@@ -77,13 +78,12 @@ export async function readHoldings(
 
   for (const row of rows) {
     const [ticker, name, shares, avgCost, currentPrice, marketValue, costBasis, gainLoss, gainLossPct] = row;
-    if (!ticker) continue;
-
-    const label = String(ticker).trim();
+    const label = holdingRowLabel(row);
+    if (!label) continue;
 
     // The backend appends a metadata row after holdings — either ["Last synced", ts]
     // or a single "Last synced: <ts>" cell. Never let it render as a holding.
-    if (label.toLowerCase().startsWith("last synced")) {
+    if (/^last synced\b/i.test(label)) {
       const inline = label.replace(/^last synced:?\s*/i, "").trim();
       lastSynced = inline || (name ? String(name) : null);
       continue;
@@ -96,6 +96,8 @@ export async function readHoldings(
       cash = parseNum(marketValue ?? shares);
       continue;
     }
+
+    if (!isSecurityHoldingRow(label)) continue;
 
     holdings.push({
       ticker,
@@ -125,7 +127,7 @@ export async function readHoldingsDetail(sheets: sheets_v4.Sheets, spreadsheetId
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Holdings!A2:F" });
   const rows = res.data.values ?? [];
   return rows
-    .filter((row) => row[0] && row[0] !== "Cash" && !String(row[0]).startsWith("Last synced") && !String(row[0]).startsWith("⚠️"))
+    .filter((row) => isSecurityHoldingRow(row))
     .map((row) => ({
       ticker: row[0],
       shares: parseNum(row[2]) ?? 0,

@@ -37,6 +37,7 @@ test("backend proxy routes use dashboard RBAC before forwarding", () => {
   assert.match(funnel, /requireApiPermission/);
   assert.match(funnel, /permission:\s*"portfolio:full"/);
   assert.match(funnel, /action:\s*"SIGNALS_READ"/);
+  assert.match(funnel, /readResearchDataHealth/);
 
   const news = routeSource("app/api/news/route.ts");
   assert.match(news, /permission:\s*"portfolio:full"/);

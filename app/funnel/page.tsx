@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { FunnelSnapshot } from '@/lib/funnel';
+import type { ResearchDataHealth } from '@/lib/research-data-health';
 
 interface FunnelResponse {
   snapshots: FunnelSnapshot[];
   history: FunnelSnapshot[];
+  researchDataHealth?: ResearchDataHealth;
   error?: string;
 }
 
@@ -90,6 +92,69 @@ function SnapshotPanel({ snapshot }: { snapshot: FunnelSnapshot }) {
   );
 }
 
+function ResearchDataPanel({ health }: { health: ResearchDataHealth | undefined }) {
+  const unavailable = !health || health.availability !== 'available';
+  const status = health?.researchData;
+  const disabled = !unavailable && !health?.researchDataEnabled;
+  const missing = !unavailable && health?.researchDataEnabled && !status;
+  const completedAt = status?.completedAt ?? status?.startedAt ?? null;
+  const tone = status?.state === 'failed' ? 'text-red-200' : unavailable || disabled ? 'text-slate-300' : status?.state === 'completed' ? 'text-emerald-200' : 'text-amber-200';
+  const selection = health?.shadowSelection;
+  const selectionMode = selection?.mode ?? status?.selectionMode ?? null;
+  const selectionPolicy = selection?.policyVersion ?? status?.selectionPolicyVersion ?? null;
+  const selectionUnresolved = selection?.policyUnresolved ?? status?.selectionPolicyUnresolved ?? false;
+  const selectionCounts = {
+    candidates: selection?.candidateCount ?? status?.selectionCandidateCount,
+    selected: selection?.selectedCount ?? status?.selectionSelectedCount,
+    displaced: selection?.displacedCount ?? status?.selectionDisplacedCount,
+    overlap: selection?.overlapCount ?? status?.selectionOverlapCount,
+  };
+  const reasonCounts = selection?.reasonCodeCounts ?? status?.selectionReasonCodeCounts ?? {};
+  return (
+    <section className="terminal-panel p-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Advisory data refresh</p>
+          <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white">Universe → peers → mandate scores</h2>
+        </div>
+        <p className={`font-mono text-[10px] uppercase tracking-[0.18em] ${tone}`}>{unavailable ? 'Backend unavailable' : disabled ? 'Not enabled' : missing ? 'Awaiting status' : `${status?.state ?? 'unknown'} · ${staleLabel(completedAt)}`}</p>
+      </div>
+      {unavailable ? (
+        <p className="mt-3 text-sm text-slate-400">{health?.unavailableReason === 'not-configured' ? 'The Portfolio Manager backend is not configured for this dashboard.' : 'The Portfolio Manager health endpoint is unavailable, so workflow state cannot be determined.'}</p>
+      ) : disabled ? (
+        <p className="mt-3 text-sm text-slate-400">This advisory workflow stays off until the peer-metrics store is configured. It does not create proposals or touch execution.</p>
+      ) : missing ? (
+        <p className="mt-3 text-sm text-amber-200">The workflow is configured, but it has not published a run status yet. The system sentinel will flag this if it persists.</p>
+      ) : (
+        <>
+          <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Metric label="Cataloged" value={num(status?.cataloged)} sub="Universe names" tone="text-white" />
+            <Metric label="Metric Rows" value={num(status?.metricRows)} sub={`${num(status?.classified)} classified`} tone="text-cyan-200" />
+            <Metric label="Scored" value={num(status?.scored)} sub={`${num(status?.complete)} complete`} tone="text-emerald-200" />
+            <Metric label="Incomplete" value={num(status?.partial)} sub={status?.failureStage ? `Failed: ${status.failureStage}` : `${num(status?.unsupported)} unsupported`} tone={status?.failureStage ? 'text-red-200' : 'text-amber-200'} />
+          </div>
+          <div className="mt-5 border border-white/10 bg-white/[0.025] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-200/70">Shadow selection</p>
+              <p className={`font-mono text-[10px] uppercase tracking-[0.16em] ${selectionUnresolved ? 'text-amber-200' : 'text-emerald-200'}`}>
+                {selectionMode ? `${selectionMode} · ${selectionPolicy ?? 'policy unknown'}` : selection?.state === 'not_configured' ? 'Baseline unavailable' : 'Awaiting selection'}
+              </p>
+            </div>
+            {selectionUnresolved && <p className="mt-2 text-xs text-amber-200">Materiality/event-age policy is unresolved; eligible events remain fail-closed.</p>}
+            {selectionMode && <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Metric label="Candidates" value={num(selectionCounts.candidates)} sub="Considered pool" tone="text-white" />
+              <Metric label="Selected" value={num(selectionCounts.selected)} sub="Advisory only" tone="text-cyan-200" />
+              <Metric label="Displaced" value={num(selectionCounts.displaced)} sub="Shadow comparison" tone="text-amber-200" />
+              <Metric label="Overlap" value={num(selectionCounts.overlap)} sub="Non-holding only" tone="text-emerald-200" />
+            </div>}
+            {Object.keys(reasonCounts).length > 0 && <p className="mt-3 font-mono text-[10px] text-slate-400">{Object.entries(reasonCounts).map(([reason, count]) => `${reason}: ${count}`).join(' · ')}</p>}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function FunnelPage() {
   const [data, setData] = useState<FunnelResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -137,6 +202,8 @@ export default function FunnelPage() {
           Live snapshots from the research scan: slate bucket composition, research-ledger coverage, catalog enrichment, and evaluator rejection mix.
         </p>
       </section>
+
+      <ResearchDataPanel health={data?.researchDataHealth} />
 
       {!data?.snapshots.length ? (
         <section className="terminal-panel p-5">
