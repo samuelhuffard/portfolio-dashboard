@@ -25,7 +25,12 @@ import {
   isPlausibleOrderId,
   isMarketOpen,
 } from "./companion-core.mjs";
-import { McpReadJobKindSchema, McpReadReceiptSchema, McpReadRequestSchema } from "../lib/contracts/mcp-read-job.js";
+import { McpReadJobKindSchema, McpReadRequestSchema } from "../lib/contracts/mcp-read-job.js";
+import {
+  buildMcpReadReceiptEvidence,
+  MCP_JOB_HISTORY_MAX,
+  MCP_JOB_HISTORY_TTL_SECONDS,
+} from "./mcp-read-receipt.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -138,25 +143,12 @@ async function claimMcpReadRequest(kind) {
 }
 
 async function recordMcpReadReceipt(request, { ok, outcome, error = null }) {
-  const receipt = McpReadReceiptSchema.parse({
-    requestId: request.id,
-    kind: request.kind,
-    requestedAt: request.requestedAt,
-    completedAt: new Date().toISOString(),
-    ok,
-    outcome,
-    error: error ? String(error).slice(0, 500) : null,
-  });
+  const { receipt, jobRecord, historyKey } = buildMcpReadReceiptEvidence(request, { ok, outcome, error });
   await redisPost(["set", mcpReadReceiptKey(request.kind), JSON.stringify(receipt), "EX", MCP_READ_RECEIPT_TTL_SECONDS]);
-  await redisPost(["set", `pm:job:${request.kind}:last-run`, JSON.stringify({
-    ts: receipt.completedAt,
-    dateET: request.requestedForET,
-    ok,
-    durationMs: Math.max(0, Date.parse(receipt.completedAt) - Date.parse(request.requestedAt)),
-    error: receipt.error,
-    outcome: receipt.outcome,
-    source: "mac-robinhood-mcp",
-  })]);
+  await redisPost(["set", `pm:job:${request.kind}:last-run`, JSON.stringify(jobRecord)]);
+  await redisPost(["rpush", historyKey, JSON.stringify(jobRecord)]);
+  await redisPost(["ltrim", historyKey, -MCP_JOB_HISTORY_MAX, -1]);
+  await redisPost(["expire", historyKey, MCP_JOB_HISTORY_TTL_SECONDS]);
   if (ok) await redisCmd("del", mcpReadRequestKey(request.kind));
   await redisCmd("del", mcpReadLeaseKey(request.kind));
 }
