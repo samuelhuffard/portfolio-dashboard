@@ -1,5 +1,28 @@
+export const RESEARCH_DATA_STATUS_FIELDS = [
+  "state", "reason", "runId", "startedAt", "completedAt", "cataloged", "classified",
+  "metricRows", "scored", "complete", "partial", "unsupported", "oldestInputDate",
+  "newestInputDate", "failureStage", "selectionMode", "selectionPolicyVersion",
+  "selectionPolicyUnresolved", "selectionCandidateCount", "selectionSelectedCount",
+  "selectionDisplacedCount", "selectionOverlapCount", "selectionReasonCodeCounts",
+] as const;
+
+export const SHADOW_SELECTION_STATUS_FIELDS = [
+  "state", "reason", "runId", "selectionRunId", "mode", "policyVersion", "policyUnresolved",
+  "candidateCount", "selectedCount", "displacedCount", "overlapCount", "eligibleEventCount",
+  "reasonCodeCounts", "failureStage",
+] as const;
+
+export const SHADOW_SELECTION_REASON_CODES = [
+  "holding", "mandatory_reunderwrite", "displaced", "material_thesis_breaking_event",
+  "validated_economic_score_change", "high_stable_score", "fixed_exploration_allocation",
+  "material_filing", "score_changed", "filing_change", "market_change", "estimate_change",
+  "ownership_change", "materiality_policy_accepted", "current_observation_not_actionable",
+  "previous_thesis_critical_evidence_not_fresh", "research_ineligible",
+] as const;
+
 export interface ResearchDataStatus {
   state: string;
+  reason?: string | null;
   runId?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
@@ -10,6 +33,8 @@ export interface ResearchDataStatus {
   complete?: number | null;
   partial?: number | null;
   unsupported?: number | null;
+  oldestInputDate?: string | null;
+  newestInputDate?: string | null;
   failureStage?: string | null;
   selectionMode?: string | null;
   selectionPolicyVersion?: string | null;
@@ -19,6 +44,7 @@ export interface ResearchDataStatus {
   selectionDisplacedCount?: number | null;
   selectionOverlapCount?: number | null;
   selectionReasonCodeCounts?: Record<string, number> | null;
+  updatedAt?: string | null;
 }
 
 export interface ShadowSelectionStatus {
@@ -36,7 +62,16 @@ export interface ShadowSelectionStatus {
   eligibleEventCount?: number | null;
   reasonCodeCounts?: Record<string, number> | null;
   failureStage?: string | null;
+  updatedAt?: string | null;
 }
+
+type AssertNever<T extends never> = T;
+type ResearchDataField = (typeof RESEARCH_DATA_STATUS_FIELDS)[number];
+type ShadowSelectionField = (typeof SHADOW_SELECTION_STATUS_FIELDS)[number];
+type _ResearchDataInterfaceHasNoUnlistedFields = AssertNever<Exclude<Exclude<keyof ResearchDataStatus, "updatedAt">, ResearchDataField>>;
+type _ResearchDataAllowListHasNoUnknownFields = AssertNever<Exclude<ResearchDataField, keyof ResearchDataStatus>>;
+type _ShadowInterfaceHasNoUnlistedFields = AssertNever<Exclude<Exclude<keyof ShadowSelectionStatus, "updatedAt">, ShadowSelectionField>>;
+type _ShadowAllowListHasNoUnknownFields = AssertNever<Exclude<ShadowSelectionField, keyof ShadowSelectionStatus>>;
 
 export interface ResearchDataHealth {
   availability: "available" | "unavailable";
