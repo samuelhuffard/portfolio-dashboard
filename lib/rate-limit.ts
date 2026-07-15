@@ -16,6 +16,7 @@ const ACTION_LIMITS: Partial<Record<AuditAction, RateLimitPolicy>> = {
   ALERT_CREATE: { limit: 50, windowSeconds: 60 * 60 },
   ALERT_DELETE: { limit: 100, windowSeconds: 60 * 60 },
   REPORT_EXPORT: { limit: 30, windowSeconds: 60 * 60 },
+  OBSERVATION_UPDATE_POST: { limit: 30, windowSeconds: 60 * 60 },
 };
 
 function rateLimitsAreEnforced(): boolean {

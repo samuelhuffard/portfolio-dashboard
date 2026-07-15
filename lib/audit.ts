@@ -39,6 +39,8 @@ export type AuditAction =
   | "INVESTOR_CONTRIBUTION_RECORD"
   | "ACTIVITY_READ"
   | "PORTFOLIO_MANAGER_SHADOW_READ"
+  | "OBSERVATION_READ"
+  | "OBSERVATION_UPDATE_POST"
   | "RATE_LIMIT_REJECT";
 
 export interface AuditEventInput {

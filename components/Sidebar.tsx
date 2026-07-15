@@ -143,7 +143,8 @@ const linkGroups: NavItem[][] = [
     { href: '/funnel', label: 'Funnel', Icon: FunnelIcon, code: '09', roles: ['FundManager'] },
   ],
   [
-    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '10', roles: ['FundManager'] },
+    { href: '/observation', label: 'Observation', Icon: FunnelIcon, code: '10', roles: ['FundManager'] },
+    { href: '/history', label: 'Archive', Icon: HistoryIcon, code: '11', roles: ['FundManager'] },
   ],
 ];
 
