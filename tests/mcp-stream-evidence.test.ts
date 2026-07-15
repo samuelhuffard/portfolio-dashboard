@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   assertScheduledMcpAccountBinding,
   extractMcpToolCalls,
+  summarizeMcpStream,
 } from "../scripts/mcp-stream-evidence.mjs";
 
 function streamEvent(event: Record<string, unknown>) {
@@ -36,6 +37,13 @@ test("reconstructs account-bound MCP tool input from Claude stream JSON deltas",
     "mcp__robinhood-trading__get_equity_positions",
     "mcp__robinhood-trading__get_portfolio",
   ], "agentic-123"));
+  assert.deepEqual(summarizeMcpStream(stream), {
+    eventTypes: ["stream_event"],
+    mcpToolNames: [
+      "mcp__robinhood-trading__get_equity_positions",
+      "mcp__robinhood-trading__get_portfolio",
+    ],
+  });
 });
 
 test("accepts a fully materialized tool use but rejects absent or wrong-account evidence", () => {

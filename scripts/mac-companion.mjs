@@ -31,7 +31,7 @@ import {
   MCP_JOB_HISTORY_MAX,
   MCP_JOB_HISTORY_TTL_SECONDS,
 } from "./mcp-read-receipt.mjs";
-import { assertScheduledMcpAccountBinding } from "./mcp-stream-evidence.mjs";
+import { assertScheduledMcpAccountBinding, summarizeMcpStream } from "./mcp-stream-evidence.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -401,10 +401,15 @@ Include every open position. Use the actual live values from the MCP.`;
     throw new Error(`failed to fetch positions from Robinhood: ${err.message}`);
   }
 
-  assertScheduledMcpAccountBinding(stdout, [
-    "mcp__robinhood-trading__get_equity_positions",
-    "mcp__robinhood-trading__get_portfolio",
-  ], AGENTIC_ACCOUNT_NUMBER);
+  try {
+    assertScheduledMcpAccountBinding(stdout, [
+      "mcp__robinhood-trading__get_equity_positions",
+      "mcp__robinhood-trading__get_portfolio",
+    ], AGENTIC_ACCOUNT_NUMBER);
+  } catch (error) {
+    console.error("[companion] holdings-sync MCP evidence summary:", JSON.stringify(summarizeMcpStream(stdout)));
+    throw error;
+  }
   const finalText = extractClaudeFinalText(stdout);
 
   // Extract the JSON blob from claude output
@@ -670,7 +675,12 @@ Include ALL states as reported (filled, cancelled, rejected, ...). If there are 
     { env, timeout: 180_000, maxBuffer: 5 * 1024 * 1024 }
   );
 
-  assertScheduledMcpAccountBinding(stdout, ["mcp__robinhood-trading__get_equity_orders"], AGENTIC_ACCOUNT_NUMBER);
+  try {
+    assertScheduledMcpAccountBinding(stdout, ["mcp__robinhood-trading__get_equity_orders"], AGENTIC_ACCOUNT_NUMBER);
+  } catch (error) {
+    console.error("[companion] reconciliation MCP evidence summary:", JSON.stringify(summarizeMcpStream(stdout)));
+    throw error;
+  }
 
   const extracted = extractJsonObject(extractClaudeFinalText(stdout), (p) => Array.isArray(p.orders) && p.accountNumber === AGENTIC_ACCOUNT_NUMBER);
   if (!extracted) throw new Error("No valid verified-account orders JSON in Claude output.");

@@ -69,6 +69,34 @@ export function extractMcpToolCalls(stdout) {
   return calls;
 }
 
+/** Safe to log: event categories and MCP tool names only, never tool input or output. */
+export function summarizeMcpStream(stdout) {
+  const eventTypes = new Set();
+  const mcpToolNames = new Set();
+  for (const line of stdout.split("\n")) {
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof record.type === "string") eventTypes.add(record.type);
+    const visit = (value) => {
+      if (!value || typeof value !== "object") return;
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      if (typeof value.name === "string" && value.name.startsWith("mcp__robinhood-trading__")) {
+        mcpToolNames.add(value.name);
+      }
+      Object.values(value).forEach(visit);
+    };
+    visit(record);
+  }
+  return { eventTypes: [...eventTypes].sort(), mcpToolNames: [...mcpToolNames].sort() };
+}
+
 export function assertScheduledMcpAccountBinding(stdout, requiredToolNames, accountNumber) {
   const calls = extractMcpToolCalls(stdout);
   for (const name of requiredToolNames) {
