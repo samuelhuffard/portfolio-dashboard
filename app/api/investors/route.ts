@@ -16,7 +16,7 @@ interface InvestorSummary {
   unattributed: UnattributedCapital | null; // FundManager only: deposits not yet in the ledger
   navIsCurrent: boolean; // FundManager only: latest Performance row is dated today (NY)
   latestNavDate: string | null; // FundManager only
-  performance: Array<Pick<Awaited<ReturnType<typeof readPerformance>>[number], "date" | "spyPrice" | "navPerUnit">>;
+  performance: Array<Pick<Awaited<ReturnType<typeof readPerformance>>[number], "date" | "spyPrice" | "navPerUnit"> & { portfolioValue?: number | null }>;
   history: Array<Pick<Awaited<ReturnType<typeof readInvestorLedger>>[number], "date" | "type" | "amount" | "navPerUnit" | "units">>;
 }
 
@@ -57,10 +57,11 @@ async function loadInvestorSummary(userId: string, email: string | null, isManag
         units,
       }))
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-    const scopedPerformance = performance.map(({ date, spyPrice, navPerUnit: performanceNavPerUnit }) => ({
+    const scopedPerformance = performance.map(({ date, portfolioValue, spyPrice, navPerUnit: performanceNavPerUnit }) => ({
       date,
       spyPrice,
       navPerUnit: performanceNavPerUnit,
+      ...(isManager ? { portfolioValue } : {}),
     }));
 
     return {

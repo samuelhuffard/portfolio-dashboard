@@ -1,36 +1,40 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildNavComparison, paddedReturnDomain } from "../lib/portfolio-chart";
+import { buildAdjustedValueSeries, buildPerformanceComparison, paddedReturnDomain } from "../lib/portfolio-chart";
 import type { PerformanceRow } from "../lib/sheets";
 
-test("buildNavComparison rebases after investor-ledger accounting discontinuities", () => {
+test("cash-flow-adjusted value ignores deposits and ends at the actual account value", () => {
+  // Mirrors the real account shape: $50, a $25 addition, then another $25
+  // addition. NAV/unit correction rows must not influence this calculation.
   const performance: PerformanceRow[] = [
-    { date: "2026-07-07", portfolioValue: 74.55, spyPrice: 746.49, unitsOutstanding: 25, navPerUnit: 2.9819 },
-    { date: "2026-07-07", portfolioValue: 74.55, spyPrice: 746.49, unitsOutstanding: 75, navPerUnit: 0.994 },
-    { date: "2026-07-08", portfolioValue: 75.43, spyPrice: 745.36, unitsOutstanding: 75, navPerUnit: 1.0057 },
-    { date: "2026-07-09", portfolioValue: 75.42, spyPrice: 747.33, unitsOutstanding: 75, navPerUnit: 1.0056 },
+    { date: "2026-07-01", portfolioValue: 50, spyPrice: 746, unitsOutstanding: null, navPerUnit: null },
+    { date: "2026-07-02", portfolioValue: 49.72, spyPrice: 744, unitsOutstanding: null, navPerUnit: null },
+    { date: "2026-07-06", portfolioValue: 74.69, spyPrice: 749, unitsOutstanding: null, navPerUnit: null },
+    { date: "2026-07-12", portfolioValue: 75.91, spyPrice: 755, unitsOutstanding: 75, navPerUnit: 1.0121 },
+    { date: "2026-07-13", portfolioValue: 100.48, spyPrice: 750, unitsOutstanding: 75, navPerUnit: 1.3397 },
+    { date: "2026-07-13", portfolioValue: 100.39, spyPrice: 749, unitsOutstanding: 99.7011, navPerUnit: 1.0069 },
   ];
 
-  const comparison = buildNavComparison(performance);
+  const series = buildAdjustedValueSeries(performance);
+  const values = series.map((point) => Number(point.Value.toFixed(2)));
 
-  assert.equal(comparison.length, 3);
-  assert.equal(Number(comparison[0].Portfolio.toFixed(4)), 0);
-  assert.equal(Number(comparison.at(-1)?.Portfolio.toFixed(4)), 1.167);
-  assert.equal(Number(comparison.at(-1)?.["S&P 500"].toFixed(4)), 0.1125);
+  assert.equal(values.at(-1), 100.39);
+  assert.ok(Math.max(...values) - Math.min(...values) < 2, `unexpected cash-flow spike: ${values.join(", ")}`);
+  assert.ok(!values.some((value) => value > 120));
 });
 
-test("buildNavComparison does not rebase normal contributions when NAV stays continuous", () => {
+test("SPY comparison uses equity snapshots, not unstable NAV corrections", () => {
   const performance: PerformanceRow[] = [
-    { date: "2026-07-10", portfolioValue: 100, spyPrice: 500, unitsOutstanding: 100, navPerUnit: 1 },
-    { date: "2026-07-11", portfolioValue: 151.5, spyPrice: 505, unitsOutstanding: 150, navPerUnit: 1.01 },
-    { date: "2026-07-12", portfolioValue: 154.5, spyPrice: 510, unitsOutstanding: 150, navPerUnit: 1.03 },
+    { date: "2026-07-10", portfolioValue: 50, spyPrice: 500, unitsOutstanding: null, navPerUnit: null },
+    { date: "2026-07-11", portfolioValue: 50.5, spyPrice: 505, unitsOutstanding: 50, navPerUnit: 2.5 },
+    { date: "2026-07-12", portfolioValue: 100, spyPrice: 510, unitsOutstanding: 100, navPerUnit: 0.5 },
   ];
 
-  const comparison = buildNavComparison(performance);
+  const comparison = buildPerformanceComparison(performance);
 
   assert.equal(comparison.length, 3);
-  assert.equal(Number(comparison[0].Portfolio.toFixed(4)), 0);
-  assert.equal(Number(comparison.at(-1)?.Portfolio.toFixed(4)), 3);
+  assert.equal(comparison[0].Portfolio, 0);
+  assert.equal(Number(comparison.at(-1)?.Portfolio.toFixed(4)), 1);
   assert.equal(Number(comparison.at(-1)?.["S&P 500"].toFixed(4)), 2);
 });
 

@@ -18,7 +18,7 @@ import {
 import NewsPanel from '@/components/command/NewsPanel';
 import RunResearchButton from '@/components/command/RunResearchButton';
 import { fmtCurrency, fmtPercent, gainLossColor } from '@/lib/format';
-import { buildNavComparison, paddedReturnDomain } from '@/lib/portfolio-chart';
+import { buildAdjustedValueSeries, buildPerformanceComparison, paddedReturnDomain } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
 interface PortfolioResponse {
@@ -51,9 +51,12 @@ function fmtAxisDollar(v: number): string {
 }
 
 function buildGrowthData(performance: PerformanceRow[]) {
-  return performance
-    .filter((p) => p.portfolioValue !== null)
-    .map((p) => ({ date: p.date, Value: p.portfolioValue as number }));
+  const adjusted = buildAdjustedValueSeries(performance);
+  return adjusted.length > 0
+    ? adjusted
+    : performance
+      .filter((p) => p.portfolioValue !== null)
+      .map((p) => ({ date: p.date, Value: p.portfolioValue as number }));
 }
 
 function buildAllocation(holdings: Holding[]) {
@@ -83,7 +86,7 @@ export default function OverviewPage() {
   const [data, setData] = useState<PortfolioResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [chartMode, setChartMode] = useState<ChartMode>('normalized');
+  const [chartMode, setChartMode] = useState<ChartMode>('growth');
 
   useEffect(() => {
     function load() {
@@ -136,18 +139,18 @@ export default function OverviewPage() {
   if (!data) return null;
 
   const { totals, cash, lastSynced } = data;
-  const navComparison = buildNavComparison(data.performance);
-  const hasNavData = navComparison.length > 0;
+  const performanceComparison = buildPerformanceComparison(data.performance);
+  const hasBenchmarkData = performanceComparison.length >= 2;
   const growthData = buildGrowthData(data.performance);
   const allocation = buildAllocation(data.holdings);
   const topMovers = getTopMovers(data.holdings);
   const investedRatio = totals.totalValue ? (totals.totalMarketValue / totals.totalValue) * 100 : null;
   const cashRatio = totals.totalValue && cash !== null ? (cash / totals.totalValue) * 100 : null;
 
-  // No NAV history yet → the deposit-proof comparison isn't possible; fall back
-  // to the raw-value chart and never claim a vs-S&P comparison.
-  const effectiveMode: ChartMode = hasNavData ? chartMode : 'growth';
-  const comparisonDomain = paddedReturnDomain(navComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]));
+  // Without SPY snapshots, preserve the cash-flow-adjusted dollar series but
+  // do not claim that a benchmark comparison exists.
+  const effectiveMode: ChartMode = hasBenchmarkData ? chartMode : 'growth';
+  const comparisonDomain = paddedReturnDomain(performanceComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]));
   const growthDomain = paddedDomain(
     growthData.map((d) => d.Value),
     0.18,
@@ -194,18 +197,18 @@ export default function OverviewPage() {
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">
-                {effectiveMode === 'normalized' ? 'NAV Per Unit Return' : 'Portfolio Growth'}
+                {effectiveMode === 'normalized' ? 'Investment Return' : 'Cash-Flow-Adjusted Value'}
               </p>
               <h2 className="text-xl font-semibold text-white">
-                {effectiveMode === 'normalized' ? 'Return vs S&P 500' : 'Total Portfolio Value'}
+                {effectiveMode === 'normalized' ? 'Return vs S&P 500' : 'Adjusted Portfolio Value'}
               </h2>
-              {!hasNavData && growthData.length > 0 && (
+              {!hasBenchmarkData && growthData.length > 0 && (
                 <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                  No NAV-per-unit history yet — benchmark comparison unavailable
+                  No SPY history yet — benchmark comparison unavailable
                 </p>
               )}
             </div>
-            {hasNavData && (
+            {hasBenchmarkData && (
               <div className="flex gap-1 rounded border border-white/10 bg-white/[0.04] p-1">
                 <button
                   onClick={() => setChartMode('normalized')}
@@ -222,14 +225,14 @@ export default function OverviewPage() {
               </div>
             )}
           </div>
-          {(effectiveMode === 'normalized' ? navComparison : growthData).length === 0 ? (
+          {(effectiveMode === 'normalized' ? performanceComparison : growthData).length === 0 ? (
             <p className="border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400">
               No performance history yet — run holdings-sync to start tracking.
             </p>
           ) : effectiveMode === 'normalized' ? (
             <div className="h-[260px] sm:h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={navComparison} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                <AreaChart data={performanceComparison} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="portfolioGlow" x1="0" x2="0" y1="0" y2="1">
                       <stop offset="5%" stopColor="#00ffb2" stopOpacity={0.36} />
