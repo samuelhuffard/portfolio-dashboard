@@ -5,6 +5,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { fmtCurrency, fmtPercent, fmtNumber, gainLossColor } from '@/lib/format';
 import ContributionForm, { type RosterOption } from '@/components/investors/ContributionForm';
 import UnattributedCard from '@/components/investors/UnattributedCard';
+import { buildAdjustedValueSeries } from '@/lib/portfolio-chart';
 
 interface InvestorPosition {
   investorId: string | null;
@@ -44,7 +45,7 @@ interface InvestorsResponse {
   unattributed: UnattributedCapital | null;
   navIsCurrent: boolean;
   latestNavDate: string | null;
-  performance: Array<{ date: string; spyPrice: number | null; navPerUnit: number | null }>;
+  performance: Array<{ date: string; spyPrice: number | null; navPerUnit: number | null; portfolioValue?: number | null }>;
   history: Array<{ date: string; type: string; amount: number; navPerUnit: number | null; units: number }>;
 }
 
@@ -120,6 +121,7 @@ export default function InvestorsPage() {
             unitsOutstanding={data.unitsOutstanding}
             totalFundValue={data.totalFundValue}
             roster={data.roster}
+            performance={data.performance}
           />
           <ContributionForm roster={rosterOptions(data.roster)} onRecorded={load} />
           <WithdrawalPreviewPanel />
@@ -140,15 +142,20 @@ function ManagerView({
   unitsOutstanding,
   totalFundValue,
   roster,
+  performance,
 }: {
   navPerUnit: number | null;
   unitsOutstanding: number | null;
   totalFundValue: number | null;
   roster: InvestorPosition[];
+  performance: InvestorsResponse['performance'];
 }) {
   const rosterValue = roster.reduce((s, p) => s + (p.value ?? 0), 0);
+  const adjustedValue = buildAdjustedValueSeries(performance);
   return (
-    <div className="terminal-panel overflow-hidden p-0">
+    <div className="space-y-4">
+      <FundManagerPerformanceChart data={adjustedValue} />
+      <div className="terminal-panel overflow-hidden p-0">
       <div className="grid grid-cols-2 gap-4 border-b border-white/10 p-4 sm:grid-cols-4">
         <Stat label="Total Fund Value" value={totalFundValue != null ? fmtCurrency(totalFundValue) : fmtCurrency(rosterValue)} />
         <Stat label="NAV per Unit" value={navPerUnit != null ? fmtCurrency(navPerUnit, 4) : 'no NAV yet'} />
@@ -192,7 +199,47 @@ function ManagerView({
           </table>
         </div>
       )}
+      </div>
     </div>
+  );
+}
+
+function FundManagerPerformanceChart({ data }: { data: Array<{ date: string; Value: number }> }) {
+  const values = data.map((point) => point.Value);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 1;
+  const padding = Math.max((max - min) * 0.18, Math.max(max * 0.008, 0.5));
+  const domain: [number, number] = [Math.max(0, min - padding), max + padding];
+
+  return (
+    <section className="terminal-panel overflow-hidden p-5 sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Fund performance</p>
+          <h2 className="mt-1 text-xl font-semibold text-white">Account value, adjusted for cash flows</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Contributions and withdrawals are reflected in the account scale, not as artificial performance spikes.
+          </p>
+        </div>
+        {data.length > 0 && <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200/70">NAV-linked series</span>}
+      </div>
+      {data.length === 0 ? (
+        <p className="mt-5 border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400">No cash-flow-adjusted performance history yet.</p>
+      ) : (
+        <div className="mt-4 h-[270px] sm:h-[330px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 10, right: 12, bottom: 0, left: 0 }}>
+              <defs><linearGradient id="fundManagerPerformanceGlow" x1="0" x2="0" y1="0" y2="1"><stop offset="5%" stopColor="#ff6333" stopOpacity={0.34} /><stop offset="95%" stopColor="#ff6333" stopOpacity={0.02} /></linearGradient></defs>
+              <CartesianGrid stroke="rgba(148,163,184,.12)" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+              <YAxis domain={domain} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => fmtCurrency(Number(value))} width={64} />
+              <Tooltip formatter={(value) => fmtCurrency(Number(value))} contentStyle={{ background: '#071019', border: '1px solid rgba(255,99,51,.3)', color: '#fff1eb' }} />
+              <Area type="monotone" dataKey="Value" stroke="#ff6333" strokeWidth={3} fill="url(#fundManagerPerformanceGlow)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </section>
   );
 }
 
