@@ -7,6 +7,8 @@
 - Each item includes date + "Do instead".
 
 ## Execution & Validation (Highest Priority)
+1. **[2026-07-15] A clean deployment worktree must include the full user-visible fix set**
+   Do instead: before a direct Vercel deploy from an older base, compare it with `main` for dependent chart/page commits and deploy the smallest complete set, not merely the triggering API fix.
 1. **[2026-06-18] Client investor views must not expose pooled fund data**
    Do instead: when changing Client routes or APIs, verify Clients only receive their own capital account or intentional curated signals, never full fund holdings/totals unless explicitly approved.
 
