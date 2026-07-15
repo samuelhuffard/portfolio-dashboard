@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
-import { addAgentMemory, deleteAgentMemory, listAgentMemories } from "@/lib/agentMemory";
+import { addAgentMemory, deleteAgentMemory, isAgentMemoryCategory, listAgentMemories } from "@/lib/agentMemory";
 import { getAgent } from "@/lib/agents";
 
 export async function GET(req: Request, { params }: { params: Promise<{ agentId: string }> }) {
@@ -35,6 +35,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
     if (typeof text !== "string" || !text.trim()) {
       return NextResponse.json({ error: "text must be a non-empty string" }, { status: 400 });
     }
+    if (!isAgentMemoryCategory(body?.category)) {
+      return NextResponse.json({ error: "category must be investment or workflow" }, { status: 400 });
+    }
 
     const memory = await addAgentMemory({
       agentId,
@@ -42,6 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
       userId: authz.context.userId,
       text,
       source: "manual",
+      category: body.category,
       importance: body?.importance,
     });
 

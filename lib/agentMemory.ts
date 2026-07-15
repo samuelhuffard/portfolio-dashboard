@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { getRedis } from "./redis";
 
 export type AgentMemoryScope = "agent" | "user-agent";
+export type AgentMemoryCategory = "investment" | "workflow";
 // "weekly_review" rows are written by the backend's jobs/weekly-review.js (calibration lessons).
 export type AgentMemorySource = "chat" | "proposal_decision" | "manual" | "strategy" | "weekly_review";
 
@@ -12,6 +13,7 @@ export interface AgentMemory {
   userId: string | null;
   text: string;
   source: AgentMemorySource;
+  category?: AgentMemoryCategory;
   importance: number;
   createdAt: string;
   updatedAt: string;
@@ -23,12 +25,17 @@ export interface AgentMemoryInput {
   userId?: string | null;
   text: string;
   source: AgentMemorySource;
+  category: AgentMemoryCategory;
   importance?: number;
   now?: string;
 }
 
 const MAX_MEMORIES_PER_KEY = 100;
 const MAX_MEMORY_TEXT_LENGTH = 500;
+
+export function isAgentMemoryCategory(value: unknown): value is AgentMemoryCategory {
+  return value === "investment" || value === "workflow";
+}
 
 function globalKey(agentId: string): string {
   return `pm:agent-memory:${agentId}:global`;
@@ -102,6 +109,7 @@ export async function addAgentMemory(input: AgentMemoryInput): Promise<AgentMemo
     existing.importance = Math.max(existing.importance, clampImportance(input.importance));
     existing.updatedAt = now;
     existing.source = input.source;
+    existing.category = input.category;
     await writeMemoryList(key, memories);
     return existing;
   }
@@ -113,6 +121,7 @@ export async function addAgentMemory(input: AgentMemoryInput): Promise<AgentMemo
     userId: input.scope === "user-agent" ? input.userId ?? null : null,
     text,
     source: input.source,
+    category: input.category,
     importance: clampImportance(input.importance),
     createdAt: now,
     updatedAt: now,

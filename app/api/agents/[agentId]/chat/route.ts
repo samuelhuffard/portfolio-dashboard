@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireApiPermission } from "@/lib/auth";
 import { getServiceAccountClients, getSharedSpreadsheetId, readHoldings, readRecommendations, readStrategyNotes, readTrackRecord } from "@/lib/sheets";
 import { getChatHistory, appendChatMessages, clearChatHistory, type ChatMessage } from "@/lib/agentChat";
-import { addAgentMemory, formatAgentMemoriesForPrompt, listAgentMemories } from "@/lib/agentMemory";
+import { addAgentMemory, formatAgentMemoriesForPrompt, isAgentMemoryCategory, listAgentMemories } from "@/lib/agentMemory";
 import { getAgent } from "@/lib/agents";
 import { fetchMarketSnapshot } from "@/lib/research/yahoo";
 import {
@@ -103,9 +103,10 @@ async function extractDurableMemories({
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 500,
-    system: `Extract durable memory for Sam's portfolio agent. Return ONLY JSON in this shape: {"memories":[{"text":"...","importance":1-5}]}.
+    system: `Extract durable memory for Sam's portfolio agent. Return ONLY JSON in this shape: {"memories":[{"text":"...","importance":1-5,"category":"investment"|"workflow"}]}.
 
 Save only stable preferences, constraints, corrections, mandates, decision rules, or feedback Sam would expect this agent to remember later.
+Classify investment theses, security-selection rules, portfolio-risk rules, and lessons from investment decisions as "investment". Classify dashboard behavior, approvals routing, notifications, reminders, buttons, queues, and other operating preferences as "workflow".
 Do NOT save secrets, API keys, passwords, recovery codes, private messages, phone numbers, addresses, raw account numbers, or one-off conversation filler.
 Do NOT save market facts that will go stale. Do NOT save generic statements already present in existing memories.`,
     messages: [
@@ -122,11 +123,13 @@ Do NOT save market facts that will go stale. Do NOT save generic statements alre
     const memories = Array.isArray(parsed.memories) ? parsed.memories : [];
     for (const memory of memories.slice(0, 3)) {
       if (typeof memory?.text !== "string") continue;
+      if (!isAgentMemoryCategory(memory?.category)) continue;
       await addAgentMemory({
         agentId,
         scope: "agent",
         text: memory.text,
         source: "chat",
+        category: memory.category,
         importance: memory.importance,
       });
     }

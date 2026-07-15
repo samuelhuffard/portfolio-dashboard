@@ -54,6 +54,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             ? `Sam accepted this proposal style: ${proposal.side} ${proposal.ticker} for $${proposal.amountDollars}. Rationale: ${proposal.rationale.slice(0, 220)}`
             : `Sam rejected this proposal style: ${proposal.side} ${proposal.ticker} for $${proposal.amountDollars}. Reason: ${proposal.decisionNote || "not given"}. Rationale: ${proposal.rationale.slice(0, 220)}`,
         source: "proposal_decision",
+        category: "investment",
         importance: proposal.status === "ApprovedForBrokerReview" ? 4 : 3,
       }).catch((err) => console.warn("[Proposals] failed to save decision memory:", err instanceof Error ? err.message : err));
     }

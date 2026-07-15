@@ -818,6 +818,7 @@ function MemorySection({ agentId }: { agentId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [importance, setImportance] = useState('3');
+  const [category, setCategory] = useState<'investment' | 'workflow'>('investment');
 
   function loadMemories() {
     setLoading(true);
@@ -846,7 +847,7 @@ function MemorySection({ agentId }: { agentId: string }) {
       const res = await fetch(`/api/agents/${agentId}/memory`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: value, importance: Number(importance), scope: 'agent' }),
+        body: JSON.stringify({ text: value, importance: Number(importance), category, scope: 'agent' }),
       });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || 'Failed to add memory');
@@ -878,13 +879,22 @@ function MemorySection({ agentId }: { agentId: string }) {
     <div className="space-y-4">
       <div className="terminal-panel p-4">
         <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.24em] text-emerald-200/70">Add Memory</p>
-        <div className="grid gap-2 lg:grid-cols-[1fr_120px_auto]">
+        <div className="grid gap-2 lg:grid-cols-[1fr_140px_120px_auto]">
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Sam prefers..."
             className="border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
           />
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as 'investment' | 'workflow')}
+            aria-label="Memory category"
+            className="border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
+          >
+            <option value="investment">Investment</option>
+            <option value="workflow">Workflow</option>
+          </select>
           <select
             value={importance}
             onChange={(e) => setImportance(e.target.value)}
@@ -922,6 +932,7 @@ function MemorySection({ agentId }: { agentId: string }) {
                       I{memory.importance}
                     </span>
                     <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">{memory.source}</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">{memory.category ?? 'legacy'}</span>
                     <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-600">{memory.scope}</span>
                   </div>
                   <p className="text-sm leading-6 text-slate-200">{memory.text}</p>
