@@ -13,6 +13,8 @@
    Do instead: when changing Client routes or APIs, verify Clients only receive their own capital account or intentional curated signals, never full fund holdings/totals unless explicitly approved.
 
 ## Shell & Command Reliability
+1. **[2026-07-15] Claude stream JSON omits tool-input chunks unless explicitly requested**
+   Do instead: for auditable MCP reads, pass `--include-partial-messages`, reconstruct only complete `input_json_delta` payloads, and retain strict account binding.
 1. **[2026-06-18] Next.js checks are the source of truth**
    Do instead: after TSX/API changes, run `npm run lint` and targeted tests instead of manually counting structure.
 

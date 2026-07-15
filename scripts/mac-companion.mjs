@@ -31,6 +31,7 @@ import {
   MCP_JOB_HISTORY_MAX,
   MCP_JOB_HISTORY_TTL_SECONDS,
 } from "./mcp-read-receipt.mjs";
+import { assertScheduledMcpAccountBinding } from "./mcp-stream-evidence.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -244,33 +245,6 @@ function extractJsonObject(stdout, predicate) {
   return null;
 }
 
-/**
- * Scheduled reads are allowed to write our internal projections only after we
- * can prove which broker account each MCP query targeted. Claude's final prose
- * is not evidence: stream-json includes the actual tool-use inputs.
- */
-function extractMcpToolCalls(stdout) {
-  const calls = [];
-  const visit = (value) => {
-    if (!value || typeof value !== "object") return;
-    if (
-      typeof value.name === "string"
-      && value.name.startsWith("mcp__robinhood-trading__")
-      && value.input
-      && typeof value.input === "object"
-      && !Array.isArray(value.input)
-    ) {
-      calls.push({ name: value.name, input: value.input });
-    }
-    for (const child of Object.values(value)) visit(child);
-  };
-
-  for (const line of stdout.split("\n")) {
-    try { visit(JSON.parse(line)); } catch {}
-  }
-  return calls;
-}
-
 function extractClaudeFinalText(stdout) {
   const resultTexts = [];
   for (const line of stdout.split("\n")) {
@@ -281,17 +255,6 @@ function extractClaudeFinalText(stdout) {
   }
   if (!resultTexts.length) throw new Error("Claude stream did not include a final result");
   return resultTexts.at(-1);
-}
-
-function assertScheduledMcpAccountBinding(stdout, requiredToolNames) {
-  const calls = extractMcpToolCalls(stdout);
-  for (const name of requiredToolNames) {
-    const toolCalls = calls.filter((call) => call.name === name);
-    if (!toolCalls.length) throw new Error(`MCP trace did not include required ${name}`);
-    if (toolCalls.some((call) => call.input.account_number !== AGENTIC_ACCOUNT_NUMBER)) {
-      throw new Error(`MCP trace shows ${name} without the configured Agentic account_number`);
-    }
-  }
 }
 
 // ── Claude executor ────────────────────────────────────────────────────────────
@@ -431,7 +394,7 @@ Include every open position. Use the actual live values from the MCP.`;
   try {
     ({ stdout } = await execFileAsync(
       CLAUDE_BIN,
-      ["-p", "--verbose", "--output-format", "stream-json", "--allowedTools", MCP_SNAPSHOT_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+      ["-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--allowedTools", MCP_SNAPSHOT_TOOLS, "--permission-mode", "bypassPermissions", prompt],
       { env, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 }
     ));
   } catch (err) {
@@ -441,7 +404,7 @@ Include every open position. Use the actual live values from the MCP.`;
   assertScheduledMcpAccountBinding(stdout, [
     "mcp__robinhood-trading__get_equity_positions",
     "mcp__robinhood-trading__get_portfolio",
-  ]);
+  ], AGENTIC_ACCOUNT_NUMBER);
   const finalText = extractClaudeFinalText(stdout);
 
   // Extract the JSON blob from claude output
@@ -703,11 +666,11 @@ Include ALL states as reported (filled, cancelled, rejected, ...). If there are 
 
   const { stdout } = await execFileAsync(
     CLAUDE_BIN,
-    ["-p", "--verbose", "--output-format", "stream-json", "--allowedTools", MCP_RECONCILE_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    ["-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--allowedTools", MCP_RECONCILE_TOOLS, "--permission-mode", "bypassPermissions", prompt],
     { env, timeout: 180_000, maxBuffer: 5 * 1024 * 1024 }
   );
 
-  assertScheduledMcpAccountBinding(stdout, ["mcp__robinhood-trading__get_equity_orders"]);
+  assertScheduledMcpAccountBinding(stdout, ["mcp__robinhood-trading__get_equity_orders"], AGENTIC_ACCOUNT_NUMBER);
 
   const extracted = extractJsonObject(extractClaudeFinalText(stdout), (p) => Array.isArray(p.orders) && p.accountNumber === AGENTIC_ACCOUNT_NUMBER);
   if (!extracted) throw new Error("No valid verified-account orders JSON in Claude output.");
