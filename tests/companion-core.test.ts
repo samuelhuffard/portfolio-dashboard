@@ -104,6 +104,22 @@ test("companion reconciliation requires exact ref_id and broker confirmation bef
   assert.match(source, /decision\.action !== "record" \|\| decision\.orderId !== result\.orderId/);
 });
 
+test("companion heartbeat cannot overlap or crash on a rejected async tick", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /let heartbeatInFlight = false/);
+  assert.match(source, /if \(heartbeatInFlight\)/);
+  assert.match(source, /await heartbeat\(\)/);
+  assert.match(source, /Heartbeat error:/);
+  assert.match(source, /finally \{\s*heartbeatInFlight = false/);
+  assert.match(source, /setInterval\(\(\) => void heartbeatTick\(\), 30_000\)/);
+  assert.doesNotMatch(source, /setInterval\(heartbeat, 30_000\)/);
+});
+
+test("companion Redis helpers reject HTTP and Upstash command errors", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /if \(!res\.ok \|\| json\.error\) throw new Error/);
+});
+
 test("market clock: weekends, holidays, and hours", () => {
   // Thu 2026-07-02 12:00 ET (16:00 UTC) — open.
   assert.equal(isMarketOpen(new Date("2026-07-02T16:00:00Z")), true);

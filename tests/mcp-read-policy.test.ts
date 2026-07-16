@@ -37,6 +37,9 @@ test("scheduled MCP reads use a durable lease and a receipt rather than GETDEL",
   assert.match(protocol, /McpReadRequestSchema\.parse/);
   assert.match(protocol, /"NX", "EX", MCP_READ_LEASE_SECONDS/);
   assert.match(protocol, /buildMcpReadReceiptEvidence/);
+  assert.match(protocol, /mcpReadQueueKey/);
+  assert.match(protocol, /ACK_MCP_QUEUE_HEAD_SCRIPT/);
+  assert.match(protocol, /redisCmd\("lindex"/);
   assert.doesNotMatch(protocol, /getdel/);
   assert.match(source, /--request-id/, "snapshot requests must make Sheets retries idempotent");
 });
@@ -77,7 +80,7 @@ test("mismatch and failure receipts cannot claim account verification", () => {
   }
 });
 
-test("a coalesced scheduler slot never receives fabricated completion evidence", () => {
+test("each scheduler slot retains its own invocation identity in completion evidence", () => {
   const existingPendingRequest = { ...request, invocationId: "2026-07-14/09:30" };
   const evidence = buildMcpReadReceiptEvidence(
     existingPendingRequest,

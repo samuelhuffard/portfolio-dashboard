@@ -76,6 +76,12 @@ const MCP_RECONCILE_TOOLS = [
 ].join(",");
 const MCP_READ_LEASE_SECONDS = 5 * 60;
 const MCP_READ_RECEIPT_TTL_SECONDS = 8 * 24 * 3600;
+const ACK_MCP_QUEUE_HEAD_SCRIPT = `
+local current = redis.call("LINDEX", KEYS[1], 0)
+if current ~= ARGV[1] then return 0 end
+redis.call("LPOP", KEYS[1])
+return 1
+`;
 const MARKET_SYNC_DISALLOWED_TOOLS = [
   "mcp__robinhood-trading__place_equity_order",
   "mcp__robinhood-trading__place_option_order",
@@ -103,6 +109,7 @@ async function redisCmd(cmd, ...args) {
     headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
   });
   const json = await res.json();
+  if (!res.ok || json.error) throw new Error(`Redis ${cmd} failed: ${json.error ?? `HTTP ${res.status}`}`);
   return json.result;
 }
 
@@ -113,11 +120,16 @@ async function redisPost(body) {
     body: JSON.stringify(body),
   });
   const json = await res.json();
+  if (!res.ok || json.error) throw new Error(`Redis command failed: ${json.error ?? `HTTP ${res.status}`}`);
   return json.result;
 }
 
 function mcpReadRequestKey(kind) {
   return `pm:mcp-read:${McpReadJobKindSchema.parse(kind)}:request`;
+}
+
+function mcpReadQueueKey(kind) {
+  return `pm:mcp-read:${McpReadJobKindSchema.parse(kind)}:queue`;
 }
 
 function mcpReadLeaseKey(kind) {
@@ -130,7 +142,11 @@ function mcpReadReceiptKey(kind) {
 
 async function claimMcpReadRequest(kind) {
   const parsedKind = McpReadJobKindSchema.parse(kind);
-  const raw = await redisCmd("get", mcpReadRequestKey(parsedKind));
+  // Drain a pre-FIFO singleton first during the rolling upgrade, then use the
+  // invocation queue exclusively. This preserves request order across versions.
+  let raw = await redisCmd("get", mcpReadRequestKey(parsedKind));
+  let legacy = Boolean(raw);
+  if (!raw) raw = await redisCmd("lindex", mcpReadQueueKey(parsedKind), "0");
   if (!raw) return null;
   let request;
   try {
@@ -140,29 +156,38 @@ async function claimMcpReadRequest(kind) {
     return null;
   }
   const lock = await redisPost(["set", mcpReadLeaseKey(parsedKind), request.id, "NX", "EX", MCP_READ_LEASE_SECONDS]);
-  return lock === "OK" ? request : null;
+  return lock === "OK" ? { request, raw: typeof raw === "string" ? raw : JSON.stringify(raw), legacy } : null;
 }
 
-async function recordMcpReadReceipt(request, { ok, outcome, error = null }) {
+async function recordMcpReadReceipt(claim, { ok, outcome, error = null }) {
+  const { request } = claim;
   const { receipt, jobRecord, historyKey } = buildMcpReadReceiptEvidence(request, { ok, outcome, error });
   await redisPost(["set", mcpReadReceiptKey(request.kind), JSON.stringify(receipt), "EX", MCP_READ_RECEIPT_TTL_SECONDS]);
   await redisPost(["set", `pm:job:${request.kind}:last-run`, JSON.stringify(jobRecord)]);
   await redisPost(["rpush", historyKey, JSON.stringify(jobRecord)]);
   await redisPost(["ltrim", historyKey, -MCP_JOB_HISTORY_MAX, -1]);
   await redisPost(["expire", historyKey, MCP_JOB_HISTORY_TTL_SECONDS]);
-  if (ok) await redisCmd("del", mcpReadRequestKey(request.kind));
+  if (ok) {
+    if (claim.legacy) {
+      await redisCmd("del", mcpReadRequestKey(request.kind));
+    } else {
+      const acknowledged = await redisPost(["eval", ACK_MCP_QUEUE_HEAD_SCRIPT, "1", mcpReadQueueKey(request.kind), claim.raw]);
+      if (Number(acknowledged) !== 1) throw new Error(`MCP ${request.kind} queue head changed before acknowledgement.`);
+    }
+  }
   await redisCmd("del", mcpReadLeaseKey(request.kind));
 }
 
 async function processMcpReadRequest(kind, run) {
-  const request = await claimMcpReadRequest(kind);
-  if (!request) return;
+  const claim = await claimMcpReadRequest(kind);
+  if (!claim) return;
+  const { request } = claim;
   try {
     const outcome = await run(request);
-    await recordMcpReadReceipt(request, { ok: outcome !== "mismatch", outcome: outcome ?? "ok" });
+    await recordMcpReadReceipt(claim, { ok: outcome !== "mismatch", outcome: outcome ?? "ok" });
   } catch (error) {
     console.error(`[companion] ${kind} MCP read failed:`, error.message);
-    await recordMcpReadReceipt(request, { ok: false, outcome: "failed", error: error.message });
+    await recordMcpReadReceipt(claim, { ok: false, outcome: "failed", error: error.message });
     // Leave the request durable. The next heartbeat may retry after the lease
     // expires; request-id idempotency prevents a duplicate Performance row.
     await redisPost(["set", mcpReadLeaseKey(request.kind), request.id, "EX", MCP_READ_LEASE_SECONDS]).catch(() => null);
@@ -776,7 +801,24 @@ async function heartbeat() {
   await processMcpReadRequest("order-reconciliation", (request) => runDailyReconciliation(request.requestedForET));
 }
 
+let heartbeatInFlight = false;
+async function heartbeatTick() {
+  if (heartbeatInFlight) {
+    console.warn("[companion] Heartbeat still running — skipping overlapping tick");
+    return;
+  }
+  heartbeatInFlight = true;
+  try {
+    await heartbeat();
+  } catch (error) {
+    console.error("[companion] Heartbeat error:", error.message);
+  } finally {
+    heartbeatInFlight = false;
+  }
+}
+
 console.log(`[companion] Starting — polling every ${POLL_INTERVAL_MS / 1000}s`);
 poll(); // run immediately on start
+heartbeatTick();
 setInterval(poll, POLL_INTERVAL_MS);
-setInterval(heartbeat, 30_000); // check for manual trigger every 30s
+setInterval(() => void heartbeatTick(), 30_000); // serialized, top-level-caught trigger/MCP loop
