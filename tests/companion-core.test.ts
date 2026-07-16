@@ -120,6 +120,16 @@ test("companion Redis helpers reject HTTP and Upstash command errors", () => {
   assert.match(source, /if \(!res\.ok \|\| json\.error\) throw new Error/);
 });
 
+test("companion MCP failures cannot dump the command prompt or account identifier", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /function safeMcpReadError/);
+  assert.match(source, /split\("Command failed:"\)/);
+  assert.match(source, /\[REDACTED_ACCOUNT\]/);
+  assert.match(source, /slice\(0, 300\)/);
+  assert.match(source, /error: safeError/);
+  assert.doesNotMatch(source, /MCP read failed:", error\.message/);
+});
+
 test("market clock: weekends, holidays, and hours", () => {
   // Thu 2026-07-02 12:00 ET (16:00 UTC) — open.
   assert.equal(isMarketOpen(new Date("2026-07-02T16:00:00Z")), true);

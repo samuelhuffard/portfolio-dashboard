@@ -140,6 +140,17 @@ function mcpReadReceiptKey(kind) {
   return `pm:mcp-read:${McpReadJobKindSchema.parse(kind)}:last-run`;
 }
 
+function safeMcpReadError(error) {
+  const raw = String(error?.message ?? error ?? "MCP read failed");
+  const beforeCommand = raw.split("Command failed:")[0].trim();
+  const summary = beforeCommand || `MCP child process failed${Number.isInteger(error?.code) ? ` with exit ${error.code}` : ""}`;
+  const accountRedacted = AGENTIC_ACCOUNT_NUMBER
+    ? summary.replaceAll(AGENTIC_ACCOUNT_NUMBER, "[REDACTED_ACCOUNT]")
+    : summary;
+  return accountRedacted.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 300)
+    || "MCP read failed";
+}
+
 async function claimMcpReadRequest(kind) {
   const parsedKind = McpReadJobKindSchema.parse(kind);
   // Drain a pre-FIFO singleton first during the rolling upgrade, then use the
@@ -186,8 +197,9 @@ async function processMcpReadRequest(kind, run) {
     const outcome = await run(request);
     await recordMcpReadReceipt(claim, { ok: outcome !== "mismatch", outcome: outcome ?? "ok" });
   } catch (error) {
-    console.error(`[companion] ${kind} MCP read failed:`, error.message);
-    await recordMcpReadReceipt(claim, { ok: false, outcome: "failed", error: error.message });
+    const safeError = safeMcpReadError(error);
+    console.error(`[companion] ${kind} MCP read failed:`, safeError);
+    await recordMcpReadReceipt(claim, { ok: false, outcome: "failed", error: safeError });
     // Leave the request durable. The next heartbeat may retry after the lease
     // expires; request-id idempotency prevents a duplicate Performance row.
     await redisPost(["set", mcpReadLeaseKey(request.kind), request.id, "EX", MCP_READ_LEASE_SECONDS]).catch(() => null);
