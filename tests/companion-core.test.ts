@@ -8,6 +8,7 @@ import {
   decideReconcileAction,
   isPlausibleOrderId,
   isMarketOpen,
+  resolveCompanionRole,
   MARKET_HOLIDAYS,
 } from "../scripts/companion-core.mjs";
 import { computeDecisionSignature as dashboardSignature } from "../lib/proposals";
@@ -94,6 +95,35 @@ test("fabricated order IDs are rejected before recording", () => {
   assert.equal(isPlausibleOrderId(""), false);
   assert.equal(isPlausibleOrderId(undefined), false);
   assert.equal(isPlausibleOrderId("I placed the order successfully"), false);
+});
+
+test("companion roles isolate always-on broker reads from real-money execution", () => {
+  assert.deepEqual(resolveCompanionRole("read-worker"), {
+    name: "read-worker",
+    brokerReads: true,
+    execution: false,
+    marketScans: false,
+    heartbeatKey: "pm:broker-reader:last-seen",
+  });
+  assert.deepEqual(resolveCompanionRole("execution"), {
+    name: "execution",
+    brokerReads: false,
+    execution: true,
+    marketScans: true,
+    heartbeatKey: "pm:companion:last-seen",
+  });
+  assert.equal(resolveCompanionRole().name, "full", "rolling upgrades preserve the prior combined role");
+  assert.throws(() => resolveCompanionRole("reader-ish"), /Invalid COMPANION_ROLE/);
+});
+
+test("companion startup and queues are gated by the resolved role", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /const COMPANION_ROLE = resolveCompanionRole\(process\.env\.COMPANION_ROLE\)/);
+  assert.match(source, /if \(!COMPANION_ROLE\.execution\) return/);
+  assert.match(source, /if \(COMPANION_ROLE\.execution\) \{\s*const triggered = await redisCmd\("getdel", "pm:exec_trigger"/);
+  assert.match(source, /if \(COMPANION_ROLE\.brokerReads\) \{\s*await processMcpReadRequest\("holdings-sync"/);
+  assert.match(source, /if \(COMPANION_ROLE\.execution\) setInterval\(poll, POLL_INTERVAL_MS\)/);
+  assert.match(source, /COMPANION_ROLE\.heartbeatKey/);
 });
 
 test("companion reconciliation requires exact ref_id and broker confirmation before accounting", () => {

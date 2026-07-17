@@ -24,6 +24,7 @@ import {
   decideReconcileAction,
   isPlausibleOrderId,
   isMarketOpen,
+  resolveCompanionRole,
 } from "./companion-core.mjs";
 import { McpReadJobKindSchema, McpReadRequestSchema } from "../lib/contracts/mcp-read-job.js";
 import {
@@ -60,7 +61,9 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
 const POLL_INTERVAL_MS = 15 * 60 * 1000; // 15 min during market hours
 const LOCK_TTL_SECONDS = 300; // 5 min — prevents double-execution if companion restarts mid-trade
 const LIST_KEY = "pm:approval_proposals";
-const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "/Users/samhuffard/.local/bin/claude";
+const CLAUDE_BIN = process.env.CLAUDE_BIN?.trim()
+  || (existsSync("/Users/samhuffard/.local/bin/claude") ? "/Users/samhuffard/.local/bin/claude" : "claude");
+const COMPANION_ROLE = resolveCompanionRole(process.env.COMPANION_ROLE);
 const ROBINHOOD_MCP_TOOLS = "mcp__robinhood-trading__*";
 const AGENTIC_ACCOUNT_NUMBER = process.env.ROBINHOOD_ACCOUNT_NUMBER?.trim();
 // Fixed, non-mutating allowlists for scheduled broker data work. Do not widen
@@ -741,6 +744,7 @@ Include ALL states as reported (filled, cancelled, rejected, ...). If there are 
 
 // ── Main poll loop ─────────────────────────────────────────────────────────────
 async function poll(force = false) {
+  if (!COMPANION_ROLE.execution) return;
   if (!force && !isMarketOpen()) {
     console.log(`[companion] Market closed — skipping poll`);
     return;
@@ -790,27 +794,33 @@ async function poll(force = false) {
 }
 
 async function heartbeat() {
-  // Liveness beacon — the dashboard warns when this goes stale while approved
-  // proposals are waiting (Mac asleep = nothing executes, silently).
-  await redisPost(["set", "pm:companion:last-seen", new Date().toISOString(), "EX", 3600]).catch(() => null);
+  // Keep execution and broker-reader liveness distinct during split-host
+  // operation; one healthy role must never conceal failure of the other.
+  await redisPost(["set", COMPANION_ROLE.heartbeatKey, new Date().toISOString(), "EX", 3600]).catch(() => null);
 
-  const triggered = await redisCmd("getdel", "pm:exec_trigger").catch(() => null);
-  if (triggered) {
-    console.log(`[companion] Manual trigger received — running immediate poll`);
-    await poll(true);
+  if (COMPANION_ROLE.execution) {
+    const triggered = await redisCmd("getdel", "pm:exec_trigger").catch(() => null);
+    if (triggered) {
+      console.log(`[companion] Manual trigger received — running immediate poll`);
+      await poll(true);
+    }
   }
 
-  const marketTriggered = await redisCmd("getdel", "pm:market_scan_trigger").catch(() => null);
-  if (marketTriggered) {
-    console.log(`[companion] Market scan trigger received — syncing Robinhood scans`);
-    await runMarketScanSync();
+  if (COMPANION_ROLE.marketScans) {
+    const marketTriggered = await redisCmd("getdel", "pm:market_scan_trigger").catch(() => null);
+    if (marketTriggered) {
+      console.log(`[companion] Market scan trigger received — syncing Robinhood scans`);
+      await runMarketScanSync();
+    }
   }
 
-  await processMcpReadRequest("holdings-sync", async (request) => {
-    await syncHoldings({ requestId: request.id });
-    return "ok";
-  });
-  await processMcpReadRequest("order-reconciliation", (request) => runDailyReconciliation(request.requestedForET));
+  if (COMPANION_ROLE.brokerReads) {
+    await processMcpReadRequest("holdings-sync", async (request) => {
+      await syncHoldings({ requestId: request.id });
+      return "ok";
+    });
+    await processMcpReadRequest("order-reconciliation", (request) => runDailyReconciliation(request.requestedForET));
+  }
 }
 
 let heartbeatInFlight = false;
@@ -829,8 +839,12 @@ async function heartbeatTick() {
   }
 }
 
-console.log(`[companion] Starting — polling every ${POLL_INTERVAL_MS / 1000}s`);
-poll(); // run immediately on start
+console.log(
+  `[companion] Starting role=${COMPANION_ROLE.name} `
+  + `execution=${COMPANION_ROLE.execution} brokerReads=${COMPANION_ROLE.brokerReads} `
+  + `marketScans=${COMPANION_ROLE.marketScans}`
+);
+if (COMPANION_ROLE.execution) poll(); // run immediately on start
 heartbeatTick();
-setInterval(poll, POLL_INTERVAL_MS);
+if (COMPANION_ROLE.execution) setInterval(poll, POLL_INTERVAL_MS);
 setInterval(() => void heartbeatTick(), 30_000); // serialized, top-level-caught trigger/MCP loop

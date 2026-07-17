@@ -11,6 +11,41 @@ import { timingSafeEqual } from "node:crypto";
 import { computeDecisionSignature } from "../lib/contracts/signature.js";
 export { computeDecisionSignature };
 
+// ── Process role isolation ─────────────────────────────────────────────────
+// Keep scheduled broker reads and signed trade execution separable so an
+// always-on read worker cannot accidentally gain execution authority.
+export function resolveCompanionRole(value = "full") {
+  const name = String(value ?? "").trim().toLowerCase() || "full";
+  const roles = {
+    full: {
+      name: "full",
+      brokerReads: true,
+      execution: true,
+      marketScans: true,
+      heartbeatKey: "pm:companion:last-seen",
+    },
+    "read-worker": {
+      name: "read-worker",
+      brokerReads: true,
+      execution: false,
+      marketScans: false,
+      heartbeatKey: "pm:broker-reader:last-seen",
+    },
+    execution: {
+      name: "execution",
+      brokerReads: false,
+      execution: true,
+      marketScans: true,
+      heartbeatKey: "pm:companion:last-seen",
+    },
+  };
+  const role = roles[name];
+  if (!role) {
+    throw new Error(`Invalid COMPANION_ROLE "${name}". Expected full, read-worker, or execution.`);
+  }
+  return Object.freeze(role);
+}
+
 export function verifyApprovalSignature(proposal, secret) {
   if (!secret) {
     return { ok: false, reason: "AUDIT_HMAC_SECRET is not configured on this machine — cannot verify approvals" };
