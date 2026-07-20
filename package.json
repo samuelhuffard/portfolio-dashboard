@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "smoke:core": "node --import tsx scripts/core-route-smoke.ts",
     "check:contracts": "tsx --test tests/contracts-drift.test.ts",
     "predeploy": "npm run check:contracts && npm run lint"
   },
