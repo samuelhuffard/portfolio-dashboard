@@ -11,6 +11,7 @@ import {
   MAX_PROPOSALS,
   MAX_AMOUNT_DOLLARS,
   PROPOSAL_EXPIRY_MS,
+  CURRENT_PROPOSAL_CONTRACT_VERSION,
   TICKER_RE,
   validateProposalInput,
 } from "./contracts/proposal.js";
@@ -31,6 +32,8 @@ export interface AllocationProposal {
   side: ProposalSide;
   amountDollars: number;
   maxPrice: number | null;
+  proposalContractVersion?: number;
+  sellOwnerShareLimit?: number | null;
   rationale: string;
   riskSummary: string;
   status: ProposalStatus;
@@ -71,6 +74,37 @@ export interface ProposalInput {
   maxPrice?: unknown;
   rationale: unknown;
   riskSummary?: unknown;
+}
+
+export interface OpenLotForSellScope {
+  ticker: string;
+  agentId: string;
+  sharesOpen: number;
+  status: string;
+}
+
+/** Sum the proposing strategy's verified open lots for one SELL approval. */
+export function computeSellOwnerShareLimit(
+  proposal: Pick<AllocationProposal, "side" | "ticker" | "agentId">,
+  lots: OpenLotForSellScope[],
+): number | null {
+  if (proposal.side !== "SELL") return null;
+  const ticker = proposal.ticker.trim().toUpperCase();
+  const shares = lots
+    .filter((lot) =>
+      lot.status === "OPEN" &&
+      lot.agentId === proposal.agentId &&
+      lot.ticker.trim().toUpperCase() === ticker
+    )
+    .reduce((sum, lot) => sum + (
+      Number.isFinite(lot.sharesOpen) && lot.sharesOpen > 0 ? lot.sharesOpen : 0
+    ), 0);
+  if (!Number.isFinite(shares) || shares <= 0) {
+    throw new Error(
+      `Cannot approve this SELL: ${proposal.agentId} has no verified open ${ticker} shares.`
+    );
+  }
+  return Math.round(shares * 1e8) / 1e8;
 }
 
 const LIST_KEY = "pm:approval_proposals";
@@ -281,6 +315,8 @@ export async function createProposal(input: ReturnType<typeof validateProposalIn
   const proposal: AllocationProposal = {
     id: randomUUID(),
     ...input.value,
+    proposalContractVersion: CURRENT_PROPOSAL_CONTRACT_VERSION,
+    sellOwnerShareLimit: null,
     status: "Pending",
     createdAt: now,
     updatedAt: now,
@@ -303,14 +339,36 @@ export async function createProposal(input: ReturnType<typeof validateProposalIn
   return proposal;
 }
 
-export async function updateProposalDecision(id: string, status: unknown, note: unknown, userId: string): Promise<AllocationProposal | null> {
+export async function updateProposalDecision(
+  id: string,
+  status: unknown,
+  note: unknown,
+  userId: string,
+  options: { sellOwnerShareLimit?: number | null } = {},
+): Promise<AllocationProposal | null> {
   const redis = getRedis();
   if (!redis) throw new Error("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for approval proposals.");
 
   const current = await expireIfNeeded(parseProposal(await redis.get(keyFor(id))));
   if (!current) return null;
 
-  const updated = applyProposalDecision(current, status, note, userId);
+  const approvingSell =
+    status === "ApprovedForBrokerReview" &&
+    current.side === "SELL";
+  const decisionInput: AllocationProposal = approvingSell
+    ? {
+        ...current,
+        proposalContractVersion: CURRENT_PROPOSAL_CONTRACT_VERSION,
+        sellOwnerShareLimit: options.sellOwnerShareLimit ?? current.sellOwnerShareLimit ?? null,
+      }
+    : current;
+  if (
+    approvingSell &&
+    (!Number.isFinite(decisionInput.sellOwnerShareLimit) || (decisionInput.sellOwnerShareLimit ?? 0) <= 0)
+  ) {
+    throw new Error("Cannot approve this SELL without a verified strategy-owner share ceiling.");
+  }
+  const updated = applyProposalDecision(decisionInput, status, note, userId);
 
   await redis.set(keyFor(updated.id), JSON.stringify(updated));
   await shadowProposalLifecycle(updated);

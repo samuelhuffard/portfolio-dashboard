@@ -9,6 +9,7 @@ import { timingSafeEqual } from "node:crypto";
 // (../lib/contracts/signature.js). tests/companion-core.test.ts still cross-checks
 // that this, the dashboard, and the backend all agree.
 import { computeDecisionSignature } from "../lib/contracts/signature.js";
+import { checkSellOwnerShareLimitForExecution } from "../lib/contracts/proposal.js";
 export { computeDecisionSignature };
 
 // ── Process role isolation ─────────────────────────────────────────────────
@@ -61,14 +62,60 @@ export function verifyApprovalSignature(proposal, secret) {
   return { ok: true };
 }
 
+/**
+ * A versioned SELL is executable only when its strategy-owned share ceiling is
+ * present and signed. Legacy non-SELLs remain compatible, but legacy SELLs
+ * fail closed rather than falling back to the account-wide ticker position.
+ */
+export function verifySellOwnerShareCeiling(proposal) {
+  return checkSellOwnerShareLimitForExecution(proposal);
+}
+
+/** Refuse fulfillment/accounting when the broker reports more than authorized. */
+export function verifySellFillWithinOwnerShareCeiling(proposal, shares) {
+  const scope = verifySellOwnerShareCeiling(proposal);
+  if (!scope.ok) return scope;
+  if (String(proposal?.side ?? "").toUpperCase() !== "SELL") {
+    return { ok: true, legacy: scope.legacy };
+  }
+  const filledShares = Number(shares);
+  if (!Number.isFinite(filledShares) || filledShares <= 0) {
+    return { ok: false, legacy: false, reason: "SELL fill has invalid share quantity" };
+  }
+  if (filledShares > proposal.sellOwnerShareLimit + 1e-8) {
+    return {
+      ok: false,
+      legacy: false,
+      reason: `SELL fill ${filledShares} shares exceeds signed strategy-owner ceiling ${proposal.sellOwnerShareLimit}`,
+    };
+  }
+  return { ok: true, legacy: false };
+}
+
 // ── Order instructions ─────────────────────────────────────────────────────
 // SELL must never inherit BUY math or BUY wording (the prompt used to say
 // "buy $X notional" for SELL proposals on a live account).
-export function buildOrderInstructions({ ticker, side, amountDollars, maxPrice }) {
+/**
+ * @param {{ ticker: string, side: string, amountDollars: number, maxPrice: number | null, proposalContractVersion?: number | null, sellOwnerShareLimit?: number | null }} proposal
+ */
+export function buildOrderInstructions({
+  ticker,
+  side,
+  amountDollars,
+  maxPrice,
+  proposalContractVersion = null,
+  sellOwnerShareLimit = null,
+}) {
   const isSell = String(side).toUpperCase() === "SELL";
   if (isSell) {
-    return `MARKET ORDER — sell $${amountDollars} notional of ${ticker} using dollar-amount fractional sizing.
-First check current positions: if the ${ticker} position's market value is LESS than $${amountDollars}, sell the entire remaining position (by share quantity) instead of the dollar amount. Never sell more than currently held. If there is no ${ticker} position at all, place NO order and report failure.`;
+    const scope = verifySellOwnerShareCeiling({
+      side,
+      proposalContractVersion,
+      sellOwnerShareLimit,
+    });
+    if (!scope.ok) throw new Error(`SELL proposal is not executable: ${scope.reason}.`);
+    return `MARKET ORDER — sell up to $${amountDollars} notional of ${ticker}, with a hard strategy-owner ceiling of ${sellOwnerShareLimit} shares.
+First check the current quote. If $${amountDollars} would require more than ${sellOwnerShareLimit} shares, submit exactly ${sellOwnerShareLimit} shares instead. Never use the account-wide ${ticker} position as the ceiling, never sell more than ${sellOwnerShareLimit} shares, and place NO order if that share quantity is unavailable.`;
   }
   const wholeShares = maxPrice ? Math.floor(amountDollars / maxPrice) : 0;
   const useLimit = Boolean(maxPrice) && wholeShares >= 1;

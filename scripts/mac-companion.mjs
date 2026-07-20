@@ -20,6 +20,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   verifyApprovalSignature,
+  verifySellOwnerShareCeiling,
+  verifySellFillWithinOwnerShareCeiling,
   buildOrderInstructions,
   decideReconcileAction,
   isPlausibleOrderId,
@@ -573,6 +575,8 @@ Use agentHint only when obvious: agent-1 for high-growth technology/software/sem
 /** Records the trade in the ledger, then (only on success) marks fulfilled. */
 async function recordAndFulfill(id, proposal, { orderId, shares, price }) {
   try {
+    const sellFillScope = verifySellFillWithinOwnerShareCeiling(proposal, shares);
+    if (!sellFillScope.ok) throw new Error(sellFillScope.reason);
     await recordTrade(proposal, { orderId, shares, price });
   } catch (err) {
     // Money moved but the ledger write failed. Do NOT mark fulfilled — the
@@ -764,6 +768,11 @@ async function poll(force = false) {
       const sig = verifyApprovalSignature(proposal, process.env.AUDIT_HMAC_SECRET?.trim());
       if (!sig.ok) {
         await alertTelegram(`REFUSED proposal ${id} (${proposal.side} $${proposal.amountDollars} ${proposal.ticker}): ${sig.reason}.`);
+        continue;
+      }
+      const sellScope = verifySellOwnerShareCeiling(proposal);
+      if (!sellScope.ok) {
+        await alertTelegram(`REFUSED proposal ${id} (${proposal.side} $${proposal.amountDollars} ${proposal.ticker}): ${sellScope.reason}.`);
         continue;
       }
 

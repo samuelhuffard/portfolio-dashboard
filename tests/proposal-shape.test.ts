@@ -19,6 +19,8 @@ const sample: AllocationProposal = {
   side: "BUY",
   amountDollars: 500,
   maxPrice: null,
+  proposalContractVersion: 2,
+  sellOwnerShareLimit: null,
   rationale: "rationale text long enough",
   riskSummary: "risk",
   status: "Pending",

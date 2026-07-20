@@ -4,6 +4,7 @@ import { addAgentMemory } from "@/lib/agentMemory";
 import {
   assertCashAvailableForAcceptance,
   assertCashAvailableForBuyProposal,
+  computeSellOwnerShareLimit,
   getProposal,
   listProposals,
   NO_REASON_REJECTION,
@@ -11,7 +12,7 @@ import {
   updateProposalFields,
   validateProposalPatch,
 } from "@/lib/proposals";
-import { getServiceAccountClients, getSharedSpreadsheetId, readCashBalance } from "@/lib/sheets";
+import { getServiceAccountClients, getSharedSpreadsheetId, readCashBalance, readLots } from "@/lib/sheets";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const authz = await requireApiPermission({
@@ -24,6 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const { id } = await params;
     const body = await req.json();
+    let sellOwnerShareLimit: number | null = null;
     if (body?.status === "ApprovedForBrokerReview") {
       const current = await getProposal(id);
       if (!current) return NextResponse.json({ error: "Proposal not found" }, { status: 404 });
@@ -36,10 +38,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         ]);
         const cashAvailable = await readCashBalance(sheets, spreadsheetId);
         assertCashAvailableForAcceptance(current, proposals, cashAvailable);
+      } else if (current.side === "SELL") {
+        const [sheets, spreadsheetId] = await Promise.all([
+          getServiceAccountClients(),
+          getSharedSpreadsheetId(),
+        ]);
+        sellOwnerShareLimit = computeSellOwnerShareLimit(
+          current,
+          await readLots(sheets, spreadsheetId),
+        );
       }
     }
 
-    const proposal = await updateProposalDecision(id, body?.status, body?.note, authz.context.userId);
+    const proposal = await updateProposalDecision(
+      id,
+      body?.status,
+      body?.note,
+      authz.context.userId,
+      { sellOwnerShareLimit },
+    );
     if (!proposal) return NextResponse.json({ error: "Proposal not found" }, { status: 404 });
 
     // "No reason" is Sam explicitly opting out of giving the agent anything to learn from —

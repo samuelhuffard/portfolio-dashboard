@@ -7,6 +7,7 @@ import {
   computeAcceptedBuyReserve,
   computeAvailableBuyCash,
   computeDecisionSignature,
+  computeSellOwnerShareLimit,
   isActiveViewProposal,
   partitionProposalsForView,
   RECENT_DECISION_WINDOW_MS,
@@ -153,6 +154,44 @@ test("approval attaches a verifiable decision signature when secret is set", () 
     // Tampering with any trade-relevant field must break the signature.
     const tampered = { ...approved, amountDollars: 9999 };
     assert.notEqual(approved.decisionHmac, computeDecisionSignature(tampered, "test-secret"));
+  } finally {
+    delete process.env.AUDIT_HMAC_SECRET;
+  }
+});
+
+test("SELL approval scope sums only the proposing agent's verified open lots", () => {
+  const sell = { ...baseProposal, side: "SELL" as const, ticker: "SAME", agentId: "agent-2" };
+  const limit = computeSellOwnerShareLimit(sell, [
+    { ticker: "SAME", agentId: "agent-1", sharesOpen: 4, status: "OPEN" },
+    { ticker: "SAME", agentId: "agent-2", sharesOpen: 3, status: "OPEN" },
+    { ticker: "same", agentId: "agent-2", sharesOpen: 2, status: "OPEN" },
+    { ticker: "SAME", agentId: "agent-2", sharesOpen: 99, status: "CLOSED" },
+  ]);
+  assert.equal(limit, 5);
+  assert.throws(
+    () => computeSellOwnerShareLimit(
+      { ...sell, agentId: "agent-3" },
+      [{ ticker: "SAME", agentId: "agent-2", sharesOpen: 5, status: "OPEN" }],
+    ),
+    /no verified open SAME shares/,
+  );
+});
+
+test("v2 SELL approval signs its strategy-owner share ceiling", () => {
+  process.env.AUDIT_HMAC_SECRET = "test-secret";
+  try {
+    const sell = {
+      ...baseProposal,
+      side: "SELL" as const,
+      proposalContractVersion: 2,
+      sellOwnerShareLimit: 5,
+    };
+    const approved = applyProposalDecision(sell, "ApprovedForBrokerReview", "Exit", "user_manager");
+    assert.equal(approved.decisionHmac, computeDecisionSignature(approved, "test-secret"));
+    assert.notEqual(
+      approved.decisionHmac,
+      computeDecisionSignature({ ...approved, sellOwnerShareLimit: 6 }, "test-secret"),
+    );
   } finally {
     delete process.env.AUDIT_HMAC_SECRET;
   }

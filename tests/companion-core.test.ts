@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import {
   computeDecisionSignature as companionSignature,
   verifyApprovalSignature,
+  verifySellOwnerShareCeiling,
+  verifySellFillWithinOwnerShareCeiling,
   buildOrderInstructions,
   decideReconcileAction,
   isPlausibleOrderId,
@@ -54,9 +56,16 @@ test("companion refuses unsigned, forged, and unverifiable proposals", () => {
 });
 
 test("order instructions match the proposal side", () => {
-  const sell = buildOrderInstructions({ ticker: "NVDA", side: "SELL", amountDollars: 25, maxPrice: null });
-  assert.match(sell, /sell \$25 notional/);
-  assert.match(sell, /Never sell more than currently held/);
+  const sell = buildOrderInstructions({
+    ticker: "NVDA",
+    side: "SELL",
+    amountDollars: 25,
+    maxPrice: null,
+    proposalContractVersion: 2,
+    sellOwnerShareLimit: 0.125,
+  });
+  assert.match(sell, /sell up to \$25 notional/);
+  assert.match(sell, /never sell more than 0.125 shares/i);
   assert.doesNotMatch(sell, /buy/i);
 
   const limitBuy = buildOrderInstructions({ ticker: "NVDA", side: "BUY", amountDollars: 1000, maxPrice: 200 });
@@ -65,6 +74,31 @@ test("order instructions match the proposal side", () => {
   // Limit impossible (amount < 1 share) → market notional buy.
   const smallBuy = buildOrderInstructions({ ticker: "NVDA", side: "BUY", amountDollars: 25, maxPrice: 200 });
   assert.match(smallBuy, /MARKET ORDER — buy \$25 notional/);
+});
+
+test("new SELL execution is capped by the signed strategy-owned shares", () => {
+  const scopedSell = {
+    ticker: "SAME",
+    side: "SELL",
+    amountDollars: 500,
+    maxPrice: null,
+    proposalContractVersion: 2,
+    sellOwnerShareLimit: 4,
+  };
+  assert.deepEqual(verifySellOwnerShareCeiling(scopedSell), { ok: true, legacy: false });
+  const instructions = buildOrderInstructions(scopedSell);
+  assert.match(instructions, /hard strategy-owner ceiling of 4 shares/);
+  assert.match(instructions, /Never use the account-wide SAME position as the ceiling/);
+  assert.throws(
+    () => buildOrderInstructions({ ...scopedSell, sellOwnerShareLimit: null }),
+    /not executable/,
+  );
+  assert.equal(verifySellOwnerShareCeiling({ side: "SELL" }).ok, false);
+  assert.equal(verifySellFillWithinOwnerShareCeiling(scopedSell, 4).ok, true);
+  assert.match(
+    verifySellFillWithinOwnerShareCeiling(scopedSell, 4.00000002).reason ?? "",
+    /exceeds signed strategy-owner ceiling/,
+  );
 });
 
 test("reconcile decision table covers every broker outcome", () => {
@@ -124,6 +158,7 @@ test("companion startup and queues are gated by the resolved role", () => {
   assert.match(source, /if \(COMPANION_ROLE\.brokerReads\) \{\s*await processMcpReadRequest\("holdings-sync"/);
   assert.match(source, /if \(COMPANION_ROLE\.execution\) setInterval\(poll, POLL_INTERVAL_MS\)/);
   assert.match(source, /COMPANION_ROLE\.heartbeatKey/);
+  assert.match(source, /verifySellFillWithinOwnerShareCeiling\(proposal, shares\)/);
 });
 
 test("companion reconciliation requires exact ref_id and broker confirmation before accounting", () => {
