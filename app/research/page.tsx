@@ -6,9 +6,10 @@ import AnalysisReport from "@/components/research/AnalysisReport";
 import TickerInput from "@/components/research/TickerInput";
 import ComparisonTable from "@/components/research/ComparisonTable";
 import AgentResearchPanel from "@/components/research/AgentResearchPanel";
+import ResearchQualityPanel from "@/components/research/ResearchQualityPanel";
 import type { ResearchResponse, AnalyzeResponse } from "@/lib/research/types";
 
-type LabTab = "research" | "comps";
+type LabTab = "research" | "comps" | "quality";
 
 // ─── Single-name research ────────────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ function CompsTab() {
 const TABS: { id: LabTab; label: string; description: string }[] = [
   { id: "research", label: "Research", description: "Single-name fundamentals, focused read, export analyst note" },
   { id: "comps", label: "Comps", description: "Compare up to five companies side by side" },
+  { id: "quality", label: "Reality", description: "Separate investment judgments from missing data and system degradation" },
 ];
 
 export default function LabPage() {
@@ -200,6 +202,7 @@ export default function LabPage() {
 
       {tab === "research" && <ResearchTab />}
       {tab === "comps" && <CompsTab />}
+      {tab === "quality" && <ResearchQualityPanel />}
     </div>
   );
 }
