@@ -21,6 +21,24 @@ type ResearchQualityReport = {
   status?: string | null;
   updatedAt?: string | null;
   quality?: Quality | null;
+  agents?: Array<{
+    agentId: string | null;
+    funnel?: ResearchFunnel | null;
+  }>;
+};
+
+type ResearchFunnel = {
+  version: string;
+  cataloged: number;
+  discoveryEligible: number;
+  slate: number;
+  fundamentalsAvailable: number;
+  fundamentalsUnavailable: number;
+  freshScreenPassed: number;
+  deepReviews: number;
+  generatorActionable: number;
+  evaluatorApproved: number;
+  proposalCreated: number;
 };
 
 const OUTCOMES: Array<{ key: keyof Quality; label: string; detail: string; tone: string }> = [
@@ -62,6 +80,7 @@ export default function ResearchQualityPanel() {
   }, []);
 
   const quality = report?.quality;
+  const funnelAgents = report?.agents?.filter((agent): agent is { agentId: string | null; funnel: ResearchFunnel } => Boolean(agent.funnel)) ?? [];
   return (
     <section className="terminal-panel overflow-hidden">
       <div className="border-b border-white/10 px-5 py-5 sm:px-6">
@@ -101,6 +120,52 @@ export default function ResearchQualityPanel() {
             <span>{quality.attemptedReviews} reviews reconciled {quality.conservationValid ? "without remainder" : "with a reconciliation issue"}</span>
             <span>Run {report.runId ?? "unavailable"} · {report.source ?? "unknown source"}</span>
           </div>
+          {funnelAgents.length > 0 && (
+            <div className="border-t border-white/10">
+              <div className="px-5 py-5 sm:px-6">
+                <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-emerald-300/75">Selection trace</p>
+                <h3 className="mt-2 text-lg font-semibold tracking-[-0.02em] text-white">Where each agent’s candidates stopped</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                  These are funnel stages, not investment scores. They show whether the limitation was coverage, screening, the deep-review budget, research judgment, or approval quality.
+                </p>
+              </div>
+              <div className="overflow-x-auto border-t border-white/10">
+                <table className="min-w-[850px] w-full border-collapse text-left">
+                  <thead className="bg-white/[0.025] font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3 font-medium sm:px-6">Agent</th>
+                      <th className="px-4 py-3 font-medium">Catalog</th>
+                      <th className="px-4 py-3 font-medium">Eligible</th>
+                      <th className="px-4 py-3 font-medium">Slate</th>
+                      <th className="px-4 py-3 font-medium">Data ready</th>
+                      <th className="px-4 py-3 font-medium">Deep review</th>
+                      <th className="px-4 py-3 font-medium">Generator action</th>
+                      <th className="px-4 py-3 font-medium">Evaluator approved</th>
+                      <th className="px-5 py-3 font-medium sm:px-6">Proposals</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10 text-sm text-slate-300">
+                    {funnelAgents.map((agent) => (
+                      <tr key={agent.agentId ?? "unknown"} className="transition-colors hover:bg-white/[0.02]">
+                        <td className="px-5 py-4 font-mono text-xs uppercase tracking-[0.14em] text-white sm:px-6">{agent.agentId ?? "Unknown"}</td>
+                        <td className="px-4 py-4">{agent.funnel.cataloged.toLocaleString()}</td>
+                        <td className="px-4 py-4">{agent.funnel.discoveryEligible.toLocaleString()}</td>
+                        <td className="px-4 py-4">{agent.funnel.slate}</td>
+                        <td className="px-4 py-4">
+                          {agent.funnel.fundamentalsAvailable}
+                          {agent.funnel.fundamentalsUnavailable > 0 && <span className="ml-1 text-amber-200">(−{agent.funnel.fundamentalsUnavailable})</span>}
+                        </td>
+                        <td className="px-4 py-4">{agent.funnel.deepReviews}</td>
+                        <td className="px-4 py-4">{agent.funnel.generatorActionable}</td>
+                        <td className="px-4 py-4">{agent.funnel.evaluatorApproved}</td>
+                        <td className="px-5 py-4 font-semibold text-violet-200 sm:px-6">{agent.funnel.proposalCreated}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </section>
