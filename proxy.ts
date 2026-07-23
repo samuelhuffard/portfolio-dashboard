@@ -1,10 +1,14 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { getLocalPreviewRole } from "./lib/local-preview";
 
 const isPublicRoute = createRouteMatcher(["/sign-in(.*)"]);
 const isApiRoute = createRouteMatcher(["/api(.*)"]);
 
 export default clerkMiddleware(async (auth, request) => {
+  // Local development is a read-only preview: lib/auth still rejects all non-GET API calls.
+  if (getLocalPreviewRole()) return;
+
   if (isPublicRoute(request)) {
     return;
   }

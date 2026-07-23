@@ -4,6 +4,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { appendAudit, getAuditConfigError, type AuditAction } from "./audit";
 import { enforceRateLimit } from "./rate-limit";
+import { getLocalPreviewRole } from "./local-preview";
 import { canAccess, resolvePortfolioRole, type Permission, type PortfolioRole } from "./rbac";
 import { checkRedLines } from "./red-lines";
 
@@ -40,7 +41,15 @@ async function bodyTextForRedLines(request: Request): Promise<string> {
   }
 }
 
+function getLocalPreviewAuthContext(): PortfolioAuthContext | null {
+  const role = getLocalPreviewRole();
+  return role ? { userId: "local-preview", role, email: null } : null;
+}
+
 export async function getPortfolioAuthContext(): Promise<PortfolioAuthContext | null> {
+  const preview = getLocalPreviewAuthContext();
+  if (preview) return preview;
+
   const { userId } = await auth();
   if (!userId) return null;
 
@@ -62,6 +71,15 @@ export async function requireApiPermission({
   metadata = {},
 }: RequirePermissionOptions): Promise<{ ok: true; context: PortfolioAuthContext } | { ok: false; response: NextResponse }> {
   const route = routeFromRequest(request);
+  const preview = getLocalPreviewAuthContext();
+  if (preview) {
+    if (request.method.toUpperCase() === "GET") return { ok: true, context: preview };
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Local preview is read-only." }, { status: 403 }),
+    };
+  }
+
   const auditConfigError = getAuditConfigError();
   if (auditConfigError) {
     return {
