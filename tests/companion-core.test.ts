@@ -169,6 +169,17 @@ test("companion reconciliation requires exact ref_id and broker confirmation bef
   assert.match(source, /decision\.action !== "record" \|\| decision\.orderId !== result\.orderId/);
 });
 
+test("companion execution pins every live order to the configured Agentic account", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /const MCP_EXECUTION_TOOLS = \[/);
+  assert.match(source, /"mcp__robinhood-trading__get_accounts"/);
+  assert.match(source, /"mcp__robinhood-trading__place_equity_order"/);
+  assert.match(source, /ROBINHOOD_ACCOUNT_NUMBER is required to execute/);
+  assert.match(source, /account_number "\$\{AGENTIC_ACCOUNT_NUMBER\}" to place_equity_order/);
+  assert.match(source, /assertScheduledMcpAccountBinding\(stdout, \["mcp__robinhood-trading__place_equity_order"\], AGENTIC_ACCOUNT_NUMBER\)/);
+  assert.match(source, /Broker result did not confirm the configured Agentic account/);
+});
+
 test("companion launches Claude with stdin detached for unattended broker work", () => {
   const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
   assert.match(source, /function runClaude\(args, options\)/);

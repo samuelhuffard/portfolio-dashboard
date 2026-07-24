@@ -34,7 +34,7 @@ import {
   MCP_JOB_HISTORY_MAX,
   MCP_JOB_HISTORY_TTL_SECONDS,
 } from "./mcp-read-receipt.mjs";
-import { assertScheduledMcpAccountBinding, summarizeMcpStream } from "./mcp-stream-evidence.mjs";
+import { assertScheduledMcpAccountBinding, extractMcpToolCalls, summarizeMcpStream } from "./mcp-stream-evidence.mjs";
 import { execFileWithClosedStdin } from "./claude-cli.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -102,6 +102,12 @@ const MCP_SNAPSHOT_TOOLS = [
 const MCP_RECONCILE_TOOLS = [
   "mcp__robinhood-trading__get_accounts",
   "mcp__robinhood-trading__get_equity_orders",
+].join(",");
+// Execution is deliberately narrower than the historical wildcard: it may
+// inspect accounts solely to bind the order, then place the signed equity order.
+const MCP_EXECUTION_TOOLS = [
+  "mcp__robinhood-trading__get_accounts",
+  "mcp__robinhood-trading__place_equity_order",
 ].join(",");
 const MCP_READ_LEASE_SECONDS = 5 * 60;
 const MCP_READ_RECEIPT_TTL_SECONDS = 8 * 24 * 3600;
@@ -326,18 +332,23 @@ function extractClaudeFinalText(stdout) {
 // ── Claude executor ────────────────────────────────────────────────────────────
 async function executeViaClaude(proposal) {
   const { id, ticker, side } = proposal;
+  if (!AGENTIC_ACCOUNT_NUMBER) {
+    throw new Error("ROBINHOOD_ACCOUNT_NUMBER is required to execute a trade on the pinned Agentic account.");
+  }
   const orderInstructions = buildOrderInstructions(proposal);
 
-  const prompt = `Use the Robinhood MCP to place the following trade on my Agentic account (the one enabled for agentic trading, not margin or IRA):
+  const prompt = `Use the Robinhood MCP to place the following trade ONLY on configured Agentic account ${AGENTIC_ACCOUNT_NUMBER}.
+
+First call get_accounts. Verify that account ${AGENTIC_ACCOUNT_NUMBER} is present and marked agentic_allowed. If it is missing or not agentic_allowed, place NO order and respond with ok=false. Never use a default, margin, IRA, or any other account.
 
 Ticker: ${ticker}
 Side: ${side.toUpperCase()}
 ${orderInstructions}
 
-IDEMPOTENCY — CRITICAL: pass ref_id "${id}" (exactly this UUID) to place_equity_order. If you retry after a transient failure, re-send the SAME ref_id so the broker deduplicates.
+IDEMPOTENCY — CRITICAL: pass ref_id "${id}" (exactly this UUID) AND account_number "${AGENTIC_ACCOUNT_NUMBER}" to place_equity_order. If you retry after a transient failure, re-send the SAME ref_id so the broker deduplicates.
 
 IMPORTANT: Place the order now — skip the review step, do not ask for confirmation. After placing, respond with ONLY this JSON (no other text):
-{"ok": true, "orderId": "...", "shares": 0.0, "price": 0.00, "message": "brief status"}
+{"ok": true, "accountNumber": "${AGENTIC_ACCOUNT_NUMBER}", "orderId": "...", "shares": 0.0, "price": 0.00, "message": "brief status"}
 
 Use the actual average fill price for "price". On failure respond with ONLY:
 {"ok": false, "error": "reason"}`;
@@ -347,24 +358,31 @@ Use the actual average fill price for "price". On failure respond with ONLY:
   delete env.ANTHROPIC_API_KEY;
 
   const { stdout, stderr } = await runClaude(
-    ["-p", "--allowedTools", "mcp__robinhood-trading__*", "--permission-mode", "bypassPermissions", prompt],
-    { env, timeout: 120_000 }
+    ["-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--allowedTools", MCP_EXECUTION_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    { env, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 }
   );
 
   if (stderr) console.warn(`[companion] claude stderr:`, stderr.trim());
 
-  // Claude's -p output contains tool call JSON + final text. Find the last
-  // standalone JSON object that has an "ok" field (our response format).
-  const candidates = [...stdout.matchAll(/\{[^{}]*"ok"[^{}]*\}/g)];
-  for (const c of candidates.reverse()) {
-    try { return JSON.parse(c[0]); } catch {}
+  const finalText = extractClaudeFinalText(stdout);
+  const extracted = extractJsonObject(finalText, (p) => typeof p.ok === "boolean");
+  if (!extracted) throw new Error(`No valid JSON in Claude output: ${finalText.slice(0, 300)}`);
+  const result = extracted.parsed;
+
+  const placedOrders = extractMcpToolCalls(stdout)
+    .filter((call) => call.name === "mcp__robinhood-trading__place_equity_order");
+  if (placedOrders.length) {
+    assertScheduledMcpAccountBinding(stdout, ["mcp__robinhood-trading__place_equity_order"], AGENTIC_ACCOUNT_NUMBER);
   }
-  // Fallback: last top-level JSON object
-  const blocks = [...stdout.matchAll(/\{(?:[^{}]|\{[^{}]*\})*\}/g)];
-  for (const b of blocks.reverse()) {
-    try { const p = JSON.parse(b[0]); if ("ok" in p) return p; } catch {}
+  if (result.ok) {
+    if (result.accountNumber !== AGENTIC_ACCOUNT_NUMBER) {
+      throw new Error("Broker result did not confirm the configured Agentic account.");
+    }
+    if (!placedOrders.length) {
+      throw new Error("Broker reported success without a traceable Agentic-account order call.");
+    }
   }
-  throw new Error(`No valid JSON in claude output: ${stdout.slice(0, 300)}`);
+  return result;
 }
 
 /**
