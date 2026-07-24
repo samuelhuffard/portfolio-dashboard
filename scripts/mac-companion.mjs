@@ -35,8 +35,32 @@ import {
   MCP_JOB_HISTORY_TTL_SECONDS,
 } from "./mcp-read-receipt.mjs";
 import { assertScheduledMcpAccountBinding, summarizeMcpStream } from "./mcp-stream-evidence.mjs";
+import { execFileWithClosedStdin } from "./claude-cli.mjs";
 
 const execFileAsync = promisify(execFile);
+
+async function runClaude(args, options) {
+  // Claude CLI explicitly treats /dev/null as the unattended prompt mode.
+  // A pipe that is merely closed can still be interpreted as missing input.
+  try {
+    return await execFileWithClosedStdin(execFile, CLAUDE_BIN, args, {
+      ...options,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    // execFile includes every command argument in error.message, which would
+    // leak the full trade prompt into logs and Telegram alerts. Claude's own
+    // stdout/stderr provides the actionable reason without the prompt.
+    const output = [error?.stdout, error?.stderr]
+      .filter((value) => typeof value === "string" && value.trim())
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    const code = Number.isInteger(error?.code) ? ` (exit ${error.code})` : "";
+    throw new Error(`Claude CLI failed${code}: ${output || "no diagnostic output"}`);
+  }
+}
 
 // ── Env loading ────────────────────────────────────────────────────────────────
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -322,8 +346,7 @@ Use the actual average fill price for "price". On failure respond with ONLY:
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
 
-  const { stdout, stderr } = await execFileAsync(
-    CLAUDE_BIN,
+  const { stdout, stderr } = await runClaude(
     ["-p", "--allowedTools", "mcp__robinhood-trading__*", "--permission-mode", "bypassPermissions", prompt],
     { env, timeout: 120_000 }
   );
@@ -365,8 +388,7 @@ or, if no matching order exists:
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
 
-  const { stdout } = await execFileAsync(
-    CLAUDE_BIN,
+  const { stdout } = await runClaude(
     ["-p", "--allowedTools", ROBINHOOD_MCP_TOOLS, "--disallowedTools", MARKET_SYNC_DISALLOWED_TOOLS, "--permission-mode", "bypassPermissions", prompt],
     { env, timeout: 120_000 }
   );
@@ -434,8 +456,7 @@ Include every open position. Use the actual live values from the MCP.`;
 
   let stdout;
   try {
-    ({ stdout } = await execFileAsync(
-      CLAUDE_BIN,
+    ({ stdout } = await runClaude(
       ["-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--allowedTools", MCP_SNAPSHOT_TOOLS, "--permission-mode", "bypassPermissions", prompt],
       { env, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 }
     ));
@@ -540,8 +561,7 @@ Use agentHint only when obvious: agent-1 for high-growth technology/software/sem
 
   let stdout;
   try {
-    ({ stdout } = await execFileAsync(
-      CLAUDE_BIN,
+    ({ stdout } = await runClaude(
       ["-p", "--allowedTools", ROBINHOOD_MCP_TOOLS, "--disallowedTools", MARKET_SYNC_DISALLOWED_TOOLS, "--permission-mode", "bypassPermissions", prompt],
       { env, timeout: 180_000 }
     ));
@@ -713,8 +733,7 @@ Include ALL states as reported (filled, cancelled, rejected, ...). If there are 
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
 
-  const { stdout } = await execFileAsync(
-    CLAUDE_BIN,
+  const { stdout } = await runClaude(
     ["-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--allowedTools", MCP_RECONCILE_TOOLS, "--permission-mode", "bypassPermissions", prompt],
     { env, timeout: 180_000, maxBuffer: 5 * 1024 * 1024 }
   );

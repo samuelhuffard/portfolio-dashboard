@@ -169,6 +169,14 @@ test("companion reconciliation requires exact ref_id and broker confirmation bef
   assert.match(source, /decision\.action !== "record" \|\| decision\.orderId !== result\.orderId/);
 });
 
+test("companion launches Claude with stdin detached for unattended broker work", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /function runClaude\(args, options\)/);
+  assert.match(source, /stdio:\s*\["ignore", "pipe", "pipe"\]/);
+  assert.match(source, /execFileWithClosedStdin\(execFile, CLAUDE_BIN, args/);
+  assert.match(source, /Claude CLI failed/);
+});
+
 test("companion heartbeat cannot overlap or crash on a rejected async tick", () => {
   const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
   assert.match(source, /let heartbeatInFlight = false/);
