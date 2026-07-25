@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { DefRow, Footnote, Panel, RailBlock, ScreenGrid } from '@/components/chrome';
+import { DefRow, Footnote, Hatch, Nil, Panel, PanelHead, RailBlock, ScreenGrid, Status } from '@/components/chrome';
+import { usePortfolio } from '@/components/PortfolioProvider';
 import RunResearchButton from '@/components/command/RunResearchButton';
 import { AGENTS } from '@/lib/agents';
 import { MAX_AMOUNT_DOLLARS } from '@/lib/contracts/proposal.js';
@@ -958,82 +959,221 @@ function MemorySection({ agentId }: { agentId: string }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+/**
+ * The desks table, the approval queue and the rail are the screen. Selecting a
+ * desk row opens that desk's own tools (alerts, proposals, chat, memory)
+ * beneath, so nothing the page used to do was lost to the new layout.
+ */
 export default function AgentsPage() {
-  const [activeId, setActiveId] = useState(AGENTS[0].id);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [section, setSection] = useState<SectionTab>('chat');
   const [proposalRefreshKey, setProposalRefreshKey] = useState(0);
+  const [proposals, setProposals] = useState<AllocationProposal[]>([]);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const { data: portfolio } = usePortfolio();
 
   function handleProposalUpdated() {
     setProposalRefreshKey((k) => k + 1);
   }
 
-  // Desks are unnamed until Sam names each one after its philosophy, so the
-  // caption states the standing fact rather than inventing a mandate.
-  const activeAgent = AGENTS.find((a) => a.id === activeId);
+  useEffect(() => {
+    fetch('/api/proposals')
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.error) setQueueError(json.error);
+        else {
+          setProposals(Array.isArray(json.proposals) ? json.proposals : []);
+          setQueueError(null);
+        }
+      })
+      .catch((err: unknown) => setQueueError(err instanceof Error ? err.message : 'Unknown error'));
+  }, [proposalRefreshKey]);
+
+  const pending = proposals.filter((p) => p.status === 'Pending');
+
+  async function decide(id: string, status: ProposalStatus, decisionNote?: string) {
+    const res = await fetch(`/api/proposals/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, decisionNote }),
+    });
+    const json = await res.json();
+    if (json.error) setQueueError(json.error);
+    handleProposalUpdated();
+  }
+
+  function handleReject(id: string) {
+    const reason = window.prompt('Reason for rejection (required for the audit trail):');
+    if (reason === null) return;
+    decide(id, 'Rejected', reason.trim() || NO_REASON_REJECTION);
+  }
 
   return (
     <ScreenGrid
       main={
         <>
-          {/* Desk and section are both segmented controls; the screen is named
-              in the nav, so there is no page title. */}
-          <Panel>
-            <div className="flex flex-wrap items-center justify-between gap-3" style={{ padding: '9px 18px' }}>
-              <div className="pm-seg" role="group" aria-label="Research desk">
-                {AGENTS.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    aria-pressed={a.id === activeId}
-                    onClick={() => { setActiveId(a.id); setSection('chat'); }}
-                    className="pm-seg-item"
-                  >
-                    {agentLabel(a.id)}
-                  </button>
-                ))}
-              </div>
-              <span className="pm-caption">
-                {activeAgent?.name || 'Independent desks · advisory only, nothing executes without sign-off'}
-              </span>
-            </div>
-          </Panel>
-
           <CompanionStatusBanner />
 
-          <AgentBookStrip agentId={activeId} />
-
           <Panel>
-            <div style={{ padding: '9px 18px' }}>
-              <div className="pm-seg inline-flex" role="group" aria-label="Desk section">
-                {(['alerts', 'proposals', 'chat', 'memory'] as SectionTab[]).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    aria-pressed={section === tab}
-                    onClick={() => setSection(tab)}
-                    className="pm-seg-item capitalize"
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <PanelHead
+              title="Research desks"
+              right={<span className="pm-caption">Four independent desks · advisory only</span>}
+            />
+            <table className="pm-table">
+              <thead>
+                <tr>
+                  <th>Desk</th>
+                  <th>Mandate</th>
+                  <th>Last run</th>
+                  <th className="pm-num-cell">Open</th>
+                  <th className="pm-num-cell">Accepted</th>
+                  <th className="pm-num-cell">Rejected</th>
+                  <th className="pm-num-cell">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {AGENTS.map((agent) => {
+                  const mine = proposals.filter((p) => p.agentId === agent.id);
+                  const open = mine.filter((p) => p.status === 'Pending').length;
+                  const accepted = mine.filter((p) => p.status === 'ApprovedForBrokerReview').length;
+                  const rejected = mine.filter((p) => p.status === 'Rejected').length;
+                  const lastRun = mine
+                    .map((p) => p.createdAt)
+                    .sort()
+                    .at(-1);
+                  const selected = agent.id === activeId;
+                  return (
+                    <tr
+                      key={agent.id}
+                      onClick={() => {
+                        setActiveId(selected ? null : agent.id);
+                        setSection('chat');
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        background: selected ? 'var(--panel-alt)' : undefined,
+                      }}
+                    >
+                      <td style={{ fontWeight: 500 }}>{agentLabel(agent.id)}</td>
+                      {/* Desks stay unnamed until each is named after its
+                          investment philosophy, so no mandate is invented. */}
+                      <td className="pm-prose-cell" style={{ color: 'var(--muted)' }}>
+                        {agent.name || <Nil />}
+                      </td>
+                      <td>{lastRun ? lastRun.slice(0, 16).replace('T', ' ') : <Nil />}</td>
+                      <td className="pm-num-cell">{open}</td>
+                      <td className="pm-num-cell">{accepted}</td>
+                      <td className="pm-num-cell">{rejected}</td>
+                      <td className="pm-num-cell">
+                        <Status tone={open > 0 ? 'warn' : 'pos'}>
+                          {open > 0 ? 'Awaiting review' : 'Idle'}
+                        </Status>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </Panel>
 
-          {section === 'alerts' && <AlertsSection agentId={activeId} />}
-          {section === 'proposals' && <ProposalsSection agentId={activeId} refreshKey={proposalRefreshKey} onProposalUpdated={handleProposalUpdated} />}
-          {section === 'chat' && <ChatSection agentId={activeId} onProposalEdited={handleProposalUpdated} />}
-          {section === 'memory' && <MemorySection agentId={activeId} />}
+          <Panel>
+            <PanelHead
+              title="Proposals awaiting approval"
+              right={
+                <span className="pm-caption">
+                  {pending.length} open · nothing executes without sign-off
+                </span>
+              }
+            />
+            {queueError ? (
+              <Hatch title="Approval queue is unavailable" note={queueError} />
+            ) : pending.length === 0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  padding: '26px 18px',
+                  textAlign: 'center',
+                  fontSize: 12,
+                  color: 'var(--muted-2)',
+                }}
+              >
+                No proposals are awaiting approval.
+              </p>
+            ) : (
+              <div
+                className="grid"
+                style={{ gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--rule-soft)' }}
+              >
+                {pending.map((proposal) => (
+                  <ProposalCell
+                    key={proposal.id}
+                    proposal={proposal}
+                    cash={portfolio?.cash ?? null}
+                    marketValue={portfolio?.totals.totalMarketValue ?? null}
+                    totalValue={portfolio?.totals.totalValue ?? null}
+                    onApprove={() => decide(proposal.id, 'ApprovedForBrokerReview')}
+                    onReject={() => handleReject(proposal.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          {activeId && (
+            <Panel>
+              <PanelHead
+                title={`${agentLabel(activeId)} · desk tools`}
+                right={
+                  <div className="flex items-center" style={{ gap: 10 }}>
+                    <div className="pm-seg" role="group" aria-label="Desk section">
+                      {(['alerts', 'proposals', 'chat', 'memory'] as SectionTab[]).map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          aria-pressed={section === tab}
+                          onClick={() => setSection(tab)}
+                          className="pm-seg-item capitalize"
+                        >
+                          {tab}
+                        </button>
+                      ))}
+                    </div>
+                    <button type="button" className="pm-btn" onClick={() => setActiveId(null)}>
+                      Close
+                    </button>
+                  </div>
+                }
+              />
+              <div style={{ padding: '14px 18px' }}>
+                <AgentBookStrip agentId={activeId} />
+                {section === 'alerts' && <AlertsSection agentId={activeId} />}
+                {section === 'proposals' && (
+                  <ProposalsSection
+                    agentId={activeId}
+                    refreshKey={proposalRefreshKey}
+                    onProposalUpdated={handleProposalUpdated}
+                  />
+                )}
+                {section === 'chat' && (
+                  <ChatSection agentId={activeId} onProposalEdited={handleProposalUpdated} />
+                )}
+                {section === 'memory' && <MemorySection agentId={activeId} />}
+              </div>
+            </Panel>
+          )}
         </>
       }
       rail={
         <>
           <RailBlock title="Red lines">
             <div className="flex flex-col">
-              <DefRow label="Execution">Approval required</DefRow>
+              {/* Cash floor and max position are set in the research backend's
+                  mandate files and are not published to this dashboard. */}
+              <DefRow label="Cash floor"><Nil /></DefRow>
+              <DefRow label="Max position"><Nil /></DefRow>
               <DefRow label="Max single order">{fmtCurrency(MAX_AMOUNT_DOLLARS, 0)}</DefRow>
               <DefRow label="Leverage">Not permitted</DefRow>
-              <DefRow label="Desk authority">Propose only</DefRow>
             </div>
           </RailBlock>
 
@@ -1044,11 +1184,38 @@ export default function AgentsPage() {
             </p>
           </RailBlock>
 
-          <RailBlock title="Desk" grow>
-            <div className="flex flex-col">
-              <DefRow label="Selected">{agentLabel(activeId)}</DefRow>
-              <DefRow label="Section">{section}</DefRow>
-            </div>
+          <RailBlock title="Audit trail" grow>
+            {proposals.length === 0 ? (
+              <p style={{ margin: 0, fontSize: 11.5, color: 'var(--muted-2)' }}>
+                No proposal activity recorded yet.
+              </p>
+            ) : (
+              <div className="flex flex-col">
+                {[...proposals]
+                  .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+                  .slice(0, 6)
+                  .map((p) => (
+                    <div
+                      key={p.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '58px 1fr',
+                        gap: 10,
+                        padding: '6px 0',
+                        borderBottom: '1px solid var(--rule-row)',
+                        fontSize: 12,
+                      }}
+                    >
+                      <span className="pm-num" style={{ fontSize: 11, color: 'var(--faint)' }}>
+                        {p.createdAt.slice(11, 16)}
+                      </span>
+                      <span>
+                        {agentLabel(p.agentId)} filed {p.side.toLowerCase()} {p.ticker}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
           </RailBlock>
 
           <Footnote label="Authority">
@@ -1058,5 +1225,79 @@ export default function AgentsPage() {
         </>
       }
     />
+  );
+}
+
+/**
+ * One proposal in the approval grid. Post-trade figures are derived from the
+ * live portfolio; the red-line check reports only limits this app can actually
+ * verify, and says so when the portfolio is not loaded.
+ */
+function ProposalCell({
+  proposal,
+  cash,
+  marketValue,
+  totalValue,
+  onApprove,
+  onReject,
+}: {
+  proposal: AllocationProposal;
+  cash: number | null;
+  marketValue: number | null;
+  totalValue: number | null;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const isBuy = proposal.side === 'BUY';
+  const signedAmount = isBuy ? -proposal.amountDollars : proposal.amountDollars;
+  const postCash = cash === null ? null : cash + signedAmount;
+  const postExposure =
+    marketValue === null || totalValue === null || totalValue === 0
+      ? null
+      : ((marketValue - signedAmount) / totalValue) * 100;
+
+  const breaches: string[] = [];
+  if (proposal.amountDollars > MAX_AMOUNT_DOLLARS) breaches.push('Over max single order');
+  if (postCash !== null && postCash < 0) breaches.push('Cash would go negative');
+
+  return (
+    <div className="pm-panel" style={{ padding: '14px 18px' }}>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <div style={{ fontSize: 13, fontWeight: 600 }}>
+          {isBuy ? 'Buy' : 'Trim'} {proposal.ticker} · {fmtCurrency(proposal.amountDollars)}
+        </div>
+        <span className="pm-num" style={{ fontSize: 11, color: 'var(--muted-2)' }}>
+          {agentLabel(proposal.agentId)} · {proposal.createdAt.slice(11, 16)}
+        </span>
+      </div>
+      <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--ink-2)', textWrap: 'pretty' }}>
+        {firstSentence(proposal.rationale)}
+      </p>
+      <div className="mb-3 flex flex-col">
+        <DefRow label="Post-trade cash">
+          {postCash === null ? <Nil /> : fmtCurrency(postCash)}
+        </DefRow>
+        <DefRow label="Post-trade exposure">
+          {postExposure === null ? <Nil /> : `${postExposure.toFixed(1)}%`}
+        </DefRow>
+        <DefRow label="Red lines">
+          {cash === null ? (
+            <Nil />
+          ) : breaches.length === 0 ? (
+            <Status tone="pos">Clear</Status>
+          ) : (
+            <Status tone="warn">{breaches[0]}</Status>
+          )}
+        </DefRow>
+      </div>
+      <div className="flex" style={{ gap: 8 }}>
+        <button type="button" className="pm-btn-primary" onClick={onApprove}>
+          Approve
+        </button>
+        <button type="button" className="pm-btn" onClick={onReject}>
+          Reject with reason
+        </button>
+      </div>
+    </div>
   );
 }
