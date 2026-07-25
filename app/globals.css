@@ -436,14 +436,39 @@ a:hover {
    private-wealth chrome above.
    --------------------------------------------------------------------------- */
 
-.legacy-chrome .terminal-panel {
-  border: 1px solid var(--rule);
-  background: var(--panel);
-}
-
+.legacy-chrome .terminal-panel,
 .legacy-chrome .market-card {
   border: 1px solid var(--rule);
+  border-radius: 0;
   background: var(--panel);
+  box-shadow: none;
+}
+
+/* The old radial glow inside .market-card belongs to the dark theme. */
+.legacy-chrome .market-card::after {
+  display: none;
+}
+
+/* Flatten the leftovers of the card look so an unported screen still reads as
+   part of one gridded surface: no rounded corners, no lifted shadows, and no
+   display-scale headings. */
+.legacy-chrome [class*="rounded"] {
+  border-radius: 0;
+}
+
+.legacy-chrome [class*="shadow"] {
+  box-shadow: none;
+}
+
+.legacy-chrome h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.legacy-chrome h2 {
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 .legacy-chrome .data-table {
