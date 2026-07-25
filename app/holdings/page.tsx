@@ -1,136 +1,298 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { fmtCurrency, fmtPercent, fmtNumber, gainLossColor } from '@/lib/format';
-import type { Holding } from '@/lib/sheets';
+import { useMemo, useState } from 'react';
+import {
+  AllocationBar,
+  DefRow,
+  Footnote,
+  Hatch,
+  Nil,
+  Panel,
+  PanelHead,
+  RailBlock,
+  ScreenGrid,
+  Segmented,
+} from '@/components/chrome';
+import { REFRESH_INTERVAL_MS, usePortfolio } from '@/components/PortfolioProvider';
+import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
 
-interface PortfolioResponse {
-  holdings: Holding[];
-  cash: number | null;
-  lastSynced: string | null;
-}
+const CLASS_FILTERS = ['All', 'Equities', 'Cash'] as const;
+type ClassFilter = (typeof CLASS_FILTERS)[number];
 
-export default function HoldingsPage() {
-  const [data, setData] = useState<PortfolioResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function PositionsPage() {
+  const { data, error, loading } = usePortfolio();
+  const [query, setQuery] = useState('');
+  const [classFilter, setClassFilter] = useState<ClassFilter>('All');
 
-  useEffect(() => {
-    function load() {
-      fetch('/api/portfolio')
-        .then((res) => res.json())
-        .then((json) => {
-          if (json.error) setError(json.error);
-          else { setData(json); setError(null); }
-        })
-        .catch((err) => setError(err.message))
-        .finally(() => setLoading(false));
-    }
-    load();
-    const id = setInterval(load, 300_000);
-    return () => clearInterval(id);
-  }, []);
+  const holdings = useMemo(() => data?.holdings ?? [], [data]);
+  const cash = data?.cash ?? null;
 
-  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading positions...</p>;
-
-  if (error) {
-    return (
-      <div className="max-w-xl">
-        <h1 className="mb-2 text-2xl font-semibold text-white">Positions</h1>
-        <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>
-      </div>
-    );
-  }
-
-  if (!data) return null;
-
-  const holdingsValue = data.holdings.reduce((sum, h) => sum + (h.marketValue ?? 0), 0);
-  const totalPortfolio = holdingsValue + (data.cash ?? 0);
+  const holdingsValue = holdings.reduce((sum, h) => sum + (h.marketValue ?? 0), 0);
+  const totalPortfolio = holdingsValue + (cash ?? 0);
   const pctOfPortfolio = (value: number | null) =>
     value === null || totalPortfolio <= 0 ? null : (value / totalPortfolio) * 100;
 
-  return (
-    <div className="space-y-6">
-      <div className="terminal-panel p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-emerald-300/75">Position Blotter</p>
-            <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Holdings</h1>
-            {data.lastSynced && (
-              <p className="mt-2 font-mono text-xs uppercase tracking-[0.14em] text-slate-500">Last synced {data.lastSynced}</p>
-            )}
-          </div>
-          <div className="border border-emerald-300/25 bg-emerald-300/[0.06] px-5 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-slate-400">Total Portfolio</p>
-            <p className="mt-1 text-3xl font-black tracking-[-0.03em] text-emerald-200">{fmtCurrency(totalPortfolio)}</p>
-            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">Holdings + Cash</p>
-          </div>
-        </div>
-      </div>
+  const needle = query.trim().toUpperCase();
+  const visibleHoldings = useMemo(
+    () =>
+      classFilter === 'Cash'
+        ? []
+        : holdings.filter(
+            (h) =>
+              needle === '' ||
+              h.ticker.toUpperCase().includes(needle) ||
+              h.name.toUpperCase().includes(needle),
+          ),
+    [holdings, needle, classFilter],
+  );
+  const showCash =
+    cash !== null && classFilter !== 'Equities' && (needle === '' || 'CASH'.includes(needle));
 
-      {data.holdings.length === 0 ? (
-        <p className="terminal-panel p-5 text-sm text-slate-400">No holdings yet — run holdings-sync to populate this page.</p>
-      ) : (
-        <div className="terminal-panel overflow-hidden">
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Open positions</p>
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">{data.holdings.length} equities</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="data-table w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="px-4 py-3 text-left">Ticker</th>
-                  <th className="px-4 py-3 text-left">Name</th>
-                  <th className="px-4 py-3 text-right">Shares</th>
-                  <th className="px-4 py-3 text-right">Initial Price</th>
-                  <th className="px-4 py-3 text-right">Price</th>
-                  <th className="px-4 py-3 text-right">Market Value</th>
-                  <th className="px-4 py-3 text-right">% of Portfolio</th>
-                  <th className="px-4 py-3 text-right">Gain/Loss</th>
-                  <th className="px-4 py-3 text-right">Return</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.holdings.map((h) => (
-                  <tr key={h.ticker}>
-                    <td className="px-4 py-3 font-mono font-semibold text-white">{h.ticker}</td>
-                    <td className="px-4 py-3 text-slate-400">{h.name}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtNumber(h.shares, 4)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtCurrency(h.avgCost)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtCurrency(h.currentPrice)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-white">{fmtCurrency(h.marketValue)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {pctOfPortfolio(h.marketValue) === null ? '—' : `${(pctOfPortfolio(h.marketValue) as number).toFixed(1)}%`}
-                    </td>
-                    <td className={`px-4 py-3 text-right font-mono ${gainLossColor(h.gainLoss).replace('600', '300')}`}>
-                      {fmtCurrency(h.gainLoss)}
-                    </td>
-                    <td className={`px-4 py-3 text-right font-mono ${gainLossColor(h.gainLossPct).replace('600', '300')}`}>
-                      {fmtPercent(h.gainLossPct)}
-                    </td>
-                  </tr>
-                ))}
-                {data.cash !== null && (
+  const lineCount = visibleHoldings.length + (showCash ? 1 : 0);
+  const largest = [...holdings]
+    .filter((h) => h.marketValue !== null)
+    .sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0))[0];
+  const largestWeight = largest ? pctOfPortfolio(largest.marketValue) : null;
+
+  return (
+    <ScreenGrid
+      main={
+        <>
+          <Panel>
+            <div className="flex items-center justify-between" style={{ padding: '9px 18px' }}>
+              <div className="flex items-center" style={{ gap: 10 }}>
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Filter instrument"
+                  aria-label="Filter instrument"
+                  className="pm-input"
+                  style={{ width: 180 }}
+                />
+                <Segmented
+                  label="Asset class"
+                  options={CLASS_FILTERS}
+                  value={classFilter}
+                  onChange={setClassFilter}
+                />
+              </div>
+              <span className="pm-caption">
+                {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+                {data?.lastSynced ? ` · priced at ${data.lastSynced}` : ''}
+              </span>
+            </div>
+          </Panel>
+
+          <Panel>
+            <PanelHead title="Position blotter" caption="Sheet-backed holdings record" />
+            {error ? (
+              <Hatch
+                title="Holdings feed is offline"
+                note="The blotter shows only settled, verified lines. Nothing is estimated while the feed is down."
+              />
+            ) : (
+              <table className="pm-table">
+                <thead>
                   <tr>
-                    <td className="px-4 py-3 font-mono font-semibold text-white">CASH</td>
-                    <td className="px-4 py-3 text-slate-400">Cash</td>
-                    <td className="px-4 py-3 text-right text-slate-600">—</td>
-                    <td className="px-4 py-3 text-right text-slate-600">—</td>
-                    <td className="px-4 py-3 text-right text-slate-600">—</td>
-                    <td className="px-4 py-3 text-right font-mono text-white">{fmtCurrency(data.cash)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {pctOfPortfolio(data.cash) === null ? '—' : `${(pctOfPortfolio(data.cash) as number).toFixed(1)}%`}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-600">—</td>
-                    <td className="px-4 py-3 text-right text-slate-600">—</td>
+                    <th>Ticker</th>
+                    <th>Name</th>
+                    <th className="pm-num-cell">Shares</th>
+                    <th className="pm-num-cell">Initial price</th>
+                    <th className="pm-num-cell">Price</th>
+                    <th className="pm-num-cell">Market value</th>
+                    <th className="pm-num-cell">% of portfolio</th>
+                    <th className="pm-num-cell">Gain / loss</th>
+                    <th className="pm-num-cell">Return</th>
                   </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={9} style={{ padding: '26px 18px', textAlign: 'center' }}>
+                        <Nil />
+                      </td>
+                    </tr>
+                  ) : lineCount === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={9}
+                        className="pm-prose-cell"
+                        style={{
+                          padding: '26px 18px',
+                          textAlign: 'center',
+                          fontSize: 12,
+                          color: 'var(--muted-2)',
+                        }}
+                      >
+                        {holdings.length === 0 && cash === null
+                          ? 'No positions on the verified record. Holdings appear once a trade settles.'
+                          : 'No lines match this filter.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      {visibleHoldings.map((h) => {
+                        const weight = pctOfPortfolio(h.marketValue);
+                        return (
+                          <tr key={h.ticker}>
+                            <td style={{ fontWeight: 500 }}>{h.ticker}</td>
+                            <td className="pm-prose-cell" style={{ color: 'var(--muted)' }}>
+                              {h.name}
+                            </td>
+                            <td className="pm-num-cell">{fmtNumber(h.shares, 4)}</td>
+                            <td className="pm-num-cell">
+                              {h.avgCost === null ? <Nil /> : fmtCurrency(h.avgCost)}
+                            </td>
+                            <td className="pm-num-cell">
+                              {h.currentPrice === null ? <Nil /> : fmtCurrency(h.currentPrice)}
+                            </td>
+                            <td className="pm-num-cell">
+                              {h.marketValue === null ? <Nil /> : fmtCurrency(h.marketValue)}
+                            </td>
+                            <td className="pm-num-cell">
+                              {weight === null ? <Nil /> : `${weight.toFixed(1)}%`}
+                            </td>
+                            <td
+                              className="pm-num-cell"
+                              style={{
+                                color:
+                                  h.gainLoss !== null && h.gainLoss >= 0 ? 'var(--pos)' : 'var(--ink)',
+                              }}
+                            >
+                              {h.gainLoss === null ? <Nil /> : fmtCurrency(h.gainLoss)}
+                            </td>
+                            <td
+                              className="pm-num-cell"
+                              style={{
+                                color:
+                                  h.gainLossPct !== null && h.gainLossPct >= 0
+                                    ? 'var(--pos)'
+                                    : 'var(--ink)',
+                              }}
+                            >
+                              {h.gainLossPct === null ? <Nil /> : fmtPercent(h.gainLossPct)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {showCash && (
+                        <tr>
+                          <td style={{ fontWeight: 500 }}>CASH</td>
+                          <td className="pm-prose-cell" style={{ color: 'var(--muted)' }}>
+                            Settled cash
+                          </td>
+                          <td className="pm-num-cell"><Nil /></td>
+                          <td className="pm-num-cell"><Nil /></td>
+                          <td className="pm-num-cell"><Nil /></td>
+                          <td className="pm-num-cell">{fmtCurrency(cash)}</td>
+                          <td className="pm-num-cell">
+                            {pctOfPortfolio(cash) === null
+                              ? <Nil />
+                              : `${(pctOfPortfolio(cash) as number).toFixed(1)}%`}
+                          </td>
+                          <td className="pm-num-cell"><Nil /></td>
+                          <td className="pm-num-cell"><Nil /></td>
+                        </tr>
+                      )}
+                      {/* The total always reconciles to the whole portfolio, not
+                          to the filtered view, so it matches the Command page. */}
+                      {classFilter === 'All' && needle === '' && data && (
+                        <tr className="pm-total-row">
+                          <td className="pm-prose-cell" style={{ fontWeight: 600 }}>Total</td>
+                          <td />
+                          <td />
+                          <td />
+                          <td />
+                          <td className="pm-num-cell">{fmtCurrency(totalPortfolio)}</td>
+                          <td className="pm-num-cell">100.0%</td>
+                          <td
+                            className="pm-num-cell"
+                            style={{
+                              color: data.totals.totalGainLoss >= 0 ? 'var(--pos)' : 'var(--ink)',
+                            }}
+                          >
+                            {fmtCurrency(data.totals.totalGainLoss)}
+                          </td>
+                          <td
+                            className="pm-num-cell"
+                            style={{
+                              color:
+                                data.totals.totalGainLossPct != null &&
+                                data.totals.totalGainLossPct >= 0
+                                  ? 'var(--pos)'
+                                  : 'var(--ink)',
+                            }}
+                          >
+                            {fmtPercent(data.totals.totalGainLossPct)}
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </Panel>
+
+          <Panel>
+            <PanelHead title="Tax lots" caption="Acquisition-level detail" />
+            <p
+              style={{
+                margin: 0,
+                padding: '18px',
+                fontSize: 11.5,
+                color: 'var(--muted-2)',
+              }}
+            >
+              The sheet-backed record stores one aggregated line per instrument, so individual lots,
+              acquisition dates and holding periods are not available to report here.
+            </p>
+          </Panel>
+        </>
+      }
+      rail={
+        <>
+          <RailBlock title="Pricing and source">
+            <div className="flex flex-col">
+              <DefRow label="Quote source">Yahoo · delayed</DefRow>
+              <DefRow label="Holdings source">Google Sheet</DefRow>
+              <DefRow label="Last sync">{data?.lastSynced ?? <Nil />}</DefRow>
+              <DefRow label="Refresh interval">{`${Math.round(REFRESH_INTERVAL_MS / 60000)} min`}</DefRow>
+            </div>
+          </RailBlock>
+
+          <RailBlock title="Concentration">
+            <AllocationBar
+              investedPct={totalPortfolio > 0 ? (holdingsValue / totalPortfolio) * 100 : null}
+            />
+            <div className="flex flex-col">
+              <DefRow label="Largest position">
+                {largest && largestWeight !== null ? (
+                  `${largest.ticker} ${largestWeight.toFixed(1)}%`
+                ) : (
+                  <Nil />
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
+              </DefRow>
+              <DefRow label="Positions held">{fmtNumber(holdings.length, 0)}</DefRow>
+              {/* Position limits live in the research backend's mandate files. */}
+              <DefRow label="Limit"><Nil /></DefRow>
+            </div>
+          </RailBlock>
+
+          <RailBlock title="Working orders" grow>
+            <p style={{ margin: 0, fontSize: 11.5, color: 'var(--muted-2)' }}>
+              No orders are working. The dashboard never places an order itself; approved tickets are
+              executed by the broker companion and appear here once they settle.
+            </p>
+          </RailBlock>
+
+          <Footnote label="Note">
+            Percentages are of total portfolio value including cash, so weights on this page
+            reconcile with the Command page.
+          </Footnote>
+        </>
+      }
+    />
   );
 }

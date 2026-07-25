@@ -1,11 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { fmtCurrency, fmtPercent, fmtNumber, gainLossColor } from '@/lib/format';
+import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  DefRow,
+  Footnote,
+  Hatch,
+  Metric,
+  MetricStrip,
+  Nil,
+  Panel,
+  PanelHead,
+  RailBlock,
+  ScreenGrid,
+} from '@/components/chrome';
 import ContributionForm, { type RosterOption } from '@/components/investors/ContributionForm';
 import UnattributedCard from '@/components/investors/UnattributedCard';
-import { buildAdjustedValueSeries } from '@/lib/portfolio-chart';
+import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
 
 interface InvestorPosition {
   investorId: string | null;
@@ -60,7 +71,18 @@ interface InvestorUpdate {
   topHoldings: Array<{ ticker: string; marketValue: number }>;
 }
 
-const gl = (v: number | null) => gainLossColor(v).replace('600', '300');
+const AXIS_TICK = { fontSize: 10.5, fill: '#9a9c96', fontFamily: 'var(--font-ibm-plex-mono), monospace' };
+const TOOLTIP_STYLE = {
+  background: '#fff',
+  border: '1px solid #dcddd9',
+  borderRadius: 0,
+  color: '#191b1f',
+  fontSize: 12,
+};
+
+/** Ownership and NAV percentages read as plain magnitudes, never signed. */
+const unsignedPct = (value: number | null, decimals = 1) =>
+  value === null ? '—' : fmtPercent(value, decimals).replace('+', '');
 
 export default function InvestorsPage() {
   const [data, setData] = useState<InvestorsResponse | null>(null);
@@ -87,49 +109,30 @@ export default function InvestorsPage() {
     load();
   }, [load]);
 
-  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading...</p>;
-  if (error) return <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>;
-  if (!data) return null;
+  if (error) {
+    return (
+      <ScreenGrid
+        main={
+          <Panel>
+            <PanelHead title="Capital accounts" />
+            <Hatch title="Investor ledger is unavailable" note={error} />
+          </Panel>
+        }
+        rail={
+          <Footnote label="Unit accounting">
+            Units are struck at the NAV in force on the contribution date. Withdrawals redeem units at
+            the next struck NAV.
+          </Footnote>
+        }
+      />
+    );
+  }
 
-  const isManager = data.role === 'FundManager';
-
-  return (
-    <div className="max-w-6xl space-y-6">
-      <div className="terminal-panel p-5 sm:p-6">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Capital Accounts</p>
-        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">{isManager ? 'Investors' : 'My Investment'}</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-          {isManager
-            ? 'Every investor’s ownership stake in the shared portfolio, by units and NAV per unit.'
-            : 'Your ownership stake in the shared portfolio. You own units in the pool, not specific shares — the pro-rata holdings below show your slice of what the pool actually holds.'}
-        </p>
-      </div>
-
-      {isManager ? (
-        <>
-          {data.unattributed?.detected && (
-            <UnattributedCard
-              amount={data.unattributed.amount}
-              roster={rosterOptions(data.roster)}
-              latestNavDate={data.latestNavDate}
-              navIsCurrent={data.navIsCurrent}
-              onRecorded={load}
-            />
-          )}
-          <ManagerView
-            navPerUnit={data.navPerUnit}
-            unitsOutstanding={data.unitsOutstanding}
-            totalFundValue={data.totalFundValue}
-            roster={data.roster}
-            performance={data.performance}
-          />
-          <ContributionForm roster={rosterOptions(data.roster)} onRecorded={load} />
-          <WithdrawalPreviewPanel />
-        </>
-      ) : (
-        <ClientView position={data.position} proRataHoldings={data.proRataHoldings} performance={data.performance} history={data.history} update={update} />
-      )}
-    </div>
+  const isManager = data?.role === 'FundManager';
+  return isManager ? (
+    <ManagerScreen data={data as InvestorsResponse} update={update} onRecorded={load} />
+  ) : (
+    <ClientScreen data={data} update={update} loading={loading} />
   );
 }
 
@@ -137,196 +140,199 @@ function rosterOptions(roster: InvestorPosition[]): RosterOption[] {
   return roster.map((p) => ({ email: p.email, name: p.name, investorId: p.investorId }));
 }
 
-function ManagerView({
-  navPerUnit,
-  unitsOutstanding,
-  totalFundValue,
-  roster,
-  performance,
-}: {
-  navPerUnit: number | null;
-  unitsOutstanding: number | null;
-  totalFundValue: number | null;
-  roster: InvestorPosition[];
-  performance: InvestorsResponse['performance'];
-}) {
-  const rosterValue = roster.reduce((s, p) => s + (p.value ?? 0), 0);
-  const adjustedValue = buildAdjustedValueSeries(performance);
-  return (
-    <div className="space-y-4">
-      <FundManagerPerformanceChart data={adjustedValue} />
-      <div className="terminal-panel overflow-hidden p-0">
-      <div className="grid grid-cols-2 gap-4 border-b border-white/10 p-4 sm:grid-cols-4">
-        <Stat label="Total Fund Value" value={totalFundValue != null ? fmtCurrency(totalFundValue) : fmtCurrency(rosterValue)} />
-        <Stat label="NAV per Unit" value={navPerUnit != null ? fmtCurrency(navPerUnit, 4) : 'no NAV yet'} />
-        <Stat label="Units Outstanding" value={unitsOutstanding != null ? fmtNumber(unitsOutstanding, 4) : '—'} />
-        <Stat label="Investors" value={String(roster.length)} />
-      </div>
-      {roster.length === 0 ? (
-        <p className="p-4 text-sm text-slate-500">No investors recorded yet.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/10 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">
-                <th className="px-4 py-2">Investor</th>
-                <th className="px-4 py-2 text-right">Contributed</th>
-                <th className="px-4 py-2 text-right">Withdrawn</th>
-                <th className="px-4 py-2 text-right">Units</th>
-                <th className="px-4 py-2 text-right">Value</th>
-                <th className="px-4 py-2 text-right">Gain/Loss</th>
-                <th className="px-4 py-2 text-right">Ownership</th>
-              </tr>
-            </thead>
-            <tbody>
-              {roster.map((p) => (
-                <tr key={p.investorId ?? p.email} className="border-b border-white/5">
-                  <td className="px-4 py-3">
-                    <p className="text-slate-100">{p.name}</p>
-                    <p className="text-xs text-slate-500">{p.email}</p>
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtCurrency(p.contributed)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtCurrency(p.withdrawn)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtNumber(p.units, 2)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-100">{fmtCurrency(p.value)}</td>
-                  <td className={`px-4 py-3 text-right font-mono ${gl(p.gainLoss)}`}>
-                    {fmtCurrency(p.gainLoss)} ({fmtPercent(p.gainLossPct)})
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-300">{fmtPercent(p.ownershipPct, 1).replace('+', '')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      </div>
-    </div>
-  );
-}
-
-function FundManagerPerformanceChart({ data }: { data: Array<{ date: string; Value: number }> }) {
-  const values = data.map((point) => point.Value);
-  const min = values.length ? Math.min(...values) : 0;
-  const max = values.length ? Math.max(...values) : 1;
-  const padding = Math.max((max - min) * 0.18, Math.max(max * 0.008, 0.5));
-  const domain: [number, number] = [Math.max(0, min - padding), max + padding];
-
-  return (
-    <section className="terminal-panel overflow-hidden p-5 sm:p-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Fund performance</p>
-          <h2 className="mt-1 text-xl font-semibold text-white">Account value, adjusted for cash flows</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Contributions and withdrawals are reflected in the account scale, not as artificial performance spikes.
-          </p>
-        </div>
-        {data.length > 0 && <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200/70">NAV-linked series</span>}
-      </div>
-      {data.length === 0 ? (
-        <p className="mt-5 border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400">No cash-flow-adjusted performance history yet.</p>
-      ) : (
-        <div className="mt-4 h-[270px] sm:h-[330px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 10, right: 12, bottom: 0, left: 0 }}>
-              <defs><linearGradient id="fundManagerPerformanceGlow" x1="0" x2="0" y1="0" y2="1"><stop offset="5%" stopColor="#ff6333" stopOpacity={0.34} /><stop offset="95%" stopColor="#ff6333" stopOpacity={0.02} /></linearGradient></defs>
-              <CartesianGrid stroke="rgba(148,163,184,.12)" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-              <YAxis domain={domain} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => fmtCurrency(Number(value))} width={64} />
-              <Tooltip formatter={(value) => fmtCurrency(Number(value))} contentStyle={{ background: '#071019', border: '1px solid rgba(255,99,51,.3)', color: '#fff1eb' }} />
-              <Area type="monotone" dataKey="Value" stroke="#ff6333" strokeWidth={3} fill="url(#fundManagerPerformanceGlow)" dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </section>
-  );
-}
-
-type ClientTab = 'overview' | 'performance' | 'history' | 'updates' | 'account';
-
-function ClientView({
-  position,
-  proRataHoldings,
-  performance,
-  history,
+function ManagerScreen({
+  data,
   update,
+  onRecorded,
 }: {
-  position: InvestorPosition | null;
-  proRataHoldings: ProRataHolding[];
-  performance: InvestorsResponse['performance'];
-  history: InvestorsResponse['history'];
+  data: InvestorsResponse;
   update: InvestorUpdate | null;
+  onRecorded: () => void;
 }) {
-  const [tab, setTab] = useState<ClientTab>('overview');
-
-  if (!position) {
-    return (
-      <div className="terminal-panel space-y-3 p-6">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-amber-200/70">Account not initialized</p>
-        <p className="text-sm text-slate-400">No investment recorded yet under your account.</p>
-        <AccountView position={null} />
-      </div>
-    );
-  }
+  const [showContribution, setShowContribution] = useState(false);
+  const rosterValue = data.roster.reduce((s, p) => s + (p.value ?? 0), 0);
+  const fundValue = data.totalFundValue ?? rosterValue;
+  const unattributedAmount = data.unattributed?.detected ? data.unattributed.amount : 0;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-1 border-b border-white/10 pb-1">
-        {([
-          ['overview', 'Overview'],
-          ['performance', 'Performance'],
-          ['history', 'Capital history'],
-          ['updates', 'Manager updates'],
-          ['account', 'Account & documents'],
-        ] as Array<[ClientTab, string]>).map(([value, label]) => (
-          <button
-            key={value}
-            onClick={() => setTab(value)}
-            className={`border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors ${tab === value ? 'border-emerald-300/35 bg-emerald-300/10 text-emerald-200' : 'border-transparent text-slate-500 hover:border-white/10 hover:text-slate-200'}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+    <ScreenGrid
+      main={
+        <>
+          <MetricStrip columns={4}>
+            <Metric
+              label="Fund value"
+              value={fmtCurrency(fundValue)}
+              sub={`Across ${data.roster.length} capital ${data.roster.length === 1 ? 'account' : 'accounts'}`}
+            />
+            <Metric
+              label="NAV per unit"
+              value={data.navPerUnit != null ? fmtCurrency(data.navPerUnit, 4) : '—'}
+              muted={data.navPerUnit == null}
+              sub={data.latestNavDate ? `Struck ${data.latestNavDate}` : 'No NAV struck yet'}
+            />
+            <Metric
+              label="Units issued"
+              value={data.unitsOutstanding != null ? fmtNumber(data.unitsOutstanding, 4) : '—'}
+              muted={data.unitsOutstanding == null}
+              sub={data.navIsCurrent ? 'NAV current' : 'NAV not current'}
+            />
+            <Metric
+              label="Unattributed cash"
+              value={fmtCurrency(unattributedAmount)}
+              tone={unattributedAmount > 0.01 ? 'warn' : undefined}
+              sub={unattributedAmount > 0.01 ? 'Needs attribution' : 'Ledger reconciles'}
+            />
+          </MetricStrip>
 
-      {tab === 'overview' && <ClientOverview position={position} proRataHoldings={proRataHoldings} />}
-      {tab === 'performance' && <PerformanceView performance={performance} />}
-      {tab === 'history' && <CapitalHistory history={history} />}
-      {tab === 'updates' && <ManagerUpdates update={update} />}
-      {tab === 'account' && <AccountView position={position} />}
-    </div>
-  );
-}
+          {data.unattributed?.detected && (
+            <Panel>
+              <UnattributedCard
+                amount={data.unattributed.amount}
+                roster={rosterOptions(data.roster)}
+                latestNavDate={data.latestNavDate}
+                navIsCurrent={data.navIsCurrent}
+                onRecorded={onRecorded}
+              />
+            </Panel>
+          )}
 
-function ClientOverview({ position, proRataHoldings }: { position: InvestorPosition; proRataHoldings: ProRataHolding[] }) {
-  return (
-    <div className="terminal-panel p-5">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Your Value" value={fmtCurrency(position.value)} />
-        <Stat label="Net Contributed" value={fmtCurrency(position.contributed - position.withdrawn)} />
-        <Stat label="Gain/Loss" value={`${fmtCurrency(position.gainLoss)} (${fmtPercent(position.gainLossPct)})`} className={gl(position.gainLoss)} />
-        <Stat label="Ownership" value={fmtPercent(position.ownershipPct, 2).replace('+', '')} />
-      </div>
-
-      {proRataHoldings.length > 0 && (
-        <div className="mt-5 border-t border-white/10 pt-4">
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Your pro-rata exposure (not shares you own directly)</p>
-          <div className="space-y-1">
-            {proRataHoldings.map((h) => (
-              <div key={h.ticker} className="flex items-center justify-between text-sm">
-                <span className="text-slate-300">{h.ticker} <span className="text-slate-500">{h.name}</span></span>
-                <span className="font-mono text-slate-100">{fmtCurrency(h.marketValue)}</span>
+          <Panel>
+            <PanelHead
+              title="Capital accounts"
+              right={
+                <button
+                  type="button"
+                  className="pm-btn"
+                  onClick={() => setShowContribution((open) => !open)}
+                >
+                  {showContribution ? 'Close' : 'Record contribution'}
+                </button>
+              }
+            />
+            {showContribution && (
+              <div style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                <ContributionForm roster={rosterOptions(data.roster)} onRecorded={onRecorded} />
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+            )}
+            <table className="pm-table">
+              <thead>
+                <tr>
+                  <th>Investor</th>
+                  <th className="pm-num-cell">Contributed</th>
+                  <th className="pm-num-cell">Withdrawn</th>
+                  <th className="pm-num-cell">Units</th>
+                  <th className="pm-num-cell">Value</th>
+                  <th className="pm-num-cell">Gain / loss</th>
+                  <th className="pm-num-cell">Ownership</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.roster.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="pm-prose-cell"
+                      style={{ padding: '26px 18px', textAlign: 'center', fontSize: 12, color: 'var(--muted-2)' }}
+                    >
+                      No investors recorded yet. Accounts appear after the first signed ledger entry.
+                    </td>
+                  </tr>
+                ) : (
+                  <>
+                    {data.roster.map((p) => (
+                      <tr key={p.investorId ?? p.email}>
+                        <td className="pm-prose-cell">
+                          <span style={{ fontWeight: 600 }}>{p.name}</span>
+                          <span style={{ color: 'var(--muted-2)', paddingLeft: 8 }}>
+                            {p.investorId ?? p.email}
+                          </span>
+                        </td>
+                        <td className="pm-num-cell">{fmtCurrency(p.contributed)}</td>
+                        <td className="pm-num-cell">{fmtCurrency(p.withdrawn)}</td>
+                        <td className="pm-num-cell">{fmtNumber(p.units, 4)}</td>
+                        <td className="pm-num-cell">{fmtCurrency(p.value)}</td>
+                        <td
+                          className="pm-num-cell"
+                          style={{ color: p.gainLoss !== null && p.gainLoss >= 0 ? 'var(--pos)' : 'var(--ink)' }}
+                        >
+                          {p.gainLoss === null ? (
+                            <Nil />
+                          ) : (
+                            <>
+                              {fmtCurrency(p.gainLoss)}{' '}
+                              {p.gainLossPct !== null && (
+                                <span style={{ color: p.gainLoss >= 0 ? 'var(--pos-soft)' : 'var(--muted-2)' }}>
+                                  ({fmtPercent(p.gainLossPct)})
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </td>
+                        <td className="pm-num-cell">{unsignedPct(p.ownershipPct)}</td>
+                      </tr>
+                    ))}
+                    <tr className="pm-total-row">
+                      <td className="pm-prose-cell" style={{ fontWeight: 600 }}>Total</td>
+                      <td className="pm-num-cell">
+                        {fmtCurrency(data.roster.reduce((s, p) => s + p.contributed, 0))}
+                      </td>
+                      <td className="pm-num-cell">
+                        {fmtCurrency(data.roster.reduce((s, p) => s + p.withdrawn, 0))}
+                      </td>
+                      <td className="pm-num-cell">
+                        {fmtNumber(data.roster.reduce((s, p) => s + p.units, 0), 4)}
+                      </td>
+                      <td className="pm-num-cell">{fmtCurrency(rosterValue)}</td>
+                      <td className="pm-num-cell">
+                        {fmtCurrency(data.roster.reduce((s, p) => s + (p.gainLoss ?? 0), 0))}
+                      </td>
+                      <td className="pm-num-cell">
+                        {unsignedPct(data.roster.reduce((s, p) => s + (p.ownershipPct ?? 0), 0))}
+                      </td>
+                    </tr>
+                  </>
+                )}
+              </tbody>
+            </table>
+          </Panel>
+
+          <CapitalHistoryPanel history={data.history} />
+          <WithdrawalPreviewPanel />
+        </>
+      }
+      rail={
+        <>
+          <ManagerUpdateBlock update={update} />
+          <RailBlock title="Fund accounting" grow>
+            <div className="flex flex-col">
+              <DefRow label="Investors">{fmtNumber(data.roster.length, 0)}</DefRow>
+              <DefRow label="NAV as of">{data.latestNavDate ?? <Nil />}</DefRow>
+              <DefRow label="NAV current">{data.navIsCurrent ? 'Yes' : 'No'}</DefRow>
+              <DefRow label="Capital entries">{fmtNumber(data.history.length, 0)}</DefRow>
+            </div>
+          </RailBlock>
+          <Footnote label="Unit accounting">
+            Units are struck at the NAV in force on the contribution date. Withdrawals redeem units at
+            the next struck NAV.
+          </Footnote>
+        </>
+      }
+    />
   );
 }
 
-function PerformanceView({ performance }: { performance: InvestorsResponse['performance'] }) {
+function ClientScreen({
+  data,
+  update,
+  loading,
+}: {
+  data: InvestorsResponse | null;
+  update: InvestorUpdate | null;
+  loading: boolean;
+}) {
+  const position = data?.position ?? null;
+  const performance = data?.performance ?? [];
+
   const valid = performance.filter((p) => p.navPerUnit != null && p.navPerUnit > 0);
   const baseNav = valid[0]?.navPerUnit ?? null;
   const baseSpy = valid.find((p) => p.spyPrice != null && p.spyPrice > 0)?.spyPrice ?? null;
@@ -337,62 +343,270 @@ function PerformanceView({ performance }: { performance: InvestorsResponse['perf
   }));
 
   return (
-    <div className="terminal-panel p-5">
-      <div className="mb-5">
-        <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Performance record</p>
-        <h2 className="mt-1 text-xl font-semibold text-white">NAV return over time</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500">Returns are normalized from the first available NAV so contributions do not look like investment performance.</p>
-      </div>
-      {chart.length === 0 ? (
-        <p className="border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400">No performance history yet.</p>
+    <ScreenGrid
+      main={
+        <>
+          <MetricStrip columns={4}>
+            <Metric
+              label="Your value"
+              value={loading || !position ? '—' : fmtCurrency(position.value)}
+              muted={loading || !position}
+              sub={position ? 'At the latest struck NAV' : 'No investment recorded yet'}
+            />
+            <Metric
+              label="Net contributed"
+              value={loading || !position ? '—' : fmtCurrency(position.contributed - position.withdrawn)}
+              muted={loading || !position}
+              sub={position ? 'Contributions less withdrawals' : 'Awaiting first contribution'}
+            />
+            <Metric
+              label="Gain / loss"
+              value={loading || !position ? '—' : fmtCurrency(position.gainLoss)}
+              muted={loading || !position}
+              tone={position?.gainLoss != null && position.gainLoss >= 0 ? 'pos' : undefined}
+              sub={position?.gainLossPct != null ? fmtPercent(position.gainLossPct) : 'Needs two records'}
+            />
+            <Metric
+              label="Ownership"
+              value={loading || !position ? '—' : unsignedPct(position.ownershipPct, 2)}
+              muted={loading || !position}
+              sub={position ? `${fmtNumber(position.units, 4)} units held` : 'No units issued'}
+            />
+          </MetricStrip>
+
+          <Panel>
+            <PanelHead
+              title="NAV return"
+              caption="Normalised from the first struck NAV so contributions do not read as performance"
+            />
+            {chart.length === 0 ? (
+              <Hatch
+                title="No performance history yet"
+                note="The return series begins once two NAV records exist. Nothing is estimated in the meantime."
+              />
+            ) : (
+              <div style={{ padding: '16px 18px 10px', height: 252 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chart} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                    <CartesianGrid stroke="#ebece9" vertical={false} />
+                    <XAxis dataKey="date" tick={AXIS_TICK} axisLine={{ stroke: '#dcddd9' }} tickLine={false} minTickGap={40} />
+                    <YAxis
+                      tick={AXIS_TICK}
+                      axisLine={false}
+                      tickLine={false}
+                      width={52}
+                      tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
+                    />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      formatter={(v) => (v == null ? '—' : `${Number(v).toFixed(2)}%`)}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="Portfolio"
+                      stroke="var(--accent)"
+                      strokeWidth={1.75}
+                      fill="none"
+                      dot={false}
+                      activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
+                    />
+                    {baseSpy && (
+                      <Line
+                        type="monotone"
+                        dataKey="S&P 500"
+                        stroke="#a9abb0"
+                        strokeWidth={1.25}
+                        strokeDasharray="3 3"
+                        dot={false}
+                        connectNulls
+                      />
+                    )}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Panel>
+
+          <Panel>
+            <PanelHead
+              title="Pro-rata exposure"
+              caption="Your slice of what the pool holds — not shares you own directly"
+            />
+            <table className="pm-table">
+              <thead>
+                <tr>
+                  <th>Instrument</th>
+                  <th className="pm-num-cell">Your share of market value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.proRataHoldings ?? []).length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="pm-prose-cell"
+                      style={{ padding: '26px 18px', textAlign: 'center', fontSize: 12, color: 'var(--muted-2)' }}
+                    >
+                      No exposure to report. Positions appear once the pool holds settled instruments.
+                    </td>
+                  </tr>
+                ) : (
+                  (data?.proRataHoldings ?? []).map((h) => (
+                    <tr key={h.ticker}>
+                      <td className="pm-prose-cell">
+                        <span style={{ fontWeight: 600 }}>{h.ticker}</span>
+                        <span style={{ color: 'var(--muted-2)', paddingLeft: 8 }}>{h.name}</span>
+                      </td>
+                      <td className="pm-num-cell">{fmtCurrency(h.marketValue)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </Panel>
+
+          <CapitalHistoryPanel history={data?.history ?? []} />
+        </>
+      }
+      rail={
+        <>
+          <ManagerUpdateBlock update={update} />
+          <RailBlock title="Account details" grow>
+            <div className="flex flex-col">
+              <DefRow label="Account holder">{position?.name ?? 'Not initialised'}</DefRow>
+              <DefRow label="Investor ID">
+                {position?.investorId ?? <span className="pm-nil">Assigned after first entry</span>}
+              </DefRow>
+              <DefRow label="Units held">{position ? fmtNumber(position.units, 4) : <Nil />}</DefRow>
+              <DefRow label="NAV / unit">
+                {position?.navPerUnit != null ? fmtCurrency(position.navPerUnit, 4) : <Nil />}
+              </DefRow>
+            </div>
+            {position && (
+              <a
+                href="/api/investors/statement"
+                className="pm-btn mt-3 block text-center no-underline hover:no-underline"
+                style={{ color: 'var(--ink)' }}
+              >
+                Download statement (CSV)
+              </a>
+            )}
+          </RailBlock>
+          <Footnote label="Unit accounting">
+            Units are struck at the NAV in force on the contribution date. Withdrawals redeem units at
+            the next struck NAV.
+          </Footnote>
+        </>
+      }
+    />
+  );
+}
+
+function CapitalHistoryPanel({ history }: { history: InvestorsResponse['history'] }) {
+  return (
+    <Panel>
+      <PanelHead title="Capital history" caption="Contributions and withdrawals" />
+      <table className="pm-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th className="pm-num-cell">Amount</th>
+            <th className="pm-num-cell">NAV / unit</th>
+            <th className="pm-num-cell">Units</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.length === 0 ? (
+            <tr>
+              <td
+                colSpan={5}
+                className="pm-prose-cell"
+                style={{ padding: '26px 18px', textAlign: 'center', fontSize: 12, color: 'var(--muted-2)' }}
+              >
+                No capital transactions recorded yet.
+              </td>
+            </tr>
+          ) : (
+            history.map((entry, index) => (
+              <tr key={`${entry.date}-${entry.type}-${index}`}>
+                <td>{entry.date}</td>
+                {/* Plain text, not a coloured pill. */}
+                <td className="pm-prose-cell">{entry.type}</td>
+                <td className="pm-num-cell">{fmtCurrency(entry.amount)}</td>
+                <td className="pm-num-cell">
+                  {entry.navPerUnit === null ? <Nil /> : fmtCurrency(entry.navPerUnit, 4)}
+                </td>
+                <td className="pm-num-cell">{fmtNumber(entry.units, 4)}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
+function ManagerUpdateBlock({ update }: { update: InvestorUpdate | null }) {
+  return (
+    <RailBlock
+      title="Manager update"
+      right={
+        update ? (
+          <span className="pm-num" style={{ fontSize: 11, color: 'var(--muted-2)' }}>
+            {update.isoWeek}
+          </span>
+        ) : undefined
+      }
+    >
+      {!update ? (
+        <p style={{ margin: 0, fontSize: 11.5, color: 'var(--muted-2)' }}>
+          No manager update has been published yet. Updates appear here after the weekly portfolio
+          review runs.
+        </p>
       ) : (
-        <div className="h-[290px] sm:h-[350px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chart} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-              <defs><linearGradient id="clientPerformanceGlow" x1="0" x2="0" y1="0" y2="1"><stop offset="5%" stopColor="#00ffb2" stopOpacity={0.36} /><stop offset="95%" stopColor="#00ffb2" stopOpacity={0.02} /></linearGradient></defs>
-              <CartesianGrid stroke="rgba(148,163,184,.12)" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => `${Number(value).toFixed(1)}%`} width={48} />
-              <Tooltip formatter={(value) => value == null ? '—' : `${Number(value).toFixed(2)}%`} contentStyle={{ background: '#071019', border: '1px solid rgba(0,255,178,.22)', color: '#e5fff7' }} />
-              <Area type="monotone" dataKey="Portfolio" stroke="#00ffb2" strokeWidth={3} fill="url(#clientPerformanceGlow)" dot={false} />
-              {baseSpy && <Area type="monotone" dataKey="S&P 500" stroke="#7dd3fc" strokeWidth={2} fill="none" dot={false} connectNulls />}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <div className="flex flex-col">
+            <DefRow label="Actions this week">
+              {update.weeklyTrades.length === 0 ? 'None' : `${update.weeklyTrades.length}`}
+            </DefRow>
+            <DefRow label="Largest exposure">
+              {update.topHoldings[0]
+                ? `${update.topHoldings[0].ticker} ${fmtCurrency(update.topHoldings[0].marketValue)}`
+                : <Nil />}
+            </DefRow>
+            <DefRow label="NAV as of">{update.navAsOf ?? <Nil />}</DefRow>
+          </div>
+          {update.weeklyTrades.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              {update.weeklyTrades.map((trade, i) => (
+                <div
+                  key={`${trade.date}-${trade.ticker}-${i}`}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '58px 1fr auto',
+                    gap: 10,
+                    padding: '7px 0',
+                    borderBottom: '1px solid var(--rule-row)',
+                    fontSize: 12,
+                  }}
+                >
+                  <span className="pm-num" style={{ fontSize: 11, color: 'var(--faint)' }}>
+                    {trade.date}
+                  </span>
+                  <span>
+                    {trade.side} {trade.ticker}
+                  </span>
+                  <span className="pm-num" style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    {fmtCurrency(trade.price)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
-    </div>
-  );
-}
-
-function CapitalHistory({ history }: { history: InvestorsResponse['history'] }) {
-  return (
-    <div className="terminal-panel overflow-hidden p-5">
-      <div className="mb-4"><p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200/70">Capital history</p><h2 className="mt-1 text-xl font-semibold text-white">Contributions and withdrawals</h2></div>
-      {history.length === 0 ? <p className="text-sm text-slate-400">No capital transactions recorded yet.</p> : (
-        <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-white/10 text-left font-mono text-[10px] uppercase tracking-[0.15em] text-slate-500"><th className="py-2">Date</th><th className="py-2">Type</th><th className="py-2 text-right">Amount</th><th className="py-2 text-right">NAV / Unit</th><th className="py-2 text-right">Units</th></tr></thead><tbody>{history.map((entry, index) => <tr key={`${entry.date}-${entry.type}-${index}`} className="border-b border-white/5"><td className="py-3 text-slate-300">{entry.date}</td><td className={entry.type === 'Contribution' ? 'py-3 text-emerald-200' : 'py-3 text-amber-200'}>{entry.type}</td><td className="py-3 text-right font-mono text-slate-100">{fmtCurrency(entry.amount)}</td><td className="py-3 text-right font-mono text-slate-400">{fmtCurrency(entry.navPerUnit, 4)}</td><td className="py-3 text-right font-mono text-slate-400">{fmtNumber(entry.units, 4)}</td></tr>)}</tbody></table></div>
-      )}
-    </div>
-  );
-}
-
-function ManagerUpdates({ update }: { update: InvestorUpdate | null }) {
-  return <div className="terminal-panel p-5"><p className="font-mono text-[10px] uppercase tracking-[0.28em] text-emerald-200/70">Manager updates</p>{update ? <><div className="mt-3 flex flex-wrap items-baseline justify-between gap-2"><h2 className="text-xl font-semibold text-white">Portfolio update {update.isoWeek}</h2><span className="font-mono text-[10px] text-slate-500">NAV as of {update.navAsOf ?? 'latest available'}</span></div><div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3"><Stat label="Current Value" value={fmtCurrency(update.value)} /><Stat label="Gain/Loss" value={`${fmtCurrency(update.gainLoss)} (${fmtPercent(update.gainLossPct)})`} className={gl(update.gainLoss)} /><Stat label="Actions" value={String(update.weeklyTrades.length)} /></div><div className="mt-5 grid gap-5 border-t border-white/10 pt-4 md:grid-cols-2"><div><p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">This week</p>{update.weeklyTrades.length ? <div className="space-y-2">{update.weeklyTrades.map((trade, i) => <p key={`${trade.date}-${trade.ticker}-${i}`} className="text-sm text-slate-300">{trade.date}: <span className="text-white">{trade.side} {trade.ticker}</span> at {fmtCurrency(trade.price)}</p>)}</div> : <p className="text-sm text-slate-500">No buys or sells were executed this week.</p>}</div><div><p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Largest exposures</p>{update.topHoldings.length ? <div className="space-y-2">{update.topHoldings.map((holding) => <div key={holding.ticker} className="flex justify-between text-sm"><span className="text-slate-300">{holding.ticker}</span><span className="font-mono text-slate-100">{fmtCurrency(holding.marketValue)}</span></div>)}</div> : <p className="text-sm text-slate-500">No current exposure available yet.</p>}</div></div></> : <p className="mt-3 text-sm leading-6 text-slate-400">No manager update has been published yet. Updates appear here after the weekly portfolio review runs.</p>}</div>;
-}
-
-function AccountView({ position }: { position: InvestorPosition | null }) {
-  return <div className="grid gap-4 md:grid-cols-2"><div className="terminal-panel p-5"><p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Account details</p><div className="mt-4 space-y-3 text-sm"><AccountRow label="Account holder" value={position?.name ?? 'Not initialized'} /><AccountRow label="Email" value={position?.email ?? '—'} /><AccountRow label="Investor ID" value={position?.investorId ?? 'Assigned after first ledger entry'} /><AccountRow label="Units held" value={position ? fmtNumber(position.units, 4) : '—'} /><AccountRow label="Current NAV / unit" value={position ? fmtCurrency(position.navPerUnit, 4) : '—'} /></div></div><div className="terminal-panel p-5"><p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200/70">Documents</p><h2 className="mt-1 text-xl font-semibold text-white">Your account records</h2><p className="mt-2 text-sm leading-6 text-slate-500">Download a current capital-account statement containing only your contributions and withdrawals.</p>{position && <a href="/api/investors/statement" className="mt-5 inline-flex border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15">Download statement CSV</a>}</div></div>;
-}
-
-function AccountRow({ label, value }: { label: string; value: string }) {
-  return <div className="flex flex-col gap-1 border-b border-white/5 pb-2 sm:flex-row sm:items-center sm:justify-between"><span className="text-slate-500">{label}</span><span className="font-mono text-xs text-slate-200 sm:text-right">{value}</span></div>;
-}
-
-function Stat({ label, value, className = 'text-slate-100' }: { label: string; value: string; className?: string }) {
-  return (
-    <div>
-      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className={`mt-1 font-mono text-lg ${className}`}>{value}</p>
-    </div>
+    </RailBlock>
   );
 }
 
@@ -448,59 +662,80 @@ function WithdrawalPreviewPanel() {
   }
 
   return (
-    <div className="terminal-panel space-y-4 p-5 sm:p-6">
-      <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Withdrawal Preview</p>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-          Informational only — shows the realized gain and suggested tax reserve a withdrawal would trigger. Nothing here moves
-          money or sells anything for real; record the actual withdrawal via portfolio-manager's <code>process-withdrawal.js</code>{' '}
-          after you've executed any real sells and decided the real payout.
+    <Panel>
+      <PanelHead title="Withdrawal preview" caption="Informational — nothing here moves money or sells anything" />
+      <div style={{ padding: '14px 18px' }}>
+        <p style={{ margin: '0 0 12px', maxWidth: 760, fontSize: 12, color: 'var(--ink-2)' }}>
+          Shows the realised gain and suggested tax reserve a withdrawal would trigger. Record the
+          actual withdrawal with the backend&apos;s <code>process-withdrawal.js</code> after the real
+          sells are executed and the payout is decided.
         </p>
+        <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="investor@example.com"
+            aria-label="Investor email"
+            className="pm-input"
+            style={{ width: 230 }}
+          />
+          <input
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder='Amount (or "full")'
+            aria-label="Withdrawal amount"
+            className="pm-input"
+            style={{ width: 160 }}
+          />
+          <input
+            value={sellFrom}
+            onChange={(e) => setSellFrom(e.target.value)}
+            placeholder="Sell from: AAPL:5, MSFT:2 (optional)"
+            aria-label="Sell from"
+            className="pm-input"
+            style={{ width: 260 }}
+          />
+          <button
+            type="button"
+            onClick={runPreview}
+            disabled={loading || !email || !amount}
+            className="pm-btn-primary"
+          >
+            {loading ? 'Calculating…' : 'Preview'}
+          </button>
+        </div>
+        {error && (
+          <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--warn)' }}>{error}</p>
+        )}
       </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="investor@example.com"
-          className="border border-white/10 bg-black/30 p-2 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/40 focus:outline-none"
-        />
-        <input
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder='Amount (or "full")'
-          className="border border-white/10 bg-black/30 p-2 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/40 focus:outline-none"
-        />
-        <input
-          value={sellFrom}
-          onChange={(e) => setSellFrom(e.target.value)}
-          placeholder="Sell from: AAPL:5, MSFT:2 (optional)"
-          className="border border-white/10 bg-black/30 p-2 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/40 focus:outline-none"
-        />
-      </div>
-
-      <button
-        onClick={runPreview}
-        disabled={loading || !email || !amount}
-        className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40"
-      >
-        {loading ? 'Calculating...' : 'Preview'}
-      </button>
-
-      {error && <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
-
       {result && (
-        <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-4 sm:grid-cols-4">
-          <Stat label="Requested" value={fmtCurrency(result.preview.requestedAmount)} />
-          <Stat label="Cash Available" value={fmtCurrency(result.preview.cashAvailable)} />
-          <Stat label="Realized Gain" value={fmtCurrency(result.preview.totalRealizedGain)} className={gl(result.preview.totalRealizedGain)} />
-          <Stat label={`Tax Reserve (${(result.preview.taxReserveRatePct * 100).toFixed(1)}%)`} value={fmtCurrency(result.preview.taxReserve)} />
-          <Stat label="Suggested Net Payout" value={fmtCurrency(result.preview.suggestedNetPayout)} />
-          {result.preview.shortfall > 0.01 && (
-            <Stat label="Shortfall vs. Cash" value={fmtCurrency(result.preview.shortfall)} className="text-amber-300" />
-          )}
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: 'repeat(5,1fr)', borderTop: '1px solid var(--rule-soft)' }}
+        >
+          <Metric label="Requested" value={fmtCurrency(result.preview.requestedAmount)} />
+          <Metric label="Cash available" value={fmtCurrency(result.preview.cashAvailable)} />
+          <Metric
+            label="Realised gain"
+            value={fmtCurrency(result.preview.totalRealizedGain)}
+            tone={result.preview.totalRealizedGain >= 0 ? 'pos' : undefined}
+          />
+          <Metric
+            label={`Tax reserve (${(result.preview.taxReserveRatePct * 100).toFixed(1)}%)`}
+            value={fmtCurrency(result.preview.taxReserve)}
+          />
+          <Metric
+            label="Suggested net payout"
+            value={fmtCurrency(result.preview.suggestedNetPayout)}
+            sub={
+              result.preview.shortfall > 0.01
+                ? `Shortfall vs cash ${fmtCurrency(result.preview.shortfall)}`
+                : undefined
+            }
+            tone={result.preview.shortfall > 0.01 ? 'warn' : undefined}
+          />
         </div>
       )}
-    </div>
+    </Panel>
   );
 }

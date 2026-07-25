@@ -1,9 +1,9 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import PageTransition from "@/components/PageTransition";
+import ContextStrip from "@/components/ContextStrip";
+import { PortfolioProvider, usePortfolio } from "@/components/PortfolioProvider";
 import Sidebar from "@/components/Sidebar";
 import { CLIENT_DEFAULT_ROUTE, routeAllowed } from "@/lib/client-access";
 import type { PortfolioRole } from "@/lib/rbac";
@@ -13,26 +13,54 @@ interface AppShellProps {
   role: PortfolioRole | null;
 }
 
+/**
+ * Routes that are not in the nav and still speak the old dark-terminal utility
+ * vocabulary. `.legacy-chrome` in globals.css translates that vocabulary into
+ * readable ink on paper for exactly these paths; remove a path from this set
+ * when its screen is ported to the private-wealth chrome.
+ */
+const LEGACY_CHROME_ROUTES = new Set([
+  "/alerts",
+  "/approvals",
+  "/compare",
+  "/funnel",
+  "/history",
+  "/observation",
+  "/strategy",
+  // Nav routes still awaiting their port. They carry heavy money-path UI
+  // (proposal approve/reject/edit, agent chat and memory, research runs) that
+  // the redesign must preserve feature-for-feature, so they keep the readable
+  // translation layer until each is rebuilt in the private-wealth chrome.
+  "/agents",
+  "/portfolio-manager",
+  "/research",
+]);
+
 function AccessBlock({ role }: { role: PortfolioRole | null }) {
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-2xl items-center">
-      <section className="terminal-panel w-full p-6 sm:p-8">
-        <div className="mb-5 flex items-center justify-between">
-          <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">
-            Access Control
-          </p>
-          <UserButton />
-        </div>
-        <h1 className="text-3xl font-black tracking-[-0.04em] text-white sm:text-5xl">
-          This desk is not available for this account.
-        </h1>
-        <p className="mt-4 text-sm leading-6 text-slate-400">
-          {role
-            ? "Client accounts are limited to their own capital account plus curated signals and catalysts."
-            : "This account needs a Portfolio Manager role assignment before the dashboard can load."}
-        </p>
-      </section>
+    <div className="pm-panel" style={{ padding: "26px 22px" }}>
+      <h2 className="pm-h2">This desk is not available for this account.</h2>
+      <p style={{ margin: "8px 0 0", maxWidth: 520, fontSize: 12.5, color: "var(--ink-2)" }}>
+        {role
+          ? "Client accounts are limited to their own capital account plus curated signals and catalysts."
+          : "This account needs a Portfolio Manager role assignment before the dashboard can load."}
+      </p>
     </div>
+  );
+}
+
+function ChromeFooter() {
+  const { data } = usePortfolio();
+  return (
+    <footer
+      className="flex items-center justify-between"
+      style={{ padding: "10px 22px", fontSize: 11, color: "var(--faint)", background: "var(--page)" }}
+    >
+      <span>Portfolio Manager · Private Wealth Office</span>
+      <span className="pm-num">
+        {data?.lastSynced ? `Record synced ${data.lastSynced}` : "No verified record"}
+      </span>
+    </footer>
   );
 }
 
@@ -42,6 +70,8 @@ export default function AppShell({ children, role }: AppShellProps) {
   const isAuthRoute = pathname.startsWith("/sign-in");
   const hasNavigation = !isAuthRoute && role !== null;
   const shouldRedirectClientHome = role === "Client" && pathname === "/";
+  const isLegacyRoute = LEGACY_CHROME_ROUTES.has(pathname);
+  const allowed = routeAllowed(role, pathname);
 
   useEffect(() => {
     if (shouldRedirectClientHome) {
@@ -50,28 +80,42 @@ export default function AppShell({ children, role }: AppShellProps) {
   }, [router, shouldRedirectClientHome]);
 
   if (isAuthRoute) {
-    return <main className="relative min-h-screen overflow-hidden">{children}</main>;
+    return <main className="relative min-h-screen">{children}</main>;
   }
 
   return (
-    <>
-      {hasNavigation && <Sidebar role={role} />}
-      <main
-        className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-7 sm:px-6 lg:px-8 lg:py-10"
-      >
-        <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_86%_0%,rgba(102,128,116,.11),transparent_28%),linear-gradient(180deg,#fcfcf9_0%,#f5f6f1_100%)]" />
-        <PageTransition>
-          <div className="mx-auto max-w-[1540px]">
-            {shouldRedirectClientHome ? (
-              <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading capital account...</p>
-            ) : routeAllowed(role, pathname) ? (
-              children
+    // Panels run edge to edge: no max-width centring, no shell padding, no
+    // background gradient layer. The target layout is the 1180px+ grid.
+    <PortfolioProvider enabled={hasNavigation && allowed}>
+      <div className="flex min-h-screen flex-col" style={{ minWidth: 1180 }}>
+        {hasNavigation && (
+          <>
+            <Sidebar role={role} />
+            <ContextStrip role={role} />
+          </>
+        )}
+        <main className="flex-1">
+          {shouldRedirectClientHome ? (
+            <div
+              className="pm-panel"
+              style={{ padding: "26px 22px", fontSize: 12.5, color: "var(--muted)" }}
+            >
+              Opening capital account…
+            </div>
+          ) : allowed ? (
+            isLegacyRoute ? (
+              <div className="legacy-chrome" style={{ padding: "18px 22px" }}>
+                {children}
+              </div>
             ) : (
-              <AccessBlock role={role} />
-            )}
-          </div>
-        </PageTransition>
-      </main>
-    </>
+              children
+            )
+          ) : (
+            <AccessBlock role={role} />
+          )}
+        </main>
+        {hasNavigation && <ChromeFooter />}
+      </div>
+    </PortfolioProvider>
   );
 }

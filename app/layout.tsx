@@ -1,23 +1,32 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
-import { JetBrains_Mono, Sora } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
 import AppShell from "@/components/AppShell";
 import { getPortfolioAuthContext } from "@/lib/auth";
 import "./globals.css";
 
-const sora = Sora({
-  variable: "--font-sora",
+const ibmPlexSans = IBM_Plex_Sans({
+  variable: "--font-ibm-plex-sans",
+  weight: ["400", "500", "600"],
   subsets: ["latin"],
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
+const ibmPlexMono = IBM_Plex_Mono({
+  variable: "--font-ibm-plex-mono",
+  weight: ["400", "500"],
+  subsets: ["latin"],
+});
+
+// Carries the 26px monogram only.
+const ibmPlexSerif = IBM_Plex_Serif({
+  variable: "--font-ibm-plex-serif",
+  weight: ["500"],
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Sam's Personal Investor",
-  description: "Quant + AI research, recommendations, and performance tracking for Sam's portfolio",
+  title: "Portfolio Manager",
+  description: "Private wealth office — holdings, capital accounts, research desks and approvals.",
 };
 
 export default function RootLayout({
@@ -33,7 +42,9 @@ async function LayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <html lang="en">
-      <body className={`${sora.variable} ${jetbrainsMono.variable} min-h-screen font-sans`}>
+      <body
+        className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} ${ibmPlexSerif.variable} min-h-screen font-sans`}
+      >
         <ClerkProvider>
           <AppShell role={authContext?.role ?? null}>{children}</AppShell>
         </ClerkProvider>

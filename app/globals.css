@@ -2,30 +2,67 @@
 @plugin "@tailwindcss/typography";
 
 @theme inline {
-  --font-sans: var(--font-sora);
-  --font-mono: var(--font-jetbrains-mono);
+  --font-sans: var(--font-ibm-plex-sans);
+  --font-mono: var(--font-ibm-plex-mono);
+  --font-serif: var(--font-ibm-plex-serif);
 }
 
+/* ---------------------------------------------------------------------------
+   Private-wealth chrome tokens.
+
+   One flat gridded surface: hairline rules instead of cards, no radius, no
+   shadow. Panels are separated by a 1px gap over a --rule background, so the
+   grid itself draws the lines.
+   --------------------------------------------------------------------------- */
+
 :root {
-  --paper: #fcfcf9;
+  --page:        #f6f6f4;
+  --panel:       #ffffff;
+  --panel-alt:   #fbfbfa;
+  --ink:         #191b1f;
+  --ink-2:       #4a4c47;
+  --muted:       #6c6e69;
+  --muted-2:     #84867f;
+  --faint:       #9a9c96;
+  --disabled:    #b3b5af;
+  --rule:        #dcddd9;
+  --rule-soft:   #ebece9;
+  --rule-row:    #f1f1ef;
+  --rule-head:   #d8d9d6;
+  --accent:      #1f4b76;
+  --accent-dark: #183c60;
+  --link:        #2e4f7a;
+  --pos:         #2f6d4f;
+  --pos-soft:    #7fa48f;
+  --warn:        #8a6a2f;
+  --chip:        #ececeb;
+  --chip-2:      #c8cacb;
+
+  /* Divider between the header's stretched full-height blocks. */
+  --rule-header-block: #e4e5e2;
+
+  /* Retained only for the off-nav legacy routes (see .legacy-chrome below).
+     No screen in the redesigned nav may reference these. */
+  --paper:       #fcfcf9;
   --paper-muted: #f5f6f1;
-  --ink: #18342d;
-  --muted: #61736d;
-  --forest: #315d4e;
-  --river: #376d82;
-  --line: #d8dfd9;
-  --gold: #a47b3c;
+  --line:        #d8dfd9;
+  --forest:      #315d4e;
+  --river:       #376d82;
+  --gold:        #a47b3c;
 }
 
 body {
   min-height: 100vh;
-  background: var(--paper);
+  background: var(--page);
   color: var(--ink);
-  font-family: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: #cfe0d5;
+  background: #d5dee8;
   color: var(--ink);
 }
 
@@ -33,94 +70,418 @@ button,
 a,
 input,
 textarea {
-  outline-color: var(--river);
+  outline-color: var(--accent);
 }
 
-.terminal-panel {
-  border: 1px solid var(--line);
-  border-radius: 0.25rem;
-  background: rgba(255, 255, 253, 0.92);
-  box-shadow: 0 8px 24px rgba(32, 60, 50, 0.045);
+a {
+  color: var(--link);
+  text-decoration: none;
 }
 
-.market-card {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 0.25rem;
-  background: #fff;
-  box-shadow: 0 4px 14px rgba(32, 60, 50, 0.035);
+a:hover {
+  color: var(--ink);
+  text-decoration: underline;
 }
 
-.market-card::after {
-  content: "";
-  position: absolute;
-  inset: auto -20% -45% 20%;
-  height: 90px;
-  background: radial-gradient(circle, rgba(49, 93, 78, 0.06), transparent 70%);
-  pointer-events: none;
+/* --- Panels ---------------------------------------------------------------- */
+
+.pm-panel {
+  background: var(--panel);
 }
 
-.data-table {
-  border-collapse: separate;
-  border-spacing: 0;
+.pm-panel + .pm-panel {
+  border-top: 1px solid var(--rule);
 }
 
-.data-table th {
-  background: #f2f5f1;
+.pm-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.pm-h2 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pm-caption {
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+
+.pm-label {
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+/* --- Numerics -------------------------------------------------------------- */
+
+.pm-num {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-figure {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+/* --- Metric strip ---------------------------------------------------------- */
+
+.pm-metric {
+  padding: 14px 18px;
+  border-right: 1px solid var(--rule-soft);
+}
+
+.pm-metric:last-child {
+  border-right: 0;
+}
+
+.pm-metric-label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  margin-bottom: 6px;
+}
+
+.pm-metric-sub {
+  font-size: 11.5px;
   color: var(--muted);
-  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  margin-top: 4px;
+}
+
+/* --- Tables ---------------------------------------------------------------- */
+
+.pm-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.pm-table thead tr {
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.pm-table th {
+  font-weight: 500;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pm-table th:first-child { padding-left: 18px; }
+.pm-table th:last-child  { padding-right: 18px; }
+
+.pm-table tbody {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-table td {
+  padding: 9px 12px;
+}
+
+.pm-table td:first-child { padding-left: 18px; }
+.pm-table td:last-child  { padding-right: 18px; }
+
+.pm-table tbody tr {
+  border-bottom: 1px solid var(--rule-row);
+}
+
+.pm-table tbody tr:hover {
+  background: var(--panel-alt);
+}
+
+/* Cells holding prose opt back into the sans face. */
+.pm-prose-cell {
+  font-family: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.pm-num-cell {
+  text-align: right;
+}
+
+.pm-total-row {
+  background: var(--panel-alt);
+  border-top: 1px solid var(--rule);
+  border-bottom: 0;
+}
+
+.pm-total-row:hover {
+  background: var(--panel-alt);
+}
+
+.pm-total-row td {
+  font-weight: 500;
+}
+
+/* Any missing value renders an em-dash — never a zero, never "N/A". */
+.pm-nil {
+  color: var(--disabled);
+}
+
+/* --- Right rail ------------------------------------------------------------ */
+
+.pm-rail {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+}
+
+.pm-rail-block {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.pm-rail-grow {
+  flex: 1;
+}
+
+.pm-defrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--rule-row);
+  font-size: 12px;
+}
+
+.pm-defrow:last-child {
+  border-bottom: 0;
+}
+
+.pm-defrow > span:first-child {
+  color: var(--muted);
+}
+
+.pm-footnote {
+  padding: 13px 16px;
+  background: var(--panel-alt);
+  border-top: 1px solid var(--rule-soft);
+}
+
+.pm-footnote p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* --- Controls -------------------------------------------------------------- */
+
+.pm-btn {
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid #cfd0cc;
+  padding: 5px 11px;
+  cursor: pointer;
+  border-radius: 0;
+  transition: color 120ms linear, background-color 120ms linear;
+}
+
+.pm-btn:hover:not(:disabled) {
+  background: #f0f0ee;
+}
+
+.pm-btn:disabled {
+  color: var(--disabled);
+  cursor: not-allowed;
+}
+
+.pm-btn-primary {
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 6px 13px;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background-color 120ms linear;
+}
+
+.pm-btn-primary:hover:not(:disabled) {
+  background: var(--accent-dark);
+}
+
+.pm-btn-primary:disabled {
+  background: #8f9aa6;
+  border-color: #8f9aa6;
+  cursor: not-allowed;
+}
+
+.pm-seg {
+  display: flex;
+  border: 1px solid var(--rule);
+}
+
+.pm-seg-item {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms linear;
+}
+
+.pm-seg-item:last-child {
+  border-right: 0;
+}
+
+.pm-seg-item:hover {
+  color: var(--ink);
+}
+
+.pm-seg-item[aria-pressed="true"] {
+  background: var(--ink);
+  color: #fff;
+}
+
+.pm-input {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 0;
+}
+
+.pm-input::placeholder {
+  color: var(--faint);
+}
+
+/* --- States ---------------------------------------------------------------- */
+
+/* Feed offline / no verified record. Keeps the chrome, states the fact. */
+.pm-hatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 262px;
+  padding: 24px;
+  text-align: center;
+  background: repeating-linear-gradient(135deg, #fbfbfa 0 8px, #f5f5f3 8px 16px);
+}
+
+.pm-hatch-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.pm-hatch-note {
+  font-size: 11.5px;
+  color: var(--muted-2);
+  max-width: 320px;
+}
+
+/* --- Prose ----------------------------------------------------------------- */
+
+.prose {
+  color: var(--ink-2);
+}
+
+.prose :where(h1, h2, h3, strong) {
+  color: var(--ink);
+}
+
+.prose :where(a) {
+  color: var(--link);
+}
+
+.prose :where(code) {
+  color: var(--ink);
+  background: var(--chip);
+  padding: 0.12rem 0.28rem;
+  border-radius: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Legacy chrome — off-nav routes only.
+
+   /alerts, /approvals, /compare, /funnel, /history, /observation and /strategy
+   still speak Tailwind's dark-terminal utility vocabulary (text-white,
+   text-slate-400, bg-black/20 …). These overrides translate that vocabulary
+   into readable ink on paper. AppShell applies .legacy-chrome to exactly those
+   routes, so the redesigned nav screens never inherit any of it.
+
+   Delete a block from here only when the matching route is ported to the
+   private-wealth chrome above.
+   --------------------------------------------------------------------------- */
+
+.legacy-chrome .terminal-panel {
+  border: 1px solid var(--rule);
+  background: var(--panel);
+}
+
+.legacy-chrome .market-card {
+  border: 1px solid var(--rule);
+  background: var(--panel);
+}
+
+.legacy-chrome .data-table {
+  border-collapse: collapse;
+}
+
+.legacy-chrome .data-table th {
+  color: var(--muted-2);
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
   font-size: 0.68rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.data-table td {
-  border-top: 1px solid var(--line);
+.legacy-chrome .data-table td {
+  border-top: 1px solid var(--rule-row);
 }
 
-.data-table tr:hover td {
-  background: #f2f7f3;
+.legacy-chrome .data-table tr:hover td {
+  background: var(--panel-alt);
 }
 
-.prose {
-  color: #4e625b;
-}
-
-.prose :where(h1,h2,h3,strong) {
-  color: var(--ink);
-}
-
-.prose :where(a) {
-  color: var(--river);
-}
-
-.prose :where(code) {
-  color: #795d2f;
-  background: #f7f1e7;
-  padding: 0.12rem 0.28rem;
-  border-radius: 0.35rem;
-}
-
-/* The existing screens share Tailwind's dark terminal utility vocabulary. These
-   scoped overrides deliberately translate that vocabulary into the new paper and
-   ink palette while individual screens migrate over time. */
-body .text-white,
-body .text-slate-100,
-body .text-slate-200 { color: var(--ink); }
-body .text-slate-300 { color: #40564e; }
-body .text-slate-400,
-body .text-slate-500 { color: var(--muted); }
-body .text-slate-600 { color: #7a8983; }
-body .text-emerald-200,
-body .text-emerald-300 { color: var(--forest); }
-body .text-cyan-100,
-body .text-cyan-200 { color: var(--river); }
-body .text-amber-100,
-body .text-amber-200 { color: #84652f; }
-body .bg-black\/20,
-body .bg-black\/25,
-body .bg-black\/30 { background-color: #f7f8f4; }
-body .border-white\/10,
-body .border-white\/15 { border-color: var(--line); }
-body .divide-white\/10 > :not(:last-child) { border-color: var(--line); }
+.legacy-chrome .text-white,
+.legacy-chrome .text-slate-100,
+.legacy-chrome .text-slate-200 { color: var(--ink); }
+.legacy-chrome .text-slate-300 { color: var(--ink-2); }
+.legacy-chrome .text-slate-400,
+.legacy-chrome .text-slate-500 { color: var(--muted); }
+.legacy-chrome .text-slate-600 { color: var(--muted-2); }
+.legacy-chrome .text-emerald-200,
+.legacy-chrome .text-emerald-300 { color: var(--pos); }
+.legacy-chrome .text-cyan-100,
+.legacy-chrome .text-cyan-200 { color: var(--accent); }
+.legacy-chrome .text-amber-100,
+.legacy-chrome .text-amber-200 { color: var(--warn); }
+.legacy-chrome .bg-black\/20,
+.legacy-chrome .bg-black\/25,
+.legacy-chrome .bg-black\/30 { background-color: var(--panel-alt); }
+.legacy-chrome .border-white\/10,
+.legacy-chrome .border-white\/15 { border-color: var(--rule); }
+.legacy-chrome .divide-white\/10 > :not(:last-child) { border-color: var(--rule); }

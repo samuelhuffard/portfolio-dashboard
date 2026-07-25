@@ -38,7 +38,7 @@ export async function postContribution(body: Record<string, unknown>): Promise<R
 }
 
 const inputClass =
-  'border border-white/10 bg-black/30 p-2 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/40 focus:outline-none';
+  'pm-input w-full';
 
 export function newYorkDate(now = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -102,7 +102,7 @@ export function InvestorPicker({
 export function ResultLine({ result }: { result: RecordResponse }) {
   if (!result.entry) return null;
   return (
-    <p className="border border-emerald-300/30 bg-emerald-300/5 px-4 py-3 font-mono text-xs text-emerald-200">
+    <p className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2.5 text-[11.5px] text-[var(--pos)]">
       {result.seeded ? 'SEEDED @ $1.0000/unit — ' : ''}
       CONTRIBUTION recorded: {fmtCurrency(result.entry.amount)} for{' '}
       {result.entry.name} → {fmtNumber(result.entry.units, 4)} units @ {fmtCurrency(result.entry.navPerUnit, 4)}/unit
@@ -113,25 +113,25 @@ export function ResultLine({ result }: { result: RecordResponse }) {
 
 export function SeedOwnerConfirm({ message, onConfirm, onCancel, busy }: { message: string; onConfirm: () => void; onCancel: () => void; busy: boolean }) {
   return (
-    <div className="space-y-3 border border-amber-300/30 bg-amber-300/5 px-4 py-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber-200/90">Initial owner seed required</p>
-      <p className="text-sm leading-6 text-slate-300">{message}</p>
-      <p className="text-sm leading-6 text-slate-400">
-        The ledger is empty but the portfolio already holds value. Recording this entry as the <span className="text-amber-200">initial owner seed</span>{' '}
+    <div className="space-y-2 border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3">
+      <p className="pm-label">Initial owner seed required</p>
+      <p className="text-[12px] text-[var(--ink-2)]">{message}</p>
+      <p className="text-[12px] text-[var(--muted)]">
+        The ledger is empty but the portfolio already holds value. Recording this entry as the <span className="text-[var(--warn)]">initial owner seed</span>{' '}
         credits this investor with the fund&apos;s existing value at $1.0000/unit. Only do this for the true owner of the pre-existing capital.
       </p>
       <div className="flex gap-2">
         <button
           onClick={onConfirm}
           disabled={busy}
-          className="border border-amber-300/40 bg-amber-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-amber-200 transition-colors hover:bg-amber-300/20 disabled:opacity-40"
+          className="pm-btn-primary"
         >
           {busy ? 'Recording...' : 'Confirm seed owner'}
         </button>
         <button
           onClick={onCancel}
           disabled={busy}
-          className="border border-white/10 px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-slate-400 transition-colors hover:bg-white/5 disabled:opacity-40"
+          className="pm-btn"
         >
           Cancel
         </button>
@@ -175,10 +175,10 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
   }
 
   return (
-    <div className="terminal-panel space-y-4 p-5 sm:p-6">
+    <div className="space-y-3 px-[18px] py-[14px]">
       <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Record Capital Entry</p>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+        <p className="pm-label">Record Capital Entry</p>
+        <p className="mt-1 max-w-[760px] text-[12px] text-[var(--ink-2)]">
           Writes a signed, append-only row to the Investors ledger. Record only money that has actually arrived or left — this never moves money itself.
           New cash is issued at the last NAV recorded before its deposit date; the account must already reflect the cash so the write can be reconciled.
         </p>
@@ -203,13 +203,13 @@ export default function ContributionForm({ roster, onRecorded }: { roster: Roste
         <button
           onClick={() => submit(false)}
           disabled={busy || !email || !name || !amount}
-          className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40"
+          className="pm-btn-primary"
         >
           {busy ? 'Recording...' : 'Record contribution'}
         </button>
       )}
 
-      {error && <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+      {error && <p className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2.5 text-[12px] text-[var(--warn)]">{error}</p>}
       {result && <ResultLine result={result} />}
     </div>
   );
