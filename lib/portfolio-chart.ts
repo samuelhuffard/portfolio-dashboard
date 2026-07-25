@@ -2,6 +2,8 @@ import type { PerformanceRow } from "./sheets";
 
 type ValueSnapshot = Pick<PerformanceRow, "date" | "spyPrice"> & {
   portfolioValue?: PerformanceRow["portfolioValue"];
+  unitsOutstanding?: PerformanceRow["unitsOutstanding"];
+  navPerUnit?: PerformanceRow["navPerUnit"];
 };
 
 export interface CashFlow {
@@ -61,16 +63,60 @@ function netFlowInInterval(cashFlows: CashFlow[], afterDate: string, throughDate
   return total;
 }
 
-/**
- * Performance rows are account-equity snapshots. Returns are adjusted only by
- * signed investor-ledger cash flows, never by guessing from movement size.
- * Every flow is removed from the interval it lands in before that interval's
- * market return is measured, so funding the account never reads as a gain.
- */
-function buildReturnPath(performance: ValueSnapshot[], cashFlows: CashFlow[] = []): ReturnPoint[] {
-  const snapshots = validValueSnapshots(performance);
-  if (snapshots.length === 0) return [];
+type UnitSnapshot = ValueSnapshot & {
+  portfolioValue: number;
+  unitsOutstanding: number;
+  navPerUnit: number;
+};
 
+/**
+ * A snapshot carrying *trustworthy* unit accounting. NAV per unit is
+ * contribution-immune by construction — money in mints units and leaves NAV
+ * untouched — so wherever it exists it is a strictly better return signal than
+ * differencing balances against a ledger.
+ *
+ * But only where it reconciles. A NAV that disagrees with `value / units` is a
+ * half-applied correction, not a valuation, and trusting one would hand the
+ * whole curve to a number the sheet itself contradicts: a stale NAV of 2.5
+ * against a $50.50 balance on 50 units would report an −80% collapse that never
+ * happened. Rows that do not reconcile are treated as having no unit accounting
+ * at all, which falls back to the signed cash-flow path.
+ */
+const NAV_RECONCILIATION_TOLERANCE = 0.005;
+
+function hasUnitAccounting(snapshot: ValueSnapshot): snapshot is UnitSnapshot {
+  const { unitsOutstanding, navPerUnit, portfolioValue } = snapshot;
+  if (typeof unitsOutstanding !== "number" || !(unitsOutstanding > 0)) return false;
+  if (typeof navPerUnit !== "number" || !(navPerUnit > 0)) return false;
+  if (typeof portfolioValue !== "number" || !(portfolioValue > 0)) return false;
+
+  const impliedNav = portfolioValue / unitsOutstanding;
+  return Math.abs(impliedNav - navPerUnit) / navPerUnit <= NAV_RECONCILIATION_TOLERANCE;
+}
+
+/** Signed capital registered on or before `throughDate`. */
+function totalFlowThrough(cashFlows: CashFlow[], throughDate: string): number {
+  let total = 0;
+  for (const flow of cashFlows) {
+    if (!flow.date || !Number.isFinite(flow.amount) || flow.amount === 0) continue;
+    if (flow.date <= throughDate) total += flow.amount;
+  }
+  return total;
+}
+
+/**
+ * Return path for a history with no unit accounting at all: every signed flow is
+ * removed from the interval it lands in before that interval's market return is
+ * measured, so funding the account never reads as a gain.
+ *
+ * This is only valid when the investor ledger records *incremental* cash by the
+ * date it arrived. Once unit accounting exists the ledger may instead re-register
+ * pre-existing capital at a rebased NAV, and `buildUnitReturnPath` takes over.
+ */
+function buildCashFlowReturnPath(
+  snapshots: Array<ValueSnapshot & { portfolioValue: number }>,
+  cashFlows: CashFlow[],
+): ReturnPoint[] {
   let factor = 1;
   const points: ReturnPoint[] = [{
     date: snapshots[0].date,
@@ -98,6 +144,111 @@ function buildReturnPath(performance: ValueSnapshot[], cashFlows: CashFlow[] = [
   return points;
 }
 
+/**
+ * Return path anchored on NAV per unit, spliced onto the pre-unit history.
+ *
+ * From the anchor onward the ledger is not consulted at all: NAV per unit
+ * already excludes contributions, so a deposit that mints units leaves the curve
+ * flat no matter what date the ledger stamped on it.
+ *
+ * Before the anchor there is no NAV, and the ledger cannot be differenced either
+ * — when unit accounting is switched on it re-registers the *whole* account at a
+ * rebased NAV, so its entries on the anchor date include capital that had been
+ * sitting in the account for weeks. Differencing them is what made a $50 seed
+ * plus a $25 deposit read as a +50% gain. Instead the pre-unit era is reconciled
+ * as a whole: capital registered at the anchor minus the opening balance is the
+ * net capital that entered, and it is removed from the one interval whose
+ * balance actually stepped by that amount.
+ *
+ * That single attribution is the only inference in this file, so it is bounded:
+ * it must match a real step within tolerance, and when it does not the pre-unit
+ * history is dropped rather than drawn wrong. A chart that starts later is a far
+ * smaller error than one that invents a return.
+ */
+function buildUnitReturnPath(
+  snapshots: Array<ValueSnapshot & { portfolioValue: number }>,
+  anchorIndex: number,
+  cashFlows: CashFlow[],
+): ReturnPoint[] {
+  const anchor = snapshots[anchorIndex] as UnitSnapshot;
+  const anchorNav = anchor.navPerUnit;
+
+  // Capital the ledger says was on the books once units existed, versus what the
+  // account opened with. With no ledger there is nothing to reconcile against,
+  // so treat the pre-unit capital base as unchanged.
+  const registeredCapital = totalFlowThrough(cashFlows, anchor.date);
+  const openingCapital = snapshots[0].portfolioValue;
+  const unexplained = registeredCapital > 0 ? registeredCapital - openingCapital : 0;
+
+  // Which pre-anchor interval absorbed that capital? Only a balance step of the
+  // right size can answer; anything else would be a guess dressed as a fact.
+  let flowIndex = -1;
+  if (Math.abs(unexplained) > 0.005) {
+    let bestError = Infinity;
+    for (let index = 1; index <= anchorIndex; index += 1) {
+      const step = snapshots[index].portfolioValue - snapshots[index - 1].portfolioValue;
+      const error = Math.abs(step - unexplained);
+      if (error < bestError) {
+        bestError = error;
+        flowIndex = index;
+      }
+    }
+    const tolerance = Math.max(Math.abs(unexplained) * 0.02, 0.5);
+    if (bestError > tolerance) flowIndex = -1;
+  }
+
+  // Unreconcilable pre-unit history is refused, not approximated.
+  const preUnitIsSound = Math.abs(unexplained) <= 0.005 || flowIndex !== -1;
+  const points: ReturnPoint[] = [];
+  let factor = 1;
+
+  if (preUnitIsSound) {
+    points.push({ date: snapshots[0].date, factor, spyPrice: snapshots[0].spyPrice });
+    for (let index = 1; index <= anchorIndex; index += 1) {
+      const previous = snapshots[index - 1];
+      const current = snapshots[index];
+      const flow = index === flowIndex ? unexplained : 0;
+      const marketFactor = (current.portfolioValue - flow) / previous.portfolioValue;
+      if (Number.isFinite(marketFactor) && marketFactor > 0) factor *= marketFactor;
+      points.push({ date: current.date, factor, spyPrice: current.spyPrice });
+    }
+  } else {
+    points.push({ date: anchor.date, factor, spyPrice: anchor.spyPrice });
+  }
+
+  // From here NAV carries the whole return. A row that lost its unit accounting
+  // holds the curve flat rather than reintroducing a balance-driven step.
+  const anchorFactor = factor;
+  let lastNav = anchorNav;
+  for (let index = anchorIndex + 1; index < snapshots.length; index += 1) {
+    const current = snapshots[index];
+    if (hasUnitAccounting(current)) lastNav = current.navPerUnit;
+    points.push({
+      date: current.date,
+      factor: anchorFactor * (lastNav / anchorNav),
+      spyPrice: current.spyPrice,
+    });
+  }
+
+  return points;
+}
+
+/**
+ * Performance rows are account-equity snapshots. Returns come from NAV per unit
+ * wherever unit accounting exists, and from signed investor-ledger cash flows
+ * before it does — never from guessing at movement size, except for the one
+ * bounded, tolerance-checked reconciliation documented on `buildUnitReturnPath`.
+ */
+function buildReturnPath(performance: ValueSnapshot[], cashFlows: CashFlow[] = []): ReturnPoint[] {
+  const snapshots = validValueSnapshots(performance);
+  if (snapshots.length === 0) return [];
+
+  const anchorIndex = snapshots.findIndex(hasUnitAccounting);
+  return anchorIndex === -1
+    ? buildCashFlowReturnPath(snapshots, cashFlows)
+    : buildUnitReturnPath(snapshots, anchorIndex, cashFlows);
+}
+
 export interface ReturnSeriesPoint {
   date: string;
   Portfolio: number;
@@ -106,10 +257,10 @@ export interface ReturnSeriesPoint {
 /**
  * Cumulative investment return, in percent, since the first snapshot.
  *
- * This is the honest way to show performance in the presence of deposits: the
- * contribution is removed from the interval it lands in, so funding the account
- * from $50 to $75 to $100 produces no step at all — only the market's own
- * movement remains. Unlike `buildAdjustedValueSeries` it makes no dollar claim,
+ * This is the honest way to show performance in the presence of deposits:
+ * contributions mint units and leave NAV untouched, so funding the account from
+ * $50 to $75 to $100 produces no step at all — only the market's own movement
+ * remains. Unlike `buildAdjustedValueSeries` it makes no dollar claim,
  * so it cannot restate a balance the account never held, and unlike
  * `buildPerformanceComparison` it does not require any SPY close to exist.
  */
@@ -130,12 +281,11 @@ export function buildReturnSeries(
  * The account value actually recorded on each snapshot date — no rebasing, no
  * inference. This is what the chart's balance view plots.
  *
- * Prefer this over `buildAdjustedValueSeries` for anything denominated in
- * dollars. The adjusted series rebases history onto today's value, so any cash
- * flow the ledger did not match to a snapshot date is absorbed as market return
- * and silently redraws the past: a single unmatched $34 deposit is enough to
- * make a $100 account appear to have started at $66. A dollar axis must never
- * claim a balance the account never held.
+ * This is the only series that answers "what did the account actually hold?".
+ * `buildAdjustedValueSeries` rebases history onto today's value, so it shows a
+ * flat line for an account that was funded from $50 to $100 — true as a return
+ * statement, false as a balance. Deposits belong here as real steps; a dollar
+ * axis labelled as a balance must never claim a figure the account never held.
  */
 export function buildActualValueSeries(performance: ValueSnapshot[]): AdjustedValuePoint[] {
   return validValueSnapshots(performance).map((snapshot) => ({

@@ -272,3 +272,111 @@ test("normalized series rebases to today's balance without a funding step", () =
   assert.ok(Math.abs(series[0].Value - series[1].Value) < 1e-9);
   assert.ok(Math.abs(series[0].Value - 100) < 1e-9);
 });
+
+// ── NAV-per-unit return path ───────────────────────────────────────────────
+//
+// Once unit accounting exists the investor ledger stops being a record of
+// incremental cash: switching it on re-registers the whole account at a rebased
+// NAV, so its entries on that date include capital already in the account.
+// Differencing them against balances is what made a $50 seed plus a $25 deposit
+// read as a +50% gain. These pin the reconciliation that replaced it.
+
+/** The shape of the live sheet: seed, an unledgered deposit, then unit accounting. */
+const REBASED_LEDGER_HISTORY = [
+  { date: "2026-06-29", portfolioValue: 50, spyPrice: null, unitsOutstanding: null, navPerUnit: null },
+  { date: "2026-07-03", portfolioValue: 49.72, spyPrice: null, unitsOutstanding: null, navPerUnit: null },
+  // $25 lands here, but the ledger stamps it on the following day.
+  { date: "2026-07-06", portfolioValue: 74.77, spyPrice: null, unitsOutstanding: null, navPerUnit: null },
+  { date: "2026-07-07", portfolioValue: 74.88, spyPrice: null, unitsOutstanding: 75, navPerUnit: 0.9984 },
+  { date: "2026-07-12", portfolioValue: 75.91, spyPrice: null, unitsOutstanding: 75, navPerUnit: 1.0121 },
+  // A second deposit: units rise, NAV does not move with the balance.
+  { date: "2026-07-13", portfolioValue: 100.37, spyPrice: null, unitsOutstanding: 99.7011, navPerUnit: 1.0067 },
+  { date: "2026-07-24", portfolioValue: 100.6, spyPrice: null, unitsOutstanding: 99.7011, navPerUnit: 1.0091 },
+];
+
+// $75 registered at the anchor — $50 of which was already in the account.
+const REBASED_LEDGER_FLOWS = [
+  { date: "2026-07-07", amount: 25 },
+  { date: "2026-07-07", amount: 25 },
+  { date: "2026-07-07", amount: 25 },
+  { date: "2026-07-13", amount: 25 },
+];
+
+test("a deposit the ledger mis-dates is never compounded as return", () => {
+  const series = buildReturnSeries(REBASED_LEDGER_HISTORY, REBASED_LEDGER_FLOWS);
+  // The account doubled on deposits alone; real market movement is under 1%.
+  assert.ok(
+    Math.abs(series.at(-1)!.Portfolio) < 2,
+    `funding must not read as return, got ${series.at(-1)!.Portfolio}%`,
+  );
+  // And no single step may swallow a deposit either.
+  for (let i = 1; i < series.length; i += 1) {
+    const step = series[i].Portfolio - series[i - 1].Portfolio;
+    assert.ok(Math.abs(step) < 2, `step at ${series[i].date} was ${step}%`);
+  }
+});
+
+test("normalized series stays at today's capital across both deposits", () => {
+  const series = buildAdjustedValueSeries(REBASED_LEDGER_HISTORY, REBASED_LEDGER_FLOWS);
+  assert.equal(series.at(-1)?.Value, 100.6, "ends on the real balance");
+  // Every point sits at today's level: no $66 start, no step at either deposit.
+  for (const point of series) {
+    assert.ok(
+      Math.abs(point.Value - 100.6) < 2,
+      `${point.date} drifted to $${point.Value.toFixed(2)}`,
+    );
+  }
+});
+
+test("NAV drives the return once unit accounting exists, ignoring ledger dates", () => {
+  // After the anchor the ledger is not consulted at all, so mis-dating the
+  // second deposit — or dropping it from the ledger outright — cannot move the
+  // reported return. Only NAV can.
+  const baseline = buildReturnSeries(REBASED_LEDGER_HISTORY, REBASED_LEDGER_FLOWS);
+  const misdated = buildReturnSeries(
+    REBASED_LEDGER_HISTORY,
+    REBASED_LEDGER_FLOWS.map((flow) =>
+      flow.date === "2026-07-13" ? { ...flow, date: "2026-07-22" } : flow,
+    ),
+  );
+  const missing = buildReturnSeries(
+    REBASED_LEDGER_HISTORY,
+    REBASED_LEDGER_FLOWS.filter((flow) => flow.date !== "2026-07-13"),
+  );
+  const signature = (series: typeof baseline) => series.map((p) => p.Portfolio.toFixed(6));
+  assert.deepEqual(signature(misdated), signature(baseline));
+  assert.deepEqual(signature(missing), signature(baseline));
+});
+
+test("unreconcilable pre-unit history is dropped rather than drawn wrong", () => {
+  // $500 registered at the anchor against a $50 opening balance, so $450 entered
+  // before units existed — but it arrived in two moves and no single step comes
+  // close to $450. Rather than pin it to the wrong interval and invent a return,
+  // the curve must start at the anchor.
+  const series = buildReturnSeries(
+    [
+      { date: "2026-06-29", portfolioValue: 50, spyPrice: null, unitsOutstanding: null, navPerUnit: null },
+      { date: "2026-07-03", portfolioValue: 300, spyPrice: null, unitsOutstanding: null, navPerUnit: null },
+      { date: "2026-07-07", portfolioValue: 500, spyPrice: null, unitsOutstanding: 500, navPerUnit: 1 },
+      { date: "2026-07-08", portfolioValue: 505, spyPrice: null, unitsOutstanding: 500, navPerUnit: 1.01 },
+    ],
+    [{ date: "2026-07-07", amount: 500 }],
+  );
+  assert.equal(series[0].date, "2026-07-07", "starts at the anchor");
+  assert.ok(Math.abs(series.at(-1)!.Portfolio - 1) < 1e-6, "reports the real 1% NAV gain");
+});
+
+test("a history with no unit accounting still uses the signed cash-flow path", () => {
+  // Unchanged behaviour for agent sheets that never adopted units.
+  const series = buildReturnSeries(
+    [
+      { date: "2026-06-01", portfolioValue: 50, spyPrice: null },
+      { date: "2026-06-02", portfolioValue: 100, spyPrice: null },
+      { date: "2026-06-03", portfolioValue: 110, spyPrice: null },
+    ],
+    [{ date: "2026-06-02", amount: 50 }],
+  );
+  assert.equal(series[0].Portfolio, 0);
+  assert.ok(Math.abs(series[1].Portfolio) < 1e-9, "funding is not a gain");
+  assert.ok(Math.abs(series[2].Portfolio - 10) < 1e-9, "the 10% move survives");
+});
