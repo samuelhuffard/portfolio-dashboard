@@ -29,22 +29,22 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="terminal-panel p-5 sm:p-6">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Research Archive</p>
-        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Report history</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+      <div className="pm-panel border border-[var(--rule)] p-5 sm:p-6">
+        <p className="pm-label">Research Archive</p>
+        <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-[var(--ink)]">Report history</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--muted)]">
           Past research reports and comparisons. Re-download any report as an Excel workbook.
         </p>
       </div>
 
       {error && (
-        <div className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+        <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">
           {error}
         </div>
       )}
 
       {loading ? (
-        <div className="terminal-panel p-6 font-mono text-sm uppercase tracking-[0.2em] text-slate-400">
+        <div className="pm-panel border border-[var(--rule)] p-6 font-mono text-sm uppercase tracking-[0.2em] text-[var(--muted)]">
           Loading…
         </div>
       ) : (

@@ -133,22 +133,22 @@ function ResearchRunSummaryCard({ scan }: { scan: ResearchScanSummary | null }) 
   const completedAt = scan?.completedAt ?? null;
   const statusTone =
     scan?.status === 'failed'
-      ? 'border-red-300/35 bg-red-300/[0.06] text-red-100'
+      ? 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]'
       : scan?.status === 'running'
-        ? 'border-cyan-300/35 bg-cyan-300/[0.06] text-cyan-100'
-        : 'border-emerald-300/25 bg-emerald-300/[0.05] text-emerald-100';
+        ? 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--accent)]'
+        : 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]';
 
   return (
-    <section className="terminal-panel p-5">
+    <section className="pm-panel border border-[var(--rule)] p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">
+          <p className="pm-label">
             Latest Research Run
           </p>
-          <h2 className="text-xl font-black tracking-[-0.03em] text-white">
+          <h2 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
             {scan ? formatRunTime(scan.status === 'running' ? scan.startedAt : completedAt) : 'No run recorded yet'}
           </h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-[var(--muted)]">
             {scan
               ? `${scan.source === 'manual' ? 'Run Research button' : 'Scheduled scan'} · ${scan.totals?.recommendationsWritten ?? 0} recommendations · ${scan.totals?.proposalsCreated ?? 0} proposals`
               : 'Run research once to populate this status.'}
@@ -159,26 +159,26 @@ function ResearchRunSummaryCard({ scan }: { scan: ResearchScanSummary | null }) 
         </div>
       </div>
 
-      {scan?.error && <p className="mt-3 text-sm text-red-200">{scan.error}</p>}
+      {scan?.error && <p className="mt-3 text-sm text-[var(--warn)]">{scan.error}</p>}
 
       <div className="mt-4 grid gap-3 lg:grid-cols-3">
         {AGENTS.map((agent) => {
           const summary = scan?.agents.find((item) => item.agentId === agent.id);
           return (
-            <div key={agent.id} className="border border-white/10 bg-black/20 p-3">
+            <div key={agent.id} className="border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                <p className="pm-label">
                   {agentLabel(agent.id)}
                 </p>
-                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
                   {summary ? `${summary.recommendationsWritten}/${summary.attemptedReviews}` : 'no data'}
                 </span>
               </div>
-              <p className="text-sm text-slate-200">
+              <p className="text-sm text-[var(--ink)]">
                 {summary ? describeAgentScan(summary) : 'No result recorded for this agent.'}
               </p>
               {summary && (summary.scanErrors > 0 || summary.evaluatorRejects > 0) && (
-                <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-200/80">
+                <p className="pm-label">
                   {summary.scanErrors ? `${summary.scanErrors} scan error${summary.scanErrors === 1 ? '' : 's'}` : ''}
                   {summary.scanErrors && summary.evaluatorRejects ? ' · ' : ''}
                   {summary.evaluatorRejects ? `${summary.evaluatorRejects} evaluator reject${summary.evaluatorRejects === 1 ? '' : 's'}` : ''}
@@ -357,41 +357,41 @@ export default function ApprovalsPage() {
 
   return (
     <div className="max-w-6xl space-y-6">
-      <section className="terminal-panel p-5 sm:p-6">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Agent 4 · Approval Queue</p>
+      <section className="pm-panel border border-[var(--rule)] p-5 sm:p-6">
+        <p className="pm-label">Agent 4 · Approval Queue</p>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="font-serif text-4xl font-semibold tracking-[-0.04em] text-white">Approval desk</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
+            <h1 className="font-serif text-[22px] font-semibold tracking-[-0.01em] text-[var(--ink)]">Approval desk</h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--muted)]">
               Review each specialist recommendation alongside Agent 4&apos;s independent portfolio check. Your
               approval remains the only authorization sent to the execution queue.
             </p>
           </div>
-          <div className="border border-amber-200/20 bg-amber-200/[0.04] px-4 py-3 font-mono text-xs uppercase tracking-[0.16em] text-amber-100">
+          <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 font-mono text-xs uppercase tracking-[0.16em] text-[var(--warn)]">
             {pendingCount} pending
           </div>
         </div>
       </section>
 
-      {error && <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+      {error && <p className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">{error}</p>}
 
       <ResearchRunSummaryCard scan={researchScan} />
 
       {executorOnline === false && awaitingExecution > 0 && (
-        <p className="border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        <p className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">
           ⚠ The trade executor is offline (Mac companion heartbeat is stale) — {awaitingExecution} accepted{' '}
           {awaitingExecution === 1 ? 'proposal is' : 'proposals are'} waiting and nothing is listening. Wake the Mac
           running <span className="font-mono">portfolio-executor</span> to resume execution.
         </p>
       )}
 
-      <div className="flex gap-2 border-b border-white/10">
+      <div className="flex gap-2 border-b border-[var(--rule)]">
         <button
           onClick={() => setTab('active')}
           className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] transition-colors ${
             tab === 'active'
-              ? 'border-emerald-300/70 text-emerald-200'
-              : 'border-transparent text-slate-500 hover:text-slate-300'
+              ? 'border-[var(--rule)] text-[var(--pos)]'
+              : 'border-transparent text-[var(--muted)] hover:text-[var(--ink-2)]'
           }`}
         >
           Active{activeProposals.length > 0 ? ` (${activeProposals.length})` : ''}
@@ -400,8 +400,8 @@ export default function ApprovalsPage() {
           onClick={() => setTab('history')}
           className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] transition-colors ${
             tab === 'history'
-              ? 'border-emerald-300/70 text-emerald-200'
-              : 'border-transparent text-slate-500 hover:text-slate-300'
+              ? 'border-[var(--rule)] text-[var(--pos)]'
+              : 'border-transparent text-[var(--muted)] hover:text-[var(--ink-2)]'
           }`}
         >
           History{archivedProposals.length > 0 ? ` (${archivedProposals.length})` : ''}
@@ -410,15 +410,15 @@ export default function ApprovalsPage() {
 
       {tab === 'active' && (
         <>
-          <section className="terminal-panel p-5">
-            <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">New Proposal</p>
+          <section className="pm-panel border border-[var(--rule)] p-5">
+            <p className="pm-label">New Proposal</p>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <label className="space-y-1">
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Agent</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Agent</span>
                 <select
                   value={draft.agentId}
                   onChange={(e) => setDraft((d) => ({ ...d, agentId: e.target.value }))}
-                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] focus:border-[var(--rule)] focus:outline-none"
                 >
                   {AGENTS.map((agent) => (
                     <option key={agent.id} value={agent.id}>
@@ -428,43 +428,43 @@ export default function ApprovalsPage() {
                 </select>
               </label>
               <label className="space-y-1">
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Ticker</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Ticker</span>
                 <input
                   value={draft.ticker}
                   onChange={(e) => setDraft((d) => ({ ...d, ticker: e.target.value.toUpperCase() }))}
                   placeholder="VTI"
-                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm uppercase text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm uppercase text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
                 />
               </label>
               <label className="space-y-1">
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Side</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Side</span>
                 <select
                   value={draft.side}
                   onChange={(e) => setDraft((d) => ({ ...d, side: e.target.value as ProposalSide }))}
-                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] focus:border-[var(--rule)] focus:outline-none"
                 >
                   <option value="BUY">BUY</option>
                   <option value="SELL">SELL</option>
                 </select>
               </label>
               <label className="space-y-1">
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Dollars</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Dollars</span>
                 <input
                   value={draft.amountDollars}
                   onChange={(e) => setDraft((d) => ({ ...d, amountDollars: e.target.value }))}
                   inputMode="decimal"
                   placeholder="2500"
-                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
                 />
               </label>
               <label className="space-y-1">
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Max Price</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Max Price</span>
                 <input
                   value={draft.maxPrice}
                   onChange={(e) => setDraft((d) => ({ ...d, maxPrice: e.target.value }))}
                   inputMode="decimal"
                   placeholder="optional"
-                  className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
                 />
               </label>
             </div>
@@ -475,21 +475,21 @@ export default function ApprovalsPage() {
                 onChange={(e) => setDraft((d) => ({ ...d, rationale: e.target.value }))}
                 rows={4}
                 placeholder="Why this allocation belongs in the portfolio..."
-                className="resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+                className="resize-none border border-[var(--rule)] bg-[var(--panel-alt)] p-3 text-sm leading-6 text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
               />
               <textarea
                 value={draft.riskSummary}
                 onChange={(e) => setDraft((d) => ({ ...d, riskSummary: e.target.value }))}
                 rows={4}
                 placeholder="Sizing, liquidity, concentration, and downside notes..."
-                className="resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+                className="resize-none border border-[var(--rule)] bg-[var(--panel-alt)] p-3 text-sm leading-6 text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
               />
             </div>
 
             <button
               onClick={createProposal}
               disabled={saving}
-              className="mt-4 border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40"
+              className="mt-4 border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--pos)] transition-colors hover:bg-[var(--panel-alt)] disabled:opacity-40"
             >
               {saving ? 'Saving...' : 'Queue Proposal'}
             </button>
@@ -497,9 +497,9 @@ export default function ApprovalsPage() {
 
           <section className="space-y-3">
             {loading ? (
-              <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading proposals...</p>
+              <p className="font-mono text-sm uppercase tracking-[0.24em] text-[var(--pos)]">Loading proposals...</p>
             ) : activeProposals.length === 0 ? (
-              <p className="terminal-panel p-5 text-sm text-slate-400">
+              <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">
                 No active proposals. Older decisions live in the History tab.
               </p>
             ) : (
@@ -528,8 +528,8 @@ export default function ApprovalsPage() {
                 onClick={() => setHistoryFilter(id)}
                 className={`border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors ${
                   historyFilter === id
-                    ? 'border-cyan-300/40 bg-cyan-300/[0.08] text-cyan-100'
-                    : 'border-white/10 bg-white/[0.02] text-slate-500 hover:text-slate-300'
+                    ? 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--accent)]'
+                    : 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--muted)] hover:text-[var(--ink-2)]'
                 }`}
               >
                 {label}
@@ -539,9 +539,9 @@ export default function ApprovalsPage() {
 
           <section className="space-y-3">
             {loading ? (
-              <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading proposals...</p>
+              <p className="font-mono text-sm uppercase tracking-[0.24em] text-[var(--pos)]">Loading proposals...</p>
             ) : filteredArchive.length === 0 ? (
-              <p className="terminal-panel p-5 text-sm text-slate-400">
+              <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">
                 {archivedProposals.length === 0
                   ? 'Nothing archived yet — decided proposals move here 7 days after their decision.'
                   : 'No archived proposals match this filter.'}
@@ -562,19 +562,19 @@ export default function ApprovalsPage() {
       )}
 
       {rejectingId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={cancelReject}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--panel-alt)] p-4" onClick={cancelReject}>
           <div
-            className="terminal-panel w-full max-w-md p-5"
+            className="pm-panel border border-[var(--rule)] w-full max-w-md p-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.24em] text-red-200/70">Reject Proposal</p>
-            <h2 className="mb-4 text-lg font-bold text-white">Why did you reject this proposal?</h2>
+            <p className="pm-label">Reject Proposal</p>
+            <h2 className="mb-4 text-lg font-bold text-[var(--ink)]">Why did you reject this proposal?</h2>
             <div className="space-y-2">
               {REJECT_REASONS.map((reason) => (
                 <button
                   key={reason}
                   onClick={() => submitReject(reason)}
-                  className="w-full border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm text-slate-200 hover:border-red-300/35 hover:bg-red-300/[0.06]"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-left text-sm text-[var(--ink)] hover:border-[var(--rule)] hover:bg-[var(--panel-alt)]"
                 >
                   {reason}
                 </button>
@@ -582,24 +582,24 @@ export default function ApprovalsPage() {
               {!showCustomReason ? (
                 <button
                   onClick={() => setShowCustomReason(true)}
-                  className="w-full border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm text-slate-200 hover:border-red-300/35 hover:bg-red-300/[0.06]"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-left text-sm text-[var(--ink)] hover:border-[var(--rule)] hover:bg-[var(--panel-alt)]"
                 >
                   Other (type a reason)
                 </button>
               ) : (
-                <div className="space-y-2 border border-white/10 bg-white/[0.03] p-3">
+                <div className="space-y-2 border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
                   <textarea
                     autoFocus
                     value={customReason}
                     onChange={(e) => setCustomReason(e.target.value)}
                     rows={3}
                     placeholder="Type your reason..."
-                    className="w-full resize-none border border-white/10 bg-black/30 p-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-red-300/50 focus:outline-none"
+                    className="w-full resize-none border border-[var(--rule)] bg-[var(--panel-alt)] p-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
                   />
                   <button
                     onClick={() => submitReject(customReason.trim() || 'No reason given.')}
                     disabled={!customReason.trim()}
-                    className="border border-red-300/35 bg-red-300/10 px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15 disabled:opacity-40"
+                    className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[var(--warn)] hover:bg-[var(--panel-alt)] disabled:opacity-40"
                   >
                     Submit Reason
                   </button>
@@ -608,7 +608,7 @@ export default function ApprovalsPage() {
             </div>
             <button
               onClick={cancelReject}
-              className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300"
+              className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] hover:text-[var(--ink-2)]"
             >
               Cancel
             </button>

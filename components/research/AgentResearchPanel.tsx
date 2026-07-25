@@ -141,10 +141,10 @@ export default function AgentResearchPanel({ defaultTicker }: AgentResearchPanel
   const running = phase.kind === "running";
 
   return (
-    <div className="terminal-panel flex flex-col gap-4 p-5 sm:p-6">
+    <div className="pm-panel border border-[var(--rule)] flex flex-col gap-4 p-5 sm:p-6">
       <div>
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-300/75">Send to Agent</p>
-        <p className="mt-1.5 text-sm leading-6 text-slate-400">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-[var(--pos)]">Send to Agent</p>
+        <p className="mt-1.5 text-sm leading-6 text-[var(--muted)]">
           Hand this ticker to an agent for a full pipeline run — data gates, quant, AI analysis, risk engine,
           evaluator, auto-sizing. If it clears every gate, a properly sized proposal lands in Approvals.
         </p>
@@ -152,7 +152,7 @@ export default function AgentResearchPanel({ defaultTicker }: AgentResearchPanel
 
       <form onSubmit={handleSend} className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="lab-ticker" className="font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-slate-500">
+          <label htmlFor="lab-ticker" className="font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--muted)]">
             Ticker
           </label>
           <input
@@ -163,11 +163,11 @@ export default function AgentResearchPanel({ defaultTicker }: AgentResearchPanel
             placeholder="e.g. NVDA"
             maxLength={10}
             disabled={running}
-            className="w-32 border border-white/10 bg-black/30 px-3 py-2 font-mono text-base font-medium uppercase tracking-wide text-white placeholder:text-slate-600 focus:border-emerald-300/60 focus:outline-none disabled:opacity-50"
+            className="w-32 border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-base font-medium uppercase tracking-wide text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none disabled:opacity-50"
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="lab-agent" className="font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-slate-500">
+          <label htmlFor="lab-agent" className="font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--muted)]">
             Agent
           </label>
           <select
@@ -175,7 +175,7 @@ export default function AgentResearchPanel({ defaultTicker }: AgentResearchPanel
             value={agentId}
             onChange={(e) => setAgentId(e.target.value)}
             disabled={running}
-            className="border border-white/10 bg-black/30 px-3 py-2.5 font-mono text-sm text-white focus:border-emerald-300/60 focus:outline-none disabled:opacity-50"
+            className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2.5 font-mono text-sm text-[var(--ink)] focus:border-[var(--rule)] focus:outline-none disabled:opacity-50"
           >
             {AGENTS.map((a) => (
               <option key={a.id} value={a.id} className="bg-slate-900">
@@ -187,26 +187,26 @@ export default function AgentResearchPanel({ defaultTicker }: AgentResearchPanel
         <button
           type="submit"
           disabled={submitting || running || !ticker.trim()}
-          className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2.5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:cursor-not-allowed disabled:opacity-50"
+          className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2.5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--pos)] transition-colors hover:bg-[var(--panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? "Starting…" : running ? "Running…" : "Send to Agent"}
         </button>
       </form>
 
       {phase.kind === "running" && (
-        <div className="border border-emerald-300/25 bg-emerald-300/[0.06] px-4 py-3">
-          <p className="font-mono text-sm text-emerald-200">
+        <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3">
+          <p className="font-mono text-sm text-[var(--pos)]">
             <span className="mr-2 inline-block animate-pulse">▮</span>
             Agent researching {phase.ticker} — full pipeline: gates → quant → AI → risk → evaluator → sizing
           </p>
-          <p className="mt-1 font-mono text-[11px] text-slate-500">
+          <p className="mt-1 font-mono text-[11px] text-[var(--muted)]">
             {phase.agentId} · runs typically take 1–2 minutes · polling every 5s
           </p>
         </div>
       )}
 
       {phase.kind === "failed" && (
-        <div className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{phase.message}</div>
+        <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">{phase.message}</div>
       )}
 
       {phase.kind === "done" && <OutcomeReport outcome={phase.outcome} />}
@@ -216,53 +216,53 @@ export default function AgentResearchPanel({ defaultTicker }: AgentResearchPanel
 
 function OutcomeReport({ outcome }: { outcome: LabOutcome }) {
   const actionColor =
-    outcome.action === "BUY" ? "text-emerald-300" : outcome.action === "SELL" ? "text-red-300" : "text-slate-300";
+    outcome.action === "BUY" ? "text-[var(--pos)]" : outcome.action === "SELL" ? "text-[var(--warn)]" : "text-[var(--ink-2)]";
 
   return (
-    <div className="flex flex-col gap-3 border border-white/10 bg-black/30 p-4">
+    <div className="flex flex-col gap-3 border border-[var(--rule)] bg-[var(--panel-alt)] p-4">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 font-mono text-sm">
         <span>
-          <span className="text-slate-500">action </span>
+          <span className="text-[var(--muted)]">action </span>
           <span className={`font-semibold ${actionColor}`}>{outcome.action}</span>
         </span>
         {outcome.confidence != null && (
           <span>
-            <span className="text-slate-500">confidence </span>
-            <span className="text-white">{outcome.confidence}</span>
+            <span className="text-[var(--muted)]">confidence </span>
+            <span className="text-[var(--ink)]">{outcome.confidence}</span>
           </span>
         )}
         {outcome.quantScore != null && (
           <span>
-            <span className="text-slate-500">quant </span>
-            <span className="text-white">{outcome.quantScore}</span>
+            <span className="text-[var(--muted)]">quant </span>
+            <span className="text-[var(--ink)]">{outcome.quantScore}</span>
           </span>
         )}
         <span>
-          <span className="text-slate-500">evaluator </span>
-          <span className="text-white">{outcome.evaluatorVerdict}</span>
+          <span className="text-[var(--muted)]">evaluator </span>
+          <span className="text-[var(--ink)]">{outcome.evaluatorVerdict}</span>
         </span>
       </div>
 
-      {outcome.thesis && <p className="text-sm leading-6 text-slate-300">{outcome.thesis}</p>}
+      {outcome.thesis && <p className="text-sm leading-6 text-[var(--ink-2)]">{outcome.thesis}</p>}
 
       {outcome.ruleCheck && outcome.ruleCheck !== "OK" && (
-        <p className="font-mono text-[11px] text-amber-200/85">rule check: {outcome.ruleCheck}</p>
+        <p className="font-mono text-[11px] text-[var(--warn)]">rule check: {outcome.ruleCheck}</p>
       )}
 
       {outcome.proposalId ? (
-        <div className="border border-emerald-300/30 bg-emerald-300/10 px-4 py-3">
-          <p className="font-mono text-sm text-emerald-200">
+        <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3">
+          <p className="font-mono text-sm text-[var(--pos)]">
             Proposal queued: {outcome.action}
             {typeof outcome.amountDollars === "number" ? ` ${formatDollars(outcome.amountDollars)}` : ""} →{" "}
-            <Link href="/approvals" className="underline underline-offset-2 hover:text-white">
+            <Link href="/approvals" className="underline underline-offset-2 hover:text-[var(--ink)]">
               review in Approvals
             </Link>
           </p>
-          {outcome.riskSummary && <p className="mt-1 font-mono text-[11px] text-slate-400">{outcome.riskSummary}</p>}
+          {outcome.riskSummary && <p className="mt-1 font-mono text-[11px] text-[var(--muted)]">{outcome.riskSummary}</p>}
         </div>
       ) : (
-        <div className="border border-white/10 bg-white/[0.03] px-4 py-3">
-          <p className="font-mono text-sm text-slate-300">No proposal queued — {outcome.reason ?? "no reason given"}</p>
+        <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3">
+          <p className="font-mono text-sm text-[var(--ink-2)]">No proposal queued — {outcome.reason ?? "no reason given"}</p>
         </div>
       )}
     </div>

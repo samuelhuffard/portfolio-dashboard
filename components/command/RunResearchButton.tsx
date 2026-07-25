@@ -48,8 +48,8 @@ export default function RunResearchButton() {
         disabled={state === 'pending'}
         className={`border px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.22em] transition-colors ${
           state === 'pending'
-            ? 'cursor-wait border-cyan-200/30 bg-cyan-200/[0.08] text-cyan-200/70'
-            : 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:border-emerald-300/70 hover:bg-emerald-300/20'
+            ? 'cursor-wait border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--accent)]'
+            : 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)] hover:border-[var(--rule)] hover:bg-[var(--panel-alt)]'
         }`}
       >
         {state === 'pending' ? 'Dispatching Agents...' : 'Run Research'}
@@ -59,8 +59,8 @@ export default function RunResearchButton() {
           role="status"
           className={`max-w-xs border px-3 py-2 text-right font-mono text-[10px] leading-4 tracking-[0.06em] ${
             state === 'started'
-              ? 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-200'
-              : 'border-red-400/30 bg-red-500/10 text-red-200'
+              ? 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]'
+              : 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]'
           }`}
         >
           {message}

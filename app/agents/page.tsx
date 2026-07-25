@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { DefRow, Footnote, Panel, RailBlock, ScreenGrid } from '@/components/chrome';
+import RunResearchButton from '@/components/command/RunResearchButton';
 import { AGENTS } from '@/lib/agents';
+import { MAX_AMOUNT_DOLLARS } from '@/lib/contracts/proposal.js';
 import { fmtCurrency } from '@/lib/format';
 import type { ChatMessage } from '@/lib/agentChat';
 import type { AgentBook } from '@/lib/agent-books';
@@ -61,10 +64,10 @@ function firstSentence(text: string): string {
 }
 
 const STATUS_STYLES: Record<ProposalStatus, string> = {
-  Pending: 'border-amber-200/30 bg-amber-200/[0.06] text-amber-100',
-  ApprovedForBrokerReview: 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-100',
-  Rejected: 'border-red-300/30 bg-red-300/[0.06] text-red-100',
-  Expired: 'border-white/15 bg-white/[0.04] text-white/50',
+  Pending: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
+  ApprovedForBrokerReview: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]',
+  Rejected: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
+  Expired: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--ink)]',
 };
 
 const STATUS_LABELS: Record<ProposalStatus, string> = {
@@ -80,8 +83,8 @@ function proposalStatusLabel(proposal: AllocationProposal): string {
 }
 
 const DIRECTION_STYLES = {
-  below: 'border-cyan-300/30 bg-cyan-300/[0.06] text-cyan-100',
-  above: 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-100',
+  below: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--accent)]',
+  above: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]',
 };
 
 const REJECT_REASONS = [
@@ -111,20 +114,20 @@ function AgentBookStrip({ agentId }: { agentId: string }) {
   if (!book) return null;
 
   return (
-    <div className="flex flex-wrap gap-6 border border-white/10 bg-white/[0.025] px-4 py-3 font-mono text-xs">
-      <span className="text-slate-500">
-        Unrealized <span className={book.unrealizedGain >= 0 ? 'text-emerald-300' : 'text-red-300'}>{fmtUsd(book.unrealizedGain)}</span>
+    <div className="flex flex-wrap gap-6 border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 font-mono text-xs">
+      <span className="text-[var(--muted)]">
+        Unrealized <span className={book.unrealizedGain >= 0 ? 'text-[var(--pos)]' : 'text-[var(--warn)]'}>{fmtUsd(book.unrealizedGain)}</span>
       </span>
-      <span className="text-slate-500">
-        Realized <span className={book.realizedGain >= 0 ? 'text-emerald-300' : 'text-red-300'}>{fmtUsd(book.realizedGain)}</span>
+      <span className="text-[var(--muted)]">
+        Realized <span className={book.realizedGain >= 0 ? 'text-[var(--pos)]' : 'text-[var(--warn)]'}>{fmtUsd(book.realizedGain)}</span>
       </span>
-      <span className="text-slate-500">
-        Win rate <span className="text-slate-200">{book.winRatePct != null ? `${book.winRatePct}%` : '—'}</span>
-        <span className="text-slate-600"> ({book.closedTradeCount} closed)</span>
+      <span className="text-[var(--muted)]">
+        Win rate <span className="text-[var(--ink)]">{book.winRatePct != null ? `${book.winRatePct}%` : '—'}</span>
+        <span className="text-[var(--muted-2)]"> ({book.closedTradeCount} closed)</span>
       </span>
       {book.positions.map((p) => (
-        <span key={p.ticker} className="text-slate-500">
-          {p.ticker} <span className={(p.unrealizedGain ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-300'}>{fmtUsd(p.unrealizedGain)}</span>
+        <span key={p.ticker} className="text-[var(--muted)]">
+          {p.ticker} <span className={(p.unrealizedGain ?? 0) >= 0 ? 'text-[var(--pos)]' : 'text-[var(--warn)]'}>{fmtUsd(p.unrealizedGain)}</span>
         </span>
       ))}
     </div>
@@ -184,63 +187,63 @@ function AlertsSection({ agentId }: { agentId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="terminal-panel p-4">
-        <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">New Alert</p>
+      <div className="pm-panel border border-[var(--rule)] p-4">
+        <p className="pm-label">New Alert</p>
         <div className="grid gap-2 sm:grid-cols-4">
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Ticker</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Ticker</span>
             <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="NVDA"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm uppercase text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+              className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm uppercase text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none" />
           </label>
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Direction</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Direction</span>
             <select value={direction} onChange={(e) => setDirection(e.target.value as 'below' | 'above')}
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-cyan-300/50 focus:outline-none">
+              className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] focus:border-[var(--rule)] focus:outline-none">
               <option value="below">Falls below</option>
               <option value="above">Rises above</option>
             </select>
           </label>
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Target Price</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Target Price</span>
             <input value={targetPrice} onChange={(e) => setTargetPrice(e.target.value)} inputMode="decimal" placeholder="185.00"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+              className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none" />
           </label>
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Note</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Note</span>
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+              className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none" />
           </label>
         </div>
-        {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+        {error && <p className="mt-2 text-xs text-[var(--warn)]">{error}</p>}
         <button onClick={addAlert} disabled={saving || !ticker || !targetPrice}
-          className="mt-3 border border-cyan-300/35 bg-cyan-300/10 px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-cyan-200 transition-colors hover:bg-cyan-300/15 disabled:opacity-40">
+          className="mt-3 border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[var(--accent)] transition-colors hover:bg-[var(--panel-alt)] disabled:opacity-40">
           {saving ? 'Setting...' : 'Set Alert'}
         </button>
       </div>
 
       {loading ? (
-        <p className="font-mono text-sm uppercase tracking-[0.24em] text-cyan-200">Loading...</p>
+        <p className="font-mono text-sm uppercase tracking-[0.24em] text-[var(--accent)]">Loading...</p>
       ) : agentAlerts.length === 0 ? (
-        <p className="terminal-panel p-5 text-sm text-slate-400">No alerts set for this agent.</p>
+        <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">No alerts set for this agent.</p>
       ) : (
         <div className="space-y-2">
           {agentAlerts.map((alert) => (
-            <article key={alert.id} className="terminal-panel p-4">
+            <article key={alert.id} className="pm-panel border border-[var(--rule)] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="font-mono text-xl font-black tracking-[-0.03em] text-white">{alert.ticker}</span>
+                  <span className="font-mono text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">{alert.ticker}</span>
                   <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${DIRECTION_STYLES[alert.direction]}`}>
                     {alert.direction === 'below' ? '↓ below' : '↑ above'}
                   </span>
-                  <span className="font-mono text-base font-semibold text-white">${alert.targetPrice.toFixed(2)}</span>
-                  {alert.note && <span className="text-sm text-slate-400">{alert.note}</span>}
+                  <span className="font-mono text-base font-semibold text-[var(--ink)]">${alert.targetPrice.toFixed(2)}</span>
+                  {alert.note && <span className="text-sm text-[var(--muted)]">{alert.note}</span>}
                 </div>
                 <button onClick={() => deleteAlert(alert.id)}
-                  className="border border-red-300/25 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-red-300 hover:border-red-300/50 transition-colors">
+                  className="border border-[var(--rule)] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--warn)] hover:border-[var(--rule)] transition-colors">
                   Remove
                 </button>
               </div>
-              <p className="mt-1.5 font-mono text-[10px] text-slate-600">
+              <p className="mt-1.5 font-mono text-[10px] text-[var(--muted-2)]">
                 Set {new Date(alert.createdAt).toLocaleString()}
               </p>
             </article>
@@ -281,9 +284,9 @@ function CompanionStatusBanner() {
   }, []);
 
   const styles = {
-    online: 'border-emerald-300/20 bg-emerald-300/[0.04] text-emerald-300/80',
-    offline: 'border-red-300/25 bg-red-300/[0.04] text-red-300/85',
-    unknown: 'border-amber-300/20 bg-amber-300/[0.04] text-amber-200/80',
+    online: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]',
+    offline: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
+    unknown: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
   }[status];
   const dot = status === 'online' ? 'bg-emerald-400' : status === 'offline' ? 'bg-red-400' : 'bg-amber-300';
   const label = status === 'online'
@@ -294,7 +297,7 @@ function CompanionStatusBanner() {
 
   return (
     <div className={`flex items-center gap-2 border px-4 py-2 ${styles}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      <span className={`h-1.5 w-1.5 ${dot}`} />
       <span className="font-mono text-[10px] uppercase tracking-[0.16em]">
         {label}
       </span>
@@ -472,14 +475,14 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
 
   const agentProposals = proposals.filter((p) => p.agentId === agentId);
 
-  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading...</p>;
-  if (error) return <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>;
-  if (agentProposals.length === 0) return <p className="terminal-panel p-5 text-sm text-slate-400">No proposals from this agent.</p>;
+  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-[var(--pos)]">Loading...</p>;
+  if (error) return <p className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">{error}</p>;
+  if (agentProposals.length === 0) return <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">No proposals from this agent.</p>;
 
   return (
     <div className="space-y-2">
       {triggerMsg && (
-        <p className="border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/80">{triggerMsg}</p>
+        <p className="pm-label">{triggerMsg}</p>
       )}
 
       {agentProposals.map((proposal) => {
@@ -489,60 +492,60 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
         const hook = firstSentence(proposal.rationale);
         const hasMore = proposal.rationale.trim().length > hook.length + 2 || !!proposal.riskSummary;
         return (
-          <article key={proposal.id} className="terminal-panel p-4">
+          <article key={proposal.id} className="pm-panel border border-[var(--rule)] p-4">
             {isEditing && editDraft ? (
               /* ── edit mode ── */
               <div className="space-y-3">
-                <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">Editing Proposal</p>
+                <p className="pm-label">Editing Proposal</p>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   <label className="space-y-1">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Ticker</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Ticker</span>
                     <input value={editDraft.ticker} onChange={(e) => setEditDraft((d) => d && ({ ...d, ticker: e.target.value.toUpperCase() }))}
-                      className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm uppercase text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                      className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm uppercase text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none" />
                   </label>
                   <label className="space-y-1">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Side</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Side</span>
                     <select value={editDraft.side} onChange={(e) => setEditDraft((d) => d && ({ ...d, side: e.target.value as ProposalSide }))}
-                      className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-cyan-300/50 focus:outline-none">
+                      className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] focus:border-[var(--rule)] focus:outline-none">
                       <option value="BUY">BUY</option>
                       <option value="SELL">SELL</option>
                     </select>
                   </label>
                   <label className="space-y-1">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Dollars</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Dollars</span>
                     <input value={editDraft.amountDollars} onChange={(e) => setEditDraft((d) => d && ({ ...d, amountDollars: e.target.value }))}
                       inputMode="decimal"
-                      className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                      className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none" />
                   </label>
                   <label className="space-y-1">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Max Price</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Max Price</span>
                     <input value={editDraft.maxPrice} onChange={(e) => setEditDraft((d) => d && ({ ...d, maxPrice: e.target.value }))}
                       inputMode="decimal" placeholder="none"
-                      className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                      className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none" />
                   </label>
                 </div>
                 <div className="grid gap-2 lg:grid-cols-2">
                   <label className="space-y-1">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Rationale</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Rationale</span>
                     <textarea value={editDraft.rationale} onChange={(e) => setEditDraft((d) => d && ({ ...d, rationale: e.target.value }))}
                       rows={4}
-                      className="w-full resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                      className="w-full resize-none border border-[var(--rule)] bg-[var(--panel-alt)] p-3 text-sm leading-6 text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none" />
                   </label>
                   <label className="space-y-1">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Risk Notes</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">Risk Notes</span>
                     <textarea value={editDraft.riskSummary} onChange={(e) => setEditDraft((d) => d && ({ ...d, riskSummary: e.target.value }))}
                       rows={4}
-                      className="w-full resize-none border border-white/10 bg-black/30 p-3 text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none" />
+                      className="w-full resize-none border border-[var(--rule)] bg-[var(--panel-alt)] p-3 text-sm leading-6 text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none" />
                   </label>
                 </div>
-                {editError && <p className="text-xs text-red-300">{editError}</p>}
+                {editError && <p className="text-xs text-[var(--warn)]">{editError}</p>}
                 <div className="flex gap-2">
                   <button onClick={() => saveEdit(proposal.id)} disabled={saving}
-                    className="border border-cyan-300/35 bg-cyan-300/10 px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-cyan-200 transition-colors hover:bg-cyan-300/15 disabled:opacity-40">
+                    className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[var(--accent)] transition-colors hover:bg-[var(--panel-alt)] disabled:opacity-40">
                     {saving ? 'Saving...' : 'Save Changes'}
                   </button>
                   <button onClick={cancelEdit} disabled={saving}
-                    className="border border-white/15 px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-slate-400 transition-colors hover:text-slate-200 disabled:opacity-40">
+                    className="border border-[var(--rule)] px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[var(--muted)] transition-colors hover:text-[var(--ink)] disabled:opacity-40">
                     Cancel
                   </button>
                 </div>
@@ -556,12 +559,12 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
                       <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${STATUS_STYLES[proposal.status]}`}>
                         {proposalStatusLabel(proposal)}
                       </span>
-                      <span className="font-mono text-xs text-slate-500">{new Date(proposal.createdAt).toLocaleDateString()}</span>
+                      <span className="font-mono text-xs text-[var(--muted)]">{new Date(proposal.createdAt).toLocaleDateString()}</span>
                     </div>
-                    <h3 className="font-mono text-xl font-black tracking-[-0.03em] text-white">
+                    <h3 className="font-mono text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
                       {proposal.side} {proposal.ticker} — {fmtCurrency(proposal.amountDollars)}
                     </h3>
-                    <p className="mt-0.5 font-mono text-xs text-slate-500">
+                    <p className="mt-0.5 font-mono text-xs text-[var(--muted)]">
                       Max price: {proposal.maxPrice == null ? 'none' : fmtCurrency(proposal.maxPrice)}
                     </p>
                   </div>
@@ -569,15 +572,15 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
                     {proposal.status === 'Pending' && (
                       <>
                         <button onClick={() => startEdit(proposal)}
-                          className="border border-white/15 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-slate-400 transition-colors hover:border-cyan-300/30 hover:text-cyan-200">
+                          className="border border-[var(--rule)] px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-[var(--muted)] transition-colors hover:border-[var(--rule)] hover:text-[var(--accent)]">
                           Edit
                         </button>
                         <button onClick={() => decide(proposal.id, 'ApprovedForBrokerReview')}
-                          className="border border-emerald-300/35 bg-emerald-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-emerald-200 hover:bg-emerald-300/15">
+                          className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-[var(--pos)] hover:bg-[var(--panel-alt)]">
                           Accept
                         </button>
                         <button onClick={() => startReject(proposal.id)}
-                          className="border border-red-300/35 bg-red-300/10 px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15">
+                          className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-1.5 font-mono text-xs uppercase tracking-[0.16em] text-[var(--warn)] hover:bg-[var(--panel-alt)]">
                           Reject
                         </button>
                       </>
@@ -591,18 +594,18 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
                   </div>
                 </div>
 
-                <div className="mt-3 border border-white/10 bg-white/[0.025] p-3">
-                  <p className="text-sm leading-6 text-slate-200">{hook}</p>
+                <div className="mt-3 border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
+                  <p className="text-sm leading-6 text-[var(--ink)]">{hook}</p>
                   {signals.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {signals.map((s) => (
-                        <span key={s} className="border border-cyan-300/20 bg-cyan-300/[0.06] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-200/60">{s}</span>
+                        <span key={s} className="border border-[var(--rule)] bg-[var(--panel-alt)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--accent)]">{s}</span>
                       ))}
                     </div>
                   )}
                   {hasMore && (
                     <button onClick={() => toggleExpanded(proposal.id)}
-                      className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 transition-colors hover:text-slate-300">
+                      className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] transition-colors hover:text-[var(--ink-2)]">
                       {isExpanded ? '↑ collapse' : '↓ full rationale'}
                     </button>
                   )}
@@ -610,19 +613,19 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
 
                 {isExpanded && (
                   <div className="mt-2 grid gap-2 lg:grid-cols-2">
-                    <div className="border border-white/10 bg-white/[0.025] p-3">
-                      <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/50">Full Rationale</p>
-                      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.rationale}</p>
+                    <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
+                      <p className="pm-label">Full Rationale</p>
+                      <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ink-2)]">{proposal.rationale}</p>
                     </div>
-                    <div className="border border-white/10 bg-white/[0.025] p-3">
-                      <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200/70">Risk Notes</p>
-                      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.riskSummary || 'No risk notes recorded.'}</p>
+                    <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
+                      <p className="pm-label">Risk Notes</p>
+                      <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ink-2)]">{proposal.riskSummary || 'No risk notes recorded.'}</p>
                     </div>
                   </div>
                 )}
 
                 {proposal.fulfilledAt && (
-                  <p className="mt-2 border border-emerald-300/20 bg-emerald-300/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200/80">
+                  <p className="pm-label">
                     Executed {new Date(proposal.fulfilledAt).toLocaleString()}
                     {proposal.fulfilledOrderId ? ` · order ${proposal.fulfilledOrderId}` : ''}
                     {proposal.fulfilledShares != null ? ` · ${proposal.fulfilledShares} shares` : ''}
@@ -635,16 +638,16 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
       })}
 
       {rejectingId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={cancelReject}>
-          <div className="terminal-panel w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-            <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.24em] text-red-200/70">Reject Proposal</p>
-            <h2 className="mb-4 text-lg font-bold text-white">Why did you reject this proposal?</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--panel-alt)] p-4" onClick={cancelReject}>
+          <div className="pm-panel border border-[var(--rule)] w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <p className="pm-label">Reject Proposal</p>
+            <h2 className="mb-4 text-lg font-bold text-[var(--ink)]">Why did you reject this proposal?</h2>
             <div className="space-y-2">
               {REJECT_REASONS.map((reason) => (
                 <button
                   key={reason}
                   onClick={() => submitReject(reason)}
-                  className="w-full border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm text-slate-200 hover:border-red-300/35 hover:bg-red-300/[0.06]"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-left text-sm text-[var(--ink)] hover:border-[var(--rule)] hover:bg-[var(--panel-alt)]"
                 >
                   {reason}
                 </button>
@@ -652,31 +655,31 @@ function ProposalsSection({ agentId, refreshKey, onProposalUpdated }: { agentId:
               {!showCustomReason ? (
                 <button
                   onClick={() => setShowCustomReason(true)}
-                  className="w-full border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm text-slate-200 hover:border-red-300/35 hover:bg-red-300/[0.06]"
+                  className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-left text-sm text-[var(--ink)] hover:border-[var(--rule)] hover:bg-[var(--panel-alt)]"
                 >
                   Other (type a reason)
                 </button>
               ) : (
-                <div className="space-y-2 border border-white/10 bg-white/[0.03] p-3">
+                <div className="space-y-2 border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
                   <textarea
                     autoFocus
                     value={customReason}
                     onChange={(e) => setCustomReason(e.target.value)}
                     rows={3}
                     placeholder="Type your reason..."
-                    className="w-full resize-none border border-white/10 bg-black/30 p-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-red-300/50 focus:outline-none"
+                    className="w-full resize-none border border-[var(--rule)] bg-[var(--panel-alt)] p-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
                   />
                   <button
                     onClick={() => submitReject(customReason.trim() || 'No reason given.')}
                     disabled={!customReason.trim()}
-                    className="border border-red-300/35 bg-red-300/10 px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15 disabled:opacity-40"
+                    className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[var(--warn)] hover:bg-[var(--panel-alt)] disabled:opacity-40"
                   >
                     Submit Reason
                   </button>
                 </div>
               )}
             </div>
-            <button onClick={cancelReject} className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300">
+            <button onClick={cancelReject} className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] hover:text-[var(--ink-2)]">
               Cancel
             </button>
           </div>
@@ -757,20 +760,20 @@ function ChatSection({ agentId, onProposalEdited }: { agentId: string; onProposa
   }
 
   return (
-    <div className="terminal-panel flex h-[540px] flex-col overflow-hidden p-0">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-slate-500">Conversation</span>
+    <div className="pm-panel border border-[var(--rule)] flex h-[540px] flex-col overflow-hidden p-0">
+      <div className="flex items-center justify-between border-b border-[var(--rule)] px-4 py-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">Conversation</span>
         <button onClick={clearChat} disabled={clearing || sending || history.length === 0}
-          className="font-mono text-[10px] uppercase tracking-[0.16em] text-red-300/70 transition-colors hover:text-red-300 disabled:opacity-30">
+          className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--warn)] transition-colors hover:text-[var(--warn)] disabled:opacity-30">
           {clearing ? 'Clearing...' : 'Clear'}
         </button>
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
         {loading ? (
-          <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading...</p>
+          <p className="font-mono text-sm uppercase tracking-[0.24em] text-[var(--pos)]">Loading...</p>
         ) : history.length === 0 ? (
-          <p className="font-mono text-sm text-slate-500">
+          <p className="font-mono text-sm text-[var(--muted)]">
             No conversation yet. Ask {agentLabel(agentId)} about its watchlist, recent signals, or track record.
           </p>
         ) : (
@@ -778,30 +781,30 @@ function ChatSection({ agentId, onProposalEdited }: { agentId: string; onProposa
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] whitespace-pre-wrap border px-4 py-3 text-sm leading-6 ${
                 m.role === 'user'
-                  ? 'border-cyan-200/25 bg-cyan-200/[0.06] text-slate-100'
-                  : 'border-emerald-300/25 bg-emerald-300/[0.05] text-slate-100'
+                  ? 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--ink)]'
+                  : 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--ink)]'
               }`}>
                 {m.content}
               </div>
             </div>
           ))
         )}
-        {sending && <p className="font-mono text-xs uppercase tracking-[0.16em] text-emerald-200/70">Thinking...</p>}
+        {sending && <p className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--pos)]">Thinking...</p>}
       </div>
 
-      {error && <p className="border-t border-red-400/20 bg-red-500/10 px-4 py-2 text-xs text-red-200">{error}</p>}
+      {error && <p className="border-t border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 text-xs text-[var(--warn)]">{error}</p>}
 
-      <div className="flex items-end gap-3 border-t border-white/10 p-3">
+      <div className="flex items-end gap-3 border-t border-[var(--rule)] p-3">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           rows={2}
           placeholder={`Message ${agentLabel(agentId)}...`}
-          className="flex-1 resize-none border border-white/10 bg-black/30 p-3 font-mono text-sm leading-6 text-slate-100 placeholder:text-slate-600 focus:border-emerald-300/40 focus:outline-none"
+          className="flex-1 resize-none border border-[var(--rule)] bg-[var(--panel-alt)] p-3 font-mono text-sm leading-6 text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
         />
         <button onClick={send} disabled={sending || !input.trim()}
-          className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-3 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40">
+          className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--pos)] transition-colors hover:bg-[var(--panel-alt)] disabled:opacity-40">
           Send
         </button>
       </div>
@@ -877,20 +880,20 @@ function MemorySection({ agentId }: { agentId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="terminal-panel p-4">
-        <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.24em] text-emerald-200/70">Add Memory</p>
+      <div className="pm-panel border border-[var(--rule)] p-4">
+        <p className="pm-label">Add Memory</p>
         <div className="grid gap-2 lg:grid-cols-[1fr_140px_120px_auto]">
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Sam prefers..."
-            className="border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-emerald-300/50 focus:outline-none"
+            className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
           />
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as 'investment' | 'workflow')}
             aria-label="Memory category"
-            className="border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
+            className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] focus:border-[var(--rule)] focus:outline-none"
           >
             <option value="investment">Investment</option>
             <option value="workflow">Workflow</option>
@@ -898,7 +901,7 @@ function MemorySection({ agentId }: { agentId: string }) {
           <select
             value={importance}
             onChange={(e) => setImportance(e.target.value)}
-            className="border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-emerald-300/50 focus:outline-none"
+            className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] focus:border-[var(--rule)] focus:outline-none"
           >
             <option value="1">1 low</option>
             <option value="2">2</option>
@@ -909,38 +912,38 @@ function MemorySection({ agentId }: { agentId: string }) {
           <button
             onClick={addMemory}
             disabled={saving || !text.trim()}
-            className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:opacity-40"
+            className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[var(--pos)] transition-colors hover:bg-[var(--panel-alt)] disabled:opacity-40"
           >
             {saving ? 'Saving...' : 'Remember'}
           </button>
         </div>
-        {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+        {error && <p className="mt-2 text-xs text-[var(--warn)]">{error}</p>}
       </div>
 
       {loading ? (
-        <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading...</p>
+        <p className="font-mono text-sm uppercase tracking-[0.24em] text-[var(--pos)]">Loading...</p>
       ) : memories.length === 0 ? (
-        <p className="terminal-panel p-5 text-sm text-slate-400">No durable memories saved for this agent yet.</p>
+        <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">No durable memories saved for this agent yet.</p>
       ) : (
         <div className="space-y-2">
           {memories.map((memory) => (
-            <article key={memory.id} className="terminal-panel p-4">
+            <article key={memory.id} className="pm-panel border border-[var(--rule)] p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="border border-emerald-300/20 bg-emerald-300/[0.06] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200/80">
+                    <span className="border border-[var(--rule)] bg-[var(--panel-alt)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--pos)]">
                       I{memory.importance}
                     </span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">{memory.source}</span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">{memory.category ?? 'legacy'}</span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-600">{memory.scope}</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">{memory.source}</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">{memory.category ?? 'legacy'}</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted-2)]">{memory.scope}</span>
                   </div>
-                  <p className="text-sm leading-6 text-slate-200">{memory.text}</p>
-                  <p className="mt-2 font-mono text-[10px] text-slate-600">Updated {new Date(memory.updatedAt).toLocaleString()}</p>
+                  <p className="text-sm leading-6 text-[var(--ink)]">{memory.text}</p>
+                  <p className="mt-2 font-mono text-[10px] text-[var(--muted-2)]">Updated {new Date(memory.updatedAt).toLocaleString()}</p>
                 </div>
                 <button
                   onClick={() => deleteMemory(memory.id)}
-                  className="border border-red-300/25 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-red-300 transition-colors hover:border-red-300/50"
+                  className="border border-[var(--rule)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--warn)] transition-colors hover:border-[var(--rule)]"
                 >
                   Forget
                 </button>
@@ -964,63 +967,96 @@ export default function AgentsPage() {
     setProposalRefreshKey((k) => k + 1);
   }
 
+  // Desks are unnamed until Sam names each one after its philosophy, so the
+  // caption states the standing fact rather than inventing a mandate.
+  const activeAgent = AGENTS.find((a) => a.id === activeId);
+
   return (
-    <div className="max-w-5xl space-y-4">
-      <div className="terminal-panel p-5 sm:p-6">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Independent Desks</p>
-        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Agents</h1>
-      </div>
+    <ScreenGrid
+      main={
+        <>
+          {/* Desk and section are both segmented controls; the screen is named
+              in the nav, so there is no page title. */}
+          <Panel>
+            <div className="flex flex-wrap items-center justify-between gap-3" style={{ padding: '9px 18px' }}>
+              <div className="pm-seg" role="group" aria-label="Research desk">
+                {AGENTS.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    aria-pressed={a.id === activeId}
+                    onClick={() => { setActiveId(a.id); setSection('chat'); }}
+                    className="pm-seg-item"
+                  >
+                    {agentLabel(a.id)}
+                  </button>
+                ))}
+              </div>
+              <span className="pm-caption">
+                {activeAgent?.name || 'Independent desks · advisory only, nothing executes without sign-off'}
+              </span>
+            </div>
+          </Panel>
 
-      <CompanionStatusBanner />
+          <CompanionStatusBanner />
 
-      {/* Agent tabs */}
-      <div className="flex gap-1 border border-white/10 bg-white/[0.02] p-1">
-        {AGENTS.map((a) => {
-          const active = a.id === activeId;
-          return (
-            <button
-              key={a.id}
-              onClick={() => { setActiveId(a.id); setSection('chat'); }}
-              className={`flex-1 border px-4 py-2.5 font-mono text-xs uppercase tracking-[0.16em] transition-colors ${
-                active
-                  ? 'border-emerald-300/35 bg-emerald-300/[0.08] text-emerald-200'
-                  : 'border-white/5 bg-transparent text-slate-500 hover:border-cyan-200/20 hover:text-slate-200'
-              }`}
-            >
-              {agentLabel(a.id)}
-            </button>
-          );
-        })}
-      </div>
+          <AgentBookStrip agentId={activeId} />
 
-      {/* Book strip */}
-      <AgentBookStrip agentId={activeId} />
+          <Panel>
+            <div style={{ padding: '9px 18px' }}>
+              <div className="pm-seg inline-flex" role="group" aria-label="Desk section">
+                {(['alerts', 'proposals', 'chat', 'memory'] as SectionTab[]).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    aria-pressed={section === tab}
+                    onClick={() => setSection(tab)}
+                    className="pm-seg-item capitalize"
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Panel>
 
-      {/* Section tabs */}
-      <div className="flex gap-0 border border-white/10">
-        {(['alerts', 'proposals', 'chat', 'memory'] as SectionTab[]).map((tab) => {
-          const active = section === tab;
-          return (
-            <button
-              key={tab}
-              onClick={() => setSection(tab)}
-              className={`flex-1 border-r border-white/10 px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] transition-colors last:border-r-0 ${
-                active
-                  ? 'bg-white/[0.05] text-white'
-                  : 'bg-transparent text-slate-500 hover:bg-white/[0.02] hover:text-slate-300'
-              }`}
-            >
-              {tab}
-            </button>
-          );
-        })}
-      </div>
+          {section === 'alerts' && <AlertsSection agentId={activeId} />}
+          {section === 'proposals' && <ProposalsSection agentId={activeId} refreshKey={proposalRefreshKey} onProposalUpdated={handleProposalUpdated} />}
+          {section === 'chat' && <ChatSection agentId={activeId} onProposalEdited={handleProposalUpdated} />}
+          {section === 'memory' && <MemorySection agentId={activeId} />}
+        </>
+      }
+      rail={
+        <>
+          <RailBlock title="Red lines">
+            <div className="flex flex-col">
+              <DefRow label="Execution">Approval required</DefRow>
+              <DefRow label="Max single order">{fmtCurrency(MAX_AMOUNT_DOLLARS, 0)}</DefRow>
+              <DefRow label="Leverage">Not permitted</DefRow>
+              <DefRow label="Desk authority">Propose only</DefRow>
+            </div>
+          </RailBlock>
 
-      {/* Section content */}
-      {section === 'alerts' && <AlertsSection agentId={activeId} />}
-      {section === 'proposals' && <ProposalsSection agentId={activeId} refreshKey={proposalRefreshKey} onProposalUpdated={handleProposalUpdated} />}
-      {section === 'chat' && <ChatSection agentId={activeId} onProposalEdited={handleProposalUpdated} />}
-      {section === 'memory' && <MemorySection agentId={activeId} />}
-    </div>
+          <RailBlock title="Run controls">
+            <RunResearchButton />
+            <p style={{ margin: '9px 0 0', fontSize: 11.5, color: 'var(--muted-2)' }}>
+              Desks also run on the backend&apos;s own schedule.
+            </p>
+          </RailBlock>
+
+          <RailBlock title="Desk" grow>
+            <div className="flex flex-col">
+              <DefRow label="Selected">{agentLabel(activeId)}</DefRow>
+              <DefRow label="Section">{section}</DefRow>
+            </div>
+          </RailBlock>
+
+          <Footnote label="Authority">
+            Desks may research and propose. Only the account holder can approve a trade, and every
+            approval is signed and written to the audit trail.
+          </Footnote>
+        </>
+      }
+    />
   );
 }

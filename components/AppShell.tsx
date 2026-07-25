@@ -14,26 +14,19 @@ interface AppShellProps {
 }
 
 /**
- * Routes that are not in the nav and still speak the old dark-terminal utility
- * vocabulary. `.legacy-chrome` in globals.css translates that vocabulary into
- * readable ink on paper for exactly these paths; remove a path from this set
- * when its screen is ported to the private-wealth chrome.
+ * Routes outside the six-screen handoff. They now speak the chrome tokens
+ * directly, but they are still laid out as bordered blocks rather than as the
+ * edge-to-edge panel grid, so they keep the shell's gutter.
  */
-const LEGACY_CHROME_ROUTES = new Set([
+const GUTTERED_ROUTES = new Set([
   "/alerts",
   "/approvals",
   "/compare",
   "/funnel",
   "/history",
   "/observation",
+  "/portfolio-manager", // renders the approvals desk
   "/strategy",
-  // Nav routes still awaiting their port. They carry heavy money-path UI
-  // (proposal approve/reject/edit, agent chat and memory, research runs) that
-  // the redesign must preserve feature-for-feature, so they keep the readable
-  // translation layer until each is rebuilt in the private-wealth chrome.
-  "/agents",
-  "/portfolio-manager",
-  "/research",
 ]);
 
 function AccessBlock({ role }: { role: PortfolioRole | null }) {
@@ -70,7 +63,7 @@ export default function AppShell({ children, role }: AppShellProps) {
   const isAuthRoute = pathname.startsWith("/sign-in");
   const hasNavigation = !isAuthRoute && role !== null;
   const shouldRedirectClientHome = role === "Client" && pathname === "/";
-  const isLegacyRoute = LEGACY_CHROME_ROUTES.has(pathname);
+  const isGuttered = GUTTERED_ROUTES.has(pathname);
   const allowed = routeAllowed(role, pathname);
 
   useEffect(() => {
@@ -103,10 +96,8 @@ export default function AppShell({ children, role }: AppShellProps) {
               Opening capital account…
             </div>
           ) : allowed ? (
-            isLegacyRoute ? (
-              <div className="legacy-chrome" style={{ padding: "18px 22px" }}>
-                {children}
-              </div>
+            isGuttered ? (
+              <div style={{ padding: "18px 22px" }}>{children}</div>
             ) : (
               children
             )

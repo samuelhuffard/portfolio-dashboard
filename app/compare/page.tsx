@@ -66,10 +66,10 @@ export default function ComparePage() {
 
   return (
     <div className="space-y-6">
-      <div className="terminal-panel p-5 sm:p-6">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-cyan-200/75">Comps Desk</p>
-        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Fundamental comparison</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+      <div className="pm-panel border border-[var(--rule)] p-5 sm:p-6">
+        <p className="pm-label">Comps Desk</p>
+        <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-[var(--ink)]">Fundamental comparison</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--muted)]">
           Compare up to five listed companies side by side and export the full workbook.
         </p>
       </div>
@@ -78,7 +78,7 @@ export default function ComparePage() {
         <TickerInput onCompare={handleCompare} loading={loading} />
 
         {error && (
-          <div className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">
             {error}
           </div>
         )}
@@ -86,14 +86,14 @@ export default function ComparePage() {
         {result && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <h2 className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+              <h2 className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-[var(--muted)]">
                 Generated {new Date(result.generatedAt).toLocaleString()}
               </h2>
               <button
                 type="button"
                 onClick={handleExport}
                 disabled={exporting}
-                className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:cursor-not-allowed disabled:opacity-50"
+                className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--pos)] transition-colors hover:bg-[var(--panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {exporting ? "Generating…" : "Download Excel"}
               </button>

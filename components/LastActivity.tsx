@@ -80,13 +80,13 @@ export default function LastActivity() {
   }
 
   return (
-    <div className="mt-auto border border-amber-200/15 bg-amber-200/[0.04] p-4">
-      <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber-200/70">Last Activity</p>
+    <div className="mt-auto border border-[var(--rule)] bg-[var(--panel-alt)] p-4">
+      <p className="pm-label">Last Activity</p>
       <div className="mt-2 flex items-start gap-2">
-        <span className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} />
+        <span className={`mt-1 inline-block h-2 w-2 shrink-0 ${dot}`} />
         <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-slate-200">{heading}</p>
-          {detail && <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{detail}</p>}
+          <p className="truncate text-xs font-medium text-[var(--ink)]">{heading}</p>
+          {detail && <p className="mt-0.5 text-[11px] leading-4 text-[var(--muted)]">{detail}</p>}
         </div>
       </div>
     </div>

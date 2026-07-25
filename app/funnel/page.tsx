@@ -32,18 +32,18 @@ function num(value: number | null | undefined): string {
 }
 
 function bucketColor(bucket: string): string {
-  if (bucket === 'holdings') return 'border-emerald-300/30 bg-emerald-300/10 text-emerald-100';
-  if (bucket === 'movers') return 'border-cyan-300/30 bg-cyan-300/10 text-cyan-100';
-  if (bucket === 'exploration') return 'border-amber-300/30 bg-amber-300/10 text-amber-100';
-  return 'border-white/10 bg-white/[0.04] text-slate-200';
+  if (bucket === 'holdings') return 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]';
+  if (bucket === 'movers') return 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--accent)]';
+  if (bucket === 'exploration') return 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]';
+  return 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--ink)]';
 }
 
-function Metric({ label, value, sub, tone = 'text-white' }: { label: string; value: string; sub: string; tone?: string }) {
+function Metric({ label, value, sub, tone = 'text-[var(--ink)]' }: { label: string; value: string; sub: string; tone?: string }) {
   return (
-    <div className="border border-white/10 bg-white/[0.035] p-4">
-      <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-slate-500">{label}</p>
-      <p className={`mt-2 text-2xl font-black tracking-[-0.04em] ${tone}`}>{value}</p>
-      <p className="mt-2 text-xs leading-5 text-slate-500">{sub}</p>
+    <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-4">
+      <p className="pm-label">{label}</p>
+      <p className={`mt-2 text-2xl font-semibold tracking-[-0.01em] ${tone}`}>{value}</p>
+      <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{sub}</p>
     </div>
   );
 }
@@ -55,13 +55,13 @@ function SnapshotPanel({ snapshot }: { snapshot: FunnelSnapshot }) {
       : null;
 
   return (
-    <section className="terminal-panel p-5">
+    <section className="pm-panel border border-[var(--rule)] p-5">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">{snapshot.agentId}</p>
-          <h2 className="text-2xl font-black tracking-[-0.04em] text-white">{snapshot.source} funnel</h2>
+          <p className="pm-label">{snapshot.agentId}</p>
+          <h2 className="text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">{snapshot.source} funnel</h2>
         </div>
-        <p className="border border-white/10 bg-white/[0.035] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
+        <p className="pm-label">
           {staleLabel(snapshot.updatedAt)}
         </p>
       </div>
@@ -69,16 +69,16 @@ function SnapshotPanel({ snapshot }: { snapshot: FunnelSnapshot }) {
       <div className="grid grid-cols-2 gap-2 font-mono text-[10px] uppercase tracking-[0.16em] sm:grid-cols-4">
         {BUCKETS.map((bucket) => (
           <div key={bucket} className={`border px-3 py-2 ${bucketColor(bucket)}`}>
-            <p className="text-slate-400">{bucket}</p>
-            <p className="mt-1 text-lg font-black text-white">{snapshot.slate.counts[bucket]}</p>
+            <p className="text-[var(--muted)]">{bucket}</p>
+            <p className="mt-1 text-lg font-semibold text-[var(--ink)]">{snapshot.slate.counts[bucket]}</p>
           </div>
         ))}
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Metric label="Enrichment" value={pct(enrichedPct)} sub={`${num(snapshot.universe.sectorEnriched)} / ${num(snapshot.universe.cataloged)} catalog names`} tone={enrichedPct != null && enrichedPct >= 90 ? 'text-emerald-300' : 'text-amber-200'} />
-        <Metric label="Ledger Coverage" value={pct(snapshot.researchLedger.screenedCoveragePct)} sub={`${num(snapshot.researchLedger.researchedScreened)} / ${num(snapshot.researchLedger.screenedTickers)} screened names`} tone="text-cyan-200" />
-        <Metric label="Evaluator Reject" value={pct(snapshot.evaluator.rejectionRatePct)} sub={`${snapshot.evaluator.rejected + snapshot.evaluator.failedClosed} rejected or failed closed / ${snapshot.evaluator.total} verdicts`} tone="text-red-200" />
+        <Metric label="Enrichment" value={pct(enrichedPct)} sub={`${num(snapshot.universe.sectorEnriched)} / ${num(snapshot.universe.cataloged)} catalog names`} tone={enrichedPct != null && enrichedPct >= 90 ? 'text-[var(--pos)]' : 'text-[var(--warn)]'} />
+        <Metric label="Ledger Coverage" value={pct(snapshot.researchLedger.screenedCoveragePct)} sub={`${num(snapshot.researchLedger.researchedScreened)} / ${num(snapshot.researchLedger.screenedTickers)} screened names`} tone="text-[var(--accent)]" />
+        <Metric label="Evaluator Reject" value={pct(snapshot.evaluator.rejectionRatePct)} sub={`${snapshot.evaluator.rejected + snapshot.evaluator.failedClosed} rejected or failed closed / ${snapshot.evaluator.total} verdicts`} tone="text-[var(--warn)]" />
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -98,7 +98,7 @@ function ResearchDataPanel({ health }: { health: ResearchDataHealth | undefined 
   const disabled = !unavailable && !health?.researchDataEnabled;
   const missing = !unavailable && health?.researchDataEnabled && !status;
   const completedAt = status?.completedAt ?? status?.startedAt ?? null;
-  const tone = status?.state === 'failed' ? 'text-red-200' : unavailable || disabled ? 'text-slate-300' : status?.state === 'completed' ? 'text-emerald-200' : 'text-amber-200';
+  const tone = status?.state === 'failed' ? 'text-[var(--warn)]' : unavailable || disabled ? 'text-[var(--ink-2)]' : status?.state === 'completed' ? 'text-[var(--pos)]' : 'text-[var(--warn)]';
   const selection = health?.shadowSelection;
   const selectionMode = selection?.mode ?? status?.selectionMode ?? null;
   const selectionPolicy = selection?.policyVersion ?? status?.selectionPolicyVersion ?? null;
@@ -111,43 +111,43 @@ function ResearchDataPanel({ health }: { health: ResearchDataHealth | undefined 
   };
   const reasonCounts = selection?.reasonCodeCounts ?? status?.selectionReasonCodeCounts ?? {};
   return (
-    <section className="terminal-panel p-5">
+    <section className="pm-panel border border-[var(--rule)] p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Advisory data refresh</p>
-          <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white">Universe → peers → mandate scores</h2>
+          <p className="pm-label">Advisory data refresh</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">Universe → peers → mandate scores</h2>
         </div>
         <p className={`font-mono text-[10px] uppercase tracking-[0.18em] ${tone}`}>{unavailable ? 'Backend unavailable' : disabled ? 'Not enabled' : missing ? 'Awaiting status' : `${status?.state ?? 'unknown'} · ${staleLabel(completedAt)}`}</p>
       </div>
       {unavailable ? (
-        <p className="mt-3 text-sm text-slate-400">{health?.unavailableReason === 'not-configured' ? 'The Portfolio Manager backend is not configured for this dashboard.' : 'The Portfolio Manager health endpoint is unavailable, so workflow state cannot be determined.'}</p>
+        <p className="mt-3 text-sm text-[var(--muted)]">{health?.unavailableReason === 'not-configured' ? 'The Portfolio Manager backend is not configured for this dashboard.' : 'The Portfolio Manager health endpoint is unavailable, so workflow state cannot be determined.'}</p>
       ) : disabled ? (
-        <p className="mt-3 text-sm text-slate-400">This advisory workflow stays off until the peer-metrics store is configured. It does not create proposals or touch execution.</p>
+        <p className="mt-3 text-sm text-[var(--muted)]">This advisory workflow stays off until the peer-metrics store is configured. It does not create proposals or touch execution.</p>
       ) : missing ? (
-        <p className="mt-3 text-sm text-amber-200">The workflow is configured, but it has not published a run status yet. The system sentinel will flag this if it persists.</p>
+        <p className="mt-3 text-sm text-[var(--warn)]">The workflow is configured, but it has not published a run status yet. The system sentinel will flag this if it persists.</p>
       ) : (
         <>
           <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Metric label="Cataloged" value={num(status?.cataloged)} sub="Universe names" tone="text-white" />
-            <Metric label="Metric Rows" value={num(status?.metricRows)} sub={`${num(status?.classified)} classified`} tone="text-cyan-200" />
-            <Metric label="Scored" value={num(status?.scored)} sub={`${num(status?.complete)} complete`} tone="text-emerald-200" />
-            <Metric label="Incomplete" value={num(status?.partial)} sub={status?.failureStage ? `Failed: ${status.failureStage}` : `${num(status?.unsupported)} unsupported`} tone={status?.failureStage ? 'text-red-200' : 'text-amber-200'} />
+            <Metric label="Cataloged" value={num(status?.cataloged)} sub="Universe names" tone="text-[var(--ink)]" />
+            <Metric label="Metric Rows" value={num(status?.metricRows)} sub={`${num(status?.classified)} classified`} tone="text-[var(--accent)]" />
+            <Metric label="Scored" value={num(status?.scored)} sub={`${num(status?.complete)} complete`} tone="text-[var(--pos)]" />
+            <Metric label="Incomplete" value={num(status?.partial)} sub={status?.failureStage ? `Failed: ${status.failureStage}` : `${num(status?.unsupported)} unsupported`} tone={status?.failureStage ? 'text-[var(--warn)]' : 'text-[var(--warn)]'} />
           </div>
-          <div className="mt-5 border border-white/10 bg-white/[0.025] p-4">
+          <div className="mt-5 border border-[var(--rule)] bg-[var(--panel-alt)] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-200/70">Shadow selection</p>
-              <p className={`font-mono text-[10px] uppercase tracking-[0.16em] ${selectionUnresolved ? 'text-amber-200' : 'text-emerald-200'}`}>
+              <p className="pm-label">Shadow selection</p>
+              <p className={`font-mono text-[10px] uppercase tracking-[0.16em] ${selectionUnresolved ? 'text-[var(--warn)]' : 'text-[var(--pos)]'}`}>
                 {selectionMode ? `${selectionMode} · ${selectionPolicy ?? 'policy unknown'}` : selection?.state === 'not_configured' ? 'Baseline unavailable' : 'Awaiting selection'}
               </p>
             </div>
-            {selectionUnresolved && <p className="mt-2 text-xs text-amber-200">Materiality/event-age policy is unresolved; eligible events remain fail-closed.</p>}
+            {selectionUnresolved && <p className="mt-2 text-xs text-[var(--warn)]">Materiality/event-age policy is unresolved; eligible events remain fail-closed.</p>}
             {selectionMode && <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Metric label="Candidates" value={num(selectionCounts.candidates)} sub="Considered pool" tone="text-white" />
-              <Metric label="Selected" value={num(selectionCounts.selected)} sub="Advisory only" tone="text-cyan-200" />
-              <Metric label="Displaced" value={num(selectionCounts.displaced)} sub="Shadow comparison" tone="text-amber-200" />
-              <Metric label="Overlap" value={num(selectionCounts.overlap)} sub="Non-holding only" tone="text-emerald-200" />
+              <Metric label="Candidates" value={num(selectionCounts.candidates)} sub="Considered pool" tone="text-[var(--ink)]" />
+              <Metric label="Selected" value={num(selectionCounts.selected)} sub="Advisory only" tone="text-[var(--accent)]" />
+              <Metric label="Displaced" value={num(selectionCounts.displaced)} sub="Shadow comparison" tone="text-[var(--warn)]" />
+              <Metric label="Overlap" value={num(selectionCounts.overlap)} sub="Non-holding only" tone="text-[var(--pos)]" />
             </div>}
-            {Object.keys(reasonCounts).length > 0 && <p className="mt-3 font-mono text-[10px] text-slate-400">{Object.entries(reasonCounts).map(([reason, count]) => `${reason}: ${count}`).join(' · ')}</p>}
+            {Object.keys(reasonCounts).length > 0 && <p className="mt-3 font-mono text-[10px] text-[var(--muted)]">{Object.entries(reasonCounts).map(([reason, count]) => `${reason}: ${count}`).join(' · ')}</p>}
           </div>
         </>
       )}
@@ -181,24 +181,24 @@ export default function FunnelPage() {
 
   const agentOne = useMemo(() => data?.snapshots.find((s) => s.agentId === 'agent-1') ?? data?.snapshots[0] ?? null, [data]);
 
-  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-emerald-200">Loading funnel evidence...</p>;
+  if (loading) return <p className="font-mono text-sm uppercase tracking-[0.24em] text-[var(--pos)]">Loading funnel evidence...</p>;
 
   if (error) {
     return (
-      <section className="terminal-panel p-6">
-        <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-red-200/80">Funnel Feed Offline</p>
-        <h1 className="mt-3 text-4xl font-black tracking-[-0.04em] text-white">No observability data loaded.</h1>
-        <p className="mt-4 border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>
+      <section className="pm-panel border border-[var(--rule)] p-6">
+        <p className="pm-label">Funnel Feed Offline</p>
+        <h1 className="mt-3 text-[22px] font-semibold tracking-[-0.01em] text-[var(--ink)]">No observability data loaded.</h1>
+        <p className="mt-4 border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">{error}</p>
       </section>
     );
   }
 
   return (
     <div className="space-y-6">
-      <section className="terminal-panel p-5 sm:p-7">
-        <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.36em] text-emerald-300/80">Phase 1 Evidence Gate</p>
-        <h1 className="max-w-4xl text-4xl font-black tracking-[-0.04em] text-white sm:text-6xl">Discovery Funnel</h1>
-        <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400">
+      <section className="pm-panel border border-[var(--rule)] p-5 sm:p-7">
+        <p className="pm-label">Phase 1 Evidence Gate</p>
+        <h1 className="max-w-4xl text-[22px] font-semibold tracking-[-0.01em] text-[var(--ink)] sm:text-[22px]">Discovery Funnel</h1>
+        <p className="mt-4 max-w-3xl text-sm leading-6 text-[var(--muted)]">
           Live snapshots from the research scan: slate bucket composition, research-ledger coverage, catalog enrichment, and evaluator rejection mix.
         </p>
       </section>
@@ -206,9 +206,9 @@ export default function FunnelPage() {
       <ResearchDataPanel health={data?.researchDataHealth} />
 
       {!data?.snapshots.length ? (
-        <section className="terminal-panel p-5">
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200/80">Awaiting First Snapshot</p>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
+        <section className="pm-panel border border-[var(--rule)] p-5">
+          <p className="pm-label">Awaiting First Snapshot</p>
+          <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
             Run the scheduled research scan once after this deploy. The Jetson will write `pm:funnel:*` evidence records as each agent finishes.
           </p>
         </section>
@@ -218,22 +218,22 @@ export default function FunnelPage() {
         </div>
       )}
 
-      <section className="terminal-panel p-5">
+      <section className="pm-panel border border-[var(--rule)] p-5">
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200/70">Agent-1 Rotation History</p>
-            <h2 className="text-2xl font-black tracking-[-0.04em] text-white">Recent slate evidence</h2>
+            <p className="pm-label">Agent-1 Rotation History</p>
+            <h2 className="text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">Recent slate evidence</h2>
           </div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">{data?.history.length ?? 0} snapshots retained</p>
+          <p className="pm-label">{data?.history.length ?? 0} snapshots retained</p>
         </div>
 
         {!data?.history.length ? (
-          <p className="border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">No history yet.</p>
+          <p className="border border-[var(--rule)] bg-[var(--panel-alt)] p-4 text-sm text-[var(--muted)]">No history yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-sm">
-              <thead className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                <tr className="border-b border-white/10">
+              <thead className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">
+                <tr className="border-b border-[var(--rule)]">
                   <th className="py-3 pr-4">Date</th>
                   <th className="py-3 pr-4">Slate</th>
                   <th className="py-3 pr-4">AI Reviews</th>
@@ -244,15 +244,15 @@ export default function FunnelPage() {
               </thead>
               <tbody>
                 {data.history.map((row) => (
-                  <tr key={`${row.agentId}-${row.updatedAt}`} className="border-b border-white/[0.06] text-slate-300">
-                    <td className="py-3 pr-4 font-mono text-xs text-slate-400">{row.date}</td>
+                  <tr key={`${row.agentId}-${row.updatedAt}`} className="border-b border-[var(--rule)] text-[var(--ink-2)]">
+                    <td className="py-3 pr-4 font-mono text-xs text-[var(--muted)]">{row.date}</td>
                     <td className="py-3 pr-4 font-mono text-xs">
                       {BUCKETS.map((b) => `${row.slate.counts[b]} ${b[0]}`).join(' / ')}
                     </td>
                     <td className="py-3 pr-4">{row.aiReview.count}{row.aiReview.budget ? ` / ${row.aiReview.budget}` : ''}</td>
                     <td className="py-3 pr-4">{pct(row.researchLedger.screenedCoveragePct)} coverage, {row.researchLedger.reviewedLast7d} last 7d</td>
                     <td className="py-3 pr-4">{pct(row.evaluator.rejectionRatePct)} reject</td>
-                    <td className="py-3 pr-4 font-mono text-xs text-amber-100">
+                    <td className="py-3 pr-4 font-mono text-xs text-[var(--warn)]">
                       {row.slate.tickers.filter((t) => t.bucket === 'exploration').map((t) => t.ticker).join(', ') || '—'}
                     </td>
                   </tr>
@@ -265,10 +265,10 @@ export default function FunnelPage() {
 
       {agentOne && (
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <Metric label="Screened Pool" value={num(agentOne.universe.screened)} sub="Current mandate-fit names" tone="text-white" />
-          <Metric label="Never Researched" value={num(agentOne.researchLedger.neverResearchedScreened)} sub="Coverage remaining in screened pool" tone="text-amber-200" />
-          <Metric label="This Run" value={num(agentOne.researchLedger.researchedThisRun)} sub="Ledger records added by latest scan" tone="text-emerald-200" />
-          <Metric label="Revisions" value={num(agentOne.evaluator.revised)} sub="Evaluator forced generator revision" tone="text-cyan-200" />
+          <Metric label="Screened Pool" value={num(agentOne.universe.screened)} sub="Current mandate-fit names" tone="text-[var(--ink)]" />
+          <Metric label="Never Researched" value={num(agentOne.researchLedger.neverResearchedScreened)} sub="Coverage remaining in screened pool" tone="text-[var(--warn)]" />
+          <Metric label="This Run" value={num(agentOne.researchLedger.researchedThisRun)} sub="Ledger records added by latest scan" tone="text-[var(--pos)]" />
+          <Metric label="Revisions" value={num(agentOne.evaluator.revised)} sub="Evaluator forced generator revision" tone="text-[var(--accent)]" />
         </section>
       )}
     </div>

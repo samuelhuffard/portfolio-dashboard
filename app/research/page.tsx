@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DefRow, Footnote, Panel, RailBlock, ScreenGrid } from "@/components/chrome";
 import ResearchForm from "@/components/research/ResearchForm";
 import AnalysisReport from "@/components/research/AnalysisReport";
 import TickerInput from "@/components/research/TickerInput";
@@ -71,7 +72,7 @@ function ResearchTab() {
   return (
     <div className="flex flex-col gap-6">
       <ResearchForm onAnalyze={handleAnalyze} loading={loading} />
-      {error && <div className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
+      {error && <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">{error}</div>}
       {result && <AnalysisReport result={result} onExport={handleExport} exporting={exporting} />}
       <AgentResearchPanel defaultTicker={result?.ticker} />
     </div>
@@ -140,18 +141,18 @@ function CompsTab() {
   return (
     <div className="flex flex-col gap-6">
       <TickerInput onCompare={handleCompare} loading={loading} />
-      {error && <div className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
+      {error && <div className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">{error}</div>}
       {result && (
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+            <h2 className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-[var(--muted)]">
               Generated {new Date(result.generatedAt).toLocaleString()}
             </h2>
             <button
               type="button"
               onClick={handleExport}
               disabled={exporting}
-              className="border border-emerald-300/35 bg-emerald-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-emerald-200 transition-colors hover:bg-emerald-300/15 disabled:cursor-not-allowed disabled:opacity-50"
+              className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--pos)] transition-colors hover:bg-[var(--panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting ? "Generating…" : "Download Excel"}
             </button>
@@ -175,31 +176,58 @@ export default function LabPage() {
   const active = TABS.find((t) => t.id === tab)!;
 
   return (
-    <div className="space-y-5">
-      <div className="terminal-panel p-5 sm:p-6">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-emerald-300/75">Analyst Lab</p>
-        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Lab</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">{active.description}</p>
-      </div>
+    <ScreenGrid
+      main={
+        <>
+          {/* The screen is named in the nav, so this toolbar carries the scope
+              switch and the standing caveat instead of a hero panel. */}
+          <Panel>
+            <div className="flex items-center justify-between" style={{ padding: "9px 18px" }}>
+              <div className="flex items-center" style={{ gap: 10 }}>
+                <div className="pm-seg" role="group" aria-label="Lab scope">
+                  {TABS.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-pressed={tab === t.id}
+                      onClick={() => setTab(t.id)}
+                      className="pm-seg-item"
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <span className="pm-caption">{active.description}</span>
+              </div>
+              <span className="pm-caption">Runs are queued and logged · no live trading</span>
+            </div>
+          </Panel>
 
-      <div className="flex gap-0 border border-white/10">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex-1 border-r border-white/10 px-5 py-2.5 font-mono text-xs uppercase tracking-[0.2em] transition-colors last:border-r-0 ${
-              tab === t.id
-                ? "bg-white/[0.05] text-white"
-                : "bg-transparent text-slate-500 hover:bg-white/[0.02] hover:text-slate-300"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "research" && <ResearchTab />}
-      {tab === "comps" && <CompsTab />}
-    </div>
+          {tab === "research" && <ResearchTab />}
+          {tab === "comps" && <CompsTab />}
+        </>
+      }
+      rail={
+        <>
+          <RailBlock title="Method">
+            <p style={{ margin: "0 0 9px", fontSize: 12, color: "var(--ink-2)" }}>
+              Fair value is a discounted cash-flow estimate; screens use reported fundamentals only.
+              Figures are research output, not a recommendation to trade.
+            </p>
+          </RailBlock>
+          <RailBlock title="Scope" grow>
+            <div className="flex flex-col">
+              <DefRow label="Mode">{active.label}</DefRow>
+              <DefRow label="Execution">Not permitted</DefRow>
+              <DefRow label="Record">Runs are logged</DefRow>
+            </div>
+          </RailBlock>
+          <Footnote label="Caveat">
+            Estimates are research output, not a recommendation to trade. Partial data is labelled
+            rather than filled in.
+          </Footnote>
+        </>
+      }
+    />
   );
 }

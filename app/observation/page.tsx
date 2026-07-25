@@ -13,18 +13,18 @@ interface ObservationResponse {
 }
 
 const TONE_CLASSES: Record<ReturnType<typeof verdictTone>, string> = {
-  good: 'border-emerald-300/30 bg-emerald-300/10 text-emerald-100',
-  warn: 'border-amber-300/30 bg-amber-300/10 text-amber-100',
-  bad: 'border-rose-400/30 bg-rose-400/10 text-rose-100',
-  muted: 'border-white/10 bg-white/[0.04] text-slate-400',
+  good: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]',
+  warn: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
+  bad: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
+  muted: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--muted)]',
 };
 
-function Metric({ label, value, sub, tone = 'text-white' }: { label: string; value: string; sub: string; tone?: string }) {
+function Metric({ label, value, sub, tone = 'text-[var(--ink)]' }: { label: string; value: string; sub: string; tone?: string }) {
   return (
-    <div className="border border-white/10 bg-white/[0.035] p-4">
-      <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-slate-500">{label}</p>
-      <p className={`mt-2 text-2xl font-black tracking-[-0.04em] ${tone}`}>{value}</p>
-      <p className="mt-2 text-xs leading-5 text-slate-500">{sub}</p>
+    <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-4">
+      <p className="pm-label">{label}</p>
+      <p className={`mt-2 text-2xl font-semibold tracking-[-0.01em] ${tone}`}>{value}</p>
+      <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{sub}</p>
     </div>
   );
 }
@@ -46,7 +46,7 @@ function DayRow({ day }: { day: Phase0DayRecord }) {
         </ul>
       )}
       {day.deployment?.commit && (
-        <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">
+        <p className="pm-label">
           {day.deployment.branch ?? 'unknown-branch'}@{String(day.deployment.commit).slice(0, 10)}
         </p>
       )}
@@ -122,9 +122,9 @@ export default function ObservationPage() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-500">Phase 0 · Supervised baseline</p>
-        <h1 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white">Observation Window</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+        <p className="pm-label">Phase 0 · Supervised baseline</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">Observation Window</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
           The system must run 5 consecutive clean trading days before any autonomy expands. An automated
           observer signs one verdict per trading day at 8:15 PM ET; days shown here are displayed exactly as
           recorded on the Jetson, and the append-only record in the backend repo remains authoritative.
@@ -132,7 +132,7 @@ export default function ObservationPage() {
       </header>
 
       {error && (
-        <div className="border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">{error}</div>
+        <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-4 text-sm text-[var(--warn)]">{error}</div>
       )}
 
       {window && (
@@ -141,7 +141,7 @@ export default function ObservationPage() {
             label="Clean safety days"
             value={`${window.consecutiveCleanDays} / ${window.target}`}
             sub={window.headline}
-            tone={window.consecutiveCleanDays > 0 ? 'text-emerald-200' : 'text-white'}
+            tone={window.consecutiveCleanDays > 0 ? 'text-[var(--pos)]' : 'text-[var(--ink)]'}
           />
           <Metric
             label="Actionable proposals"
@@ -161,26 +161,26 @@ export default function ObservationPage() {
         </section>
       )}
 
-      <section className="terminal-panel p-5">
+      <section className="pm-panel border border-[var(--rule)] p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
-            <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-slate-400">Human completion checklist</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
+            <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-[var(--muted)]">Human completion checklist</h2>
+            <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
               Offline work required before this branch is offered for review. Checkmarks are manager-maintained;
               they do not advance Phase 0 or authorize a deployment.
             </p>
           </div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500">
+          <p className="pm-label">
             {Array.from(checklistById.values()).filter((item) => item.completed).length} / {OBSERVATION_HUMAN_CHECKLIST.length} complete
           </p>
         </div>
-        <div className="mt-4 divide-y divide-white/10 border border-white/10">
+        <div className="mt-4 divide-y divide-[var(--rule)] border border-[var(--rule)]">
           {OBSERVATION_HUMAN_CHECKLIST.map((item) => {
             const state = checklistById.get(item.id);
             const completed = state?.completed === true;
             const busy = updatingChecklist === item.id;
             return (
-              <label key={item.id} className="flex cursor-pointer gap-3 bg-white/[0.025] p-4 transition hover:bg-white/[0.045]">
+              <label key={item.id} className="flex cursor-pointer gap-3 bg-[var(--panel-alt)] p-4 transition hover:bg-[var(--panel-alt)]">
                 <input
                   type="checkbox"
                   checked={completed}
@@ -189,10 +189,10 @@ export default function ObservationPage() {
                   className="mt-1 h-4 w-4 accent-emerald-300 disabled:opacity-40"
                 />
                 <span className="min-w-0">
-                  <span className={`block text-sm font-medium ${completed ? 'text-emerald-200 line-through decoration-emerald-300/40' : 'text-slate-100'}`}>{item.label}</span>
-                  <span className="mt-1 block text-xs leading-5 text-slate-500">{item.detail}</span>
+                  <span className={`block text-sm font-medium ${completed ? 'text-[var(--pos)] line-through decoration-emerald-300/40' : 'text-[var(--ink)]'}`}>{item.label}</span>
+                  <span className="mt-1 block text-xs leading-5 text-[var(--muted)]">{item.detail}</span>
                   {state?.updatedAt && (
-                    <span className="mt-2 block font-mono text-[10px] text-slate-600">
+                    <span className="mt-2 block font-mono text-[10px] text-[var(--muted-2)]">
                       {completed ? 'Completed' : 'Reopened'} by {state.updatedBy ?? 'FundManager'} · {new Date(state.updatedAt).toLocaleString()}
                     </span>
                   )}
@@ -203,9 +203,9 @@ export default function ObservationPage() {
         </div>
       </section>
 
-      <section className="terminal-panel p-5">
-        <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-slate-400">Manager updates</h2>
-        <p className="mt-1 text-xs leading-5 text-slate-500">
+      <section className="pm-panel border border-[var(--rule)] p-5">
+        <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-[var(--muted)]">Manager updates</h2>
+        <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
           Plain-English notes from the fund managers about how the window is going — what passed, what
           failed, what was repaired, and what happens next.
         </p>
@@ -216,36 +216,36 @@ export default function ObservationPage() {
             maxLength={2000}
             rows={2}
             placeholder="e.g. Day 2 was clean — parity matched and every job ran. Waiting on the first genuine proposal."
-            className="flex-1 border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 placeholder:text-slate-600 focus:border-emerald-300/40 focus:outline-none"
+            className="flex-1 border border-[var(--rule)] bg-[var(--panel-alt)] p-3 text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
           />
           <button
             onClick={() => void postUpdate()}
             disabled={posting || !draft.trim()}
-            className="border border-emerald-300/40 bg-emerald-300/10 px-4 py-2 font-mono text-xs uppercase tracking-[0.2em] text-emerald-100 disabled:opacity-40"
+            className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 font-mono text-xs uppercase tracking-[0.2em] text-[var(--pos)] disabled:opacity-40"
           >
             {posting ? 'Posting…' : 'Post update'}
           </button>
         </div>
         <div className="mt-5 space-y-3">
           {(data?.updates ?? []).length === 0 && (
-            <p className="text-sm text-slate-500">No updates posted yet.</p>
+            <p className="text-sm text-[var(--muted)]">No updates posted yet.</p>
           )}
           {(data?.updates ?? []).map((update) => (
-            <div key={update.id} className="border border-white/10 bg-white/[0.03] p-4">
+            <div key={update.id} className="border border-[var(--rule)] bg-[var(--panel-alt)] p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500">{update.author}</p>
-                <p className="font-mono text-[10px] text-slate-600">{new Date(update.createdAt).toLocaleString()}</p>
+                <p className="pm-label">{update.author}</p>
+                <p className="font-mono text-[10px] text-[var(--muted-2)]">{new Date(update.createdAt).toLocaleString()}</p>
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-200">{update.text}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--ink)]">{update.text}</p>
             </div>
           ))}
         </div>
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-slate-400">Daily verdicts</h2>
+        <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-[var(--muted)]">Daily verdicts</h2>
         {(data?.days ?? []).length === 0 && !error && (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-[var(--muted)]">
             No observation days recorded yet. The first record appears after the observer runs at 8:15 PM ET
             on the next trading day.
           </p>

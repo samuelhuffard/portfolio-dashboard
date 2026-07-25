@@ -22,8 +22,8 @@ interface Draft {
 const INITIAL_DRAFT: Draft = { ticker: '', direction: 'below', targetPrice: '', note: '' };
 
 const DIRECTION_STYLES = {
-  below: 'border-cyan-300/30 bg-cyan-300/[0.06] text-cyan-100',
-  above: 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-100',
+  below: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--accent)]',
+  above: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]',
 };
 
 export default function AlertsPage() {
@@ -92,66 +92,66 @@ export default function AlertsPage() {
 
   return (
     <div className="max-w-4xl space-y-6">
-      <section className="terminal-panel p-5 sm:p-6">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-cyan-200/75">Agent One</p>
-        <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Price Alerts</h1>
-        <p className="mt-3 max-w-2xl text-sm text-slate-400">
+      <section className="pm-panel border border-[var(--rule)] p-5 sm:p-6">
+        <p className="pm-label">Agent One</p>
+        <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-[var(--ink)]">Price Alerts</h1>
+        <p className="mt-3 max-w-2xl text-sm text-[var(--muted)]">
           Set a target price and direction. The intraday monitor checks every 30 minutes — when triggered,
           Agent One queues a proposal automatically for your approval.
         </p>
       </section>
 
       {error && (
-        <p className="border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>
+        <p className="border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 text-sm text-[var(--warn)]">{error}</p>
       )}
 
-      <section className="terminal-panel p-5">
-        <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/70">New Alert</p>
+      <section className="pm-panel border border-[var(--rule)] p-5">
+        <p className="pm-label">New Alert</p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Ticker</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Ticker</span>
             <input
               value={draft.ticker}
               onChange={(e) => setDraft((d) => ({ ...d, ticker: e.target.value.toUpperCase() }))}
               placeholder="NVDA"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm uppercase text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none"
+              className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm uppercase text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
             />
           </label>
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Direction</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Direction</span>
             <select
               value={draft.direction}
               onChange={(e) => setDraft((d) => ({ ...d, direction: e.target.value as 'below' | 'above' }))}
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white focus:border-cyan-300/50 focus:outline-none"
+              className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] focus:border-[var(--rule)] focus:outline-none"
             >
               <option value="below">Falls below</option>
               <option value="above">Rises above</option>
             </select>
           </label>
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Target Price</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Target Price</span>
             <input
               value={draft.targetPrice}
               onChange={(e) => setDraft((d) => ({ ...d, targetPrice: e.target.value }))}
               inputMode="decimal"
               placeholder="185.00"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none"
+              className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
             />
           </label>
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Note (optional)</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Note (optional)</span>
             <input
               value={draft.note}
               onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
               placeholder="Entry on pullback"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none"
+              className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:border-[var(--rule)] focus:outline-none"
             />
           </label>
         </div>
         <button
           onClick={addAlert}
           disabled={saving}
-          className="mt-4 border border-cyan-300/35 bg-cyan-300/10 px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-cyan-200 transition-colors hover:bg-cyan-300/15 disabled:opacity-40"
+          className="mt-4 border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-2 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--accent)] transition-colors hover:bg-[var(--panel-alt)] disabled:opacity-40"
         >
           {saving ? 'Setting...' : 'Set Alert'}
         </button>
@@ -159,35 +159,35 @@ export default function AlertsPage() {
 
       <section className="space-y-3">
         {loading ? (
-          <p className="font-mono text-sm uppercase tracking-[0.24em] text-cyan-200">Loading alerts...</p>
+          <p className="font-mono text-sm uppercase tracking-[0.24em] text-[var(--accent)]">Loading alerts...</p>
         ) : alerts.length === 0 ? (
-          <p className="terminal-panel p-5 text-sm text-slate-400">
+          <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">
             No alerts set. Add one above and Agent One will queue a proposal the moment the price is hit.
           </p>
         ) : (
           alerts.map((alert) => (
-            <article key={alert.id} className="terminal-panel p-5">
+            <article key={alert.id} className="pm-panel border border-[var(--rule)] p-5">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="font-mono text-2xl font-black tracking-[-0.03em] text-white">{alert.ticker}</span>
+                  <span className="font-mono text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">{alert.ticker}</span>
                   <span className={`border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] ${DIRECTION_STYLES[alert.direction]}`}>
                     {alert.direction === 'below' ? '↓ Falls below' : '↑ Rises above'}
                   </span>
-                  <span className="font-mono text-lg font-semibold text-white">
+                  <span className="font-mono text-lg font-semibold text-[var(--ink)]">
                     ${alert.targetPrice.toFixed(2)}
                   </span>
                 </div>
                 <button
                   onClick={() => deleteAlert(alert.id)}
-                  className="border border-red-300/25 bg-red-300/[0.04] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-red-300 hover:border-red-300/50 hover:bg-red-300/10 transition-colors"
+                  className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--warn)] hover:border-[var(--rule)] hover:bg-[var(--panel-alt)] transition-colors"
                 >
                   Remove
                 </button>
               </div>
               {alert.note && (
-                <p className="mt-2 text-sm text-slate-400">{alert.note}</p>
+                <p className="mt-2 text-sm text-[var(--muted)]">{alert.note}</p>
               )}
-              <p className="mt-2 font-mono text-[10px] text-slate-600">
+              <p className="mt-2 font-mono text-[10px] text-[var(--muted-2)]">
                 Set {new Date(alert.createdAt).toLocaleString()} · Checked every 30 min during market hours
               </p>
             </article>

@@ -40,15 +40,6 @@
 
   /* Divider between the header's stretched full-height blocks. */
   --rule-header-block: #e4e5e2;
-
-  /* Retained only for the off-nav legacy routes (see .legacy-chrome below).
-     No screen in the redesigned nav may reference these. */
-  --paper:       #fcfcf9;
-  --paper-muted: #f5f6f1;
-  --line:        #d8dfd9;
-  --forest:      #315d4e;
-  --river:       #376d82;
-  --gold:        #a47b3c;
 }
 
 body {
@@ -424,89 +415,18 @@ a:hover {
 }
 
 /* ---------------------------------------------------------------------------
-   Legacy chrome — off-nav routes only.
+   Global flattening.
 
-   /alerts, /approvals, /compare, /funnel, /history, /observation and /strategy
-   still speak Tailwind's dark-terminal utility vocabulary (text-white,
-   text-slate-400, bg-black/20 …). These overrides translate that vocabulary
-   into readable ink on paper. AppShell applies .legacy-chrome to exactly those
-   routes, so the redesigned nav screens never inherit any of it.
-
-   Delete a block from here only when the matching route is ported to the
-   private-wealth chrome above.
+   Every screen now speaks the chrome tokens directly, so the old dark-terminal
+   translation layer is gone. These two rules stay as a backstop: no rounded
+   corners and no lifted shadows anywhere in the app, including inside
+   third-party widgets such as Clerk's.
    --------------------------------------------------------------------------- */
 
-.legacy-chrome .terminal-panel,
-.legacy-chrome .market-card {
-  border: 1px solid var(--rule);
-  border-radius: 0;
-  background: var(--panel);
-  box-shadow: none;
-}
-
-/* The old radial glow inside .market-card belongs to the dark theme. */
-.legacy-chrome .market-card::after {
-  display: none;
-}
-
-/* Flatten the leftovers of the card look so an unported screen still reads as
-   part of one gridded surface: no rounded corners, no lifted shadows, and no
-   display-scale headings. */
-.legacy-chrome [class*="rounded"] {
+[class*="rounded"] {
   border-radius: 0;
 }
 
-.legacy-chrome [class*="shadow"] {
+[class*="shadow"] {
   box-shadow: none;
 }
-
-.legacy-chrome h1 {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.legacy-chrome h2 {
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.legacy-chrome .data-table {
-  border-collapse: collapse;
-}
-
-.legacy-chrome .data-table th {
-  color: var(--muted-2);
-  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.legacy-chrome .data-table td {
-  border-top: 1px solid var(--rule-row);
-}
-
-.legacy-chrome .data-table tr:hover td {
-  background: var(--panel-alt);
-}
-
-.legacy-chrome .text-white,
-.legacy-chrome .text-slate-100,
-.legacy-chrome .text-slate-200 { color: var(--ink); }
-.legacy-chrome .text-slate-300 { color: var(--ink-2); }
-.legacy-chrome .text-slate-400,
-.legacy-chrome .text-slate-500 { color: var(--muted); }
-.legacy-chrome .text-slate-600 { color: var(--muted-2); }
-.legacy-chrome .text-emerald-200,
-.legacy-chrome .text-emerald-300 { color: var(--pos); }
-.legacy-chrome .text-cyan-100,
-.legacy-chrome .text-cyan-200 { color: var(--accent); }
-.legacy-chrome .text-amber-100,
-.legacy-chrome .text-amber-200 { color: var(--warn); }
-.legacy-chrome .bg-black\/20,
-.legacy-chrome .bg-black\/25,
-.legacy-chrome .bg-black\/30 { background-color: var(--panel-alt); }
-.legacy-chrome .border-white\/10,
-.legacy-chrome .border-white\/15 { border-color: var(--rule); }
-.legacy-chrome .divide-white\/10 > :not(:last-child) { border-color: var(--rule); }

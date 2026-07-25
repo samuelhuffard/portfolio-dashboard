@@ -28,10 +28,10 @@ function firstSentence(text: string): string {
 }
 
 const STATUS_STYLES: Record<ProposalStatus, string> = {
-  Pending: 'border-amber-200/30 bg-amber-200/[0.06] text-amber-100',
-  ApprovedForBrokerReview: 'border-emerald-300/30 bg-emerald-300/[0.06] text-emerald-100',
-  Rejected: 'border-red-300/30 bg-red-300/[0.06] text-red-100',
-  Expired: 'border-white/15 bg-white/[0.04] text-white/50',
+  Pending: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
+  ApprovedForBrokerReview: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]',
+  Rejected: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
+  Expired: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--ink)]',
 };
 
 const STATUS_LABELS: Record<ProposalStatus, string> = {
@@ -72,19 +72,19 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
   const hasMore = proposal.rationale.trim().length > hook.length + 2 || !!proposal.riskSummary;
 
   return (
-    <article className="terminal-panel p-5">
+    <article className="pm-panel border border-[var(--rule)] p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs uppercase tracking-[0.16em] text-slate-500">{agentLabel(proposal.agentId)}</span>
+            <span className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--muted)]">{agentLabel(proposal.agentId)}</span>
             <span className={`border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] ${STATUS_STYLES[proposal.status]}`}>
               {proposalStatusLabel(proposal)}
             </span>
           </div>
-          <h2 className="font-mono text-2xl font-black tracking-[-0.03em] text-white">
+          <h2 className="font-mono text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
             {proposal.side} {proposal.ticker} - {fmtCurrency(proposal.amountDollars)}
           </h2>
-          <p className="mt-1 font-mono text-xs text-slate-500">
+          <p className="mt-1 font-mono text-xs text-[var(--muted)]">
             Max price: {proposal.maxPrice == null ? 'none set' : fmtCurrency(proposal.maxPrice)} - Created {new Date(proposal.createdAt).toLocaleString()}
             {proposal.decidedAt ? ` - Decided ${new Date(proposal.decidedAt).toLocaleString()}` : ''}
           </p>
@@ -93,13 +93,13 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
           <div className="flex gap-2">
             <button
               onClick={() => onAccept(proposal.id)}
-              className="border border-emerald-300/35 bg-emerald-300/10 px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-emerald-200 hover:bg-emerald-300/15"
+              className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[var(--pos)] hover:bg-[var(--panel-alt)]"
             >
               Accept Proposal
             </button>
             <button
               onClick={() => onReject(proposal.id)}
-              className="border border-red-300/35 bg-red-300/10 px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-red-200 hover:bg-red-300/15"
+              className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[var(--warn)] hover:bg-[var(--panel-alt)]"
             >
               Reject
             </button>
@@ -108,15 +108,15 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
       </div>
 
       <div className="mt-4">
-        <div className="border border-white/10 bg-white/[0.025] p-3">
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/70">Rationale</p>
-          <p className="text-sm leading-6 text-slate-200">{hook}</p>
+        <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
+          <p className="pm-label">Rationale</p>
+          <p className="text-sm leading-6 text-[var(--ink)]">{hook}</p>
           {signals.length > 0 && (
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               {signals.map((s) => (
                 <span
                   key={s}
-                  className="border border-cyan-300/20 bg-cyan-300/[0.06] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-200/60"
+                  className="border border-[var(--rule)] bg-[var(--panel-alt)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--accent)]"
                 >
                   {s}
                 </span>
@@ -126,7 +126,7 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
           {hasMore && (
             <button
               onClick={() => onToggleExpanded(proposal.id)}
-              className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 transition-colors hover:text-slate-300"
+              className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] transition-colors hover:text-[var(--ink-2)]"
             >
               {expanded ? '↑ collapse' : '↓ full rationale'}
             </button>
@@ -135,13 +135,13 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
 
         {expanded && (
           <div className="mt-2 grid gap-2 lg:grid-cols-2">
-            <div className="border border-white/10 bg-white/[0.025] p-3">
-              <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/50">Full Rationale</p>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.rationale}</p>
+            <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
+              <p className="pm-label">Full Rationale</p>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ink-2)]">{proposal.rationale}</p>
             </div>
-            <div className="border border-white/10 bg-white/[0.025] p-3">
-              <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200/70">Risk Notes</p>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{proposal.riskSummary || 'No risk notes recorded.'}</p>
+            <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
+              <p className="pm-label">Risk Notes</p>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ink-2)]">{proposal.riskSummary || 'No risk notes recorded.'}</p>
             </div>
           </div>
         )}
@@ -149,27 +149,27 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
 
       <aside className="mt-3 border border-[#cbd9d0] bg-[#f3f7f3] px-3 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#315d4e]">Agent 4 portfolio review</p>
+          <p className="pm-label">Agent 4 portfolio review</p>
           {agent4Decision && (
             <span className={`border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] ${agent4Decision.outcome === 'ACCEPT' ? 'border-[#a7c5b5] text-[#315d4e]' : 'border-[#e3c2bf] text-[#9a4039]'}`}>
-              {agent4Decision.outcome === 'ACCEPT' ? 'Within shadow policy' : 'Blocked in shadow'}
+              {agent4Decision.outcome === 'ACCEPT' ? 'Within policy' : 'Blocked in '}
             </span>
           )}
         </div>
-        <p className="mt-1.5 text-xs leading-5 text-slate-500">
+        <p className="mt-1.5 text-xs leading-5 text-[var(--muted)]">
           {agent4Decision
             ? `${agent4Decision.explanation.join(' ')} Policy ${agent4Decision.policyVersion}.`
-            : 'Awaiting Agent 4’s independent shadow review. This does not affect your ability to approve or reject the proposal.'}
+            : 'Awaiting Agent 4’s independent review. This does not affect your ability to approve or reject the proposal.'}
         </p>
       </aside>
 
       {proposal.decisionNote && (
-        <p className="mt-3 border border-white/10 bg-white/[0.025] px-3 py-2 text-xs leading-5 text-slate-400">
+        <p className="mt-3 border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-xs leading-5 text-[var(--muted)]">
           {proposal.decisionNote}
         </p>
       )}
       {proposal.fulfilledAt && (
-        <p className="mt-3 border border-emerald-300/20 bg-emerald-300/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-200/80">
+        <p className="pm-label">
           Executed {new Date(proposal.fulfilledAt).toLocaleString()}
           {proposal.fulfilledOrderId ? ` · order ${proposal.fulfilledOrderId}` : ''}
           {proposal.fulfilledShares != null ? ` · ${proposal.fulfilledShares} shares` : ''}
