@@ -2,7 +2,7 @@
 // must stay importable from client components: no Node APIs, no Redis, no env.
 
 export const MAX_UPDATE_LENGTH = 2000;
-export const SAFETY_WINDOW_TARGET = 10;
+export const SAFETY_WINDOW_TARGET = 5;
 export const PROPOSAL_TARGET = 3;
 export const APPROVAL_TARGET = 1;
 
@@ -33,6 +33,36 @@ export interface ObservationUpdate {
   author: string;
   userId: string;
   createdAt: string;
+}
+
+export const OBSERVATION_HUMAN_CHECKLIST = [
+  { id: "pure-quality-harness", label: "Build a truly disconnected proposal-quality harness", detail: "No model, network, scheduler, Redis, proposal, or approval dependency." },
+  { id: "bench30-corpus", label: "Freeze a real local point-in-time evidence corpus", detail: "Preserved T0 source packets, hashes, chronology, expected outcomes, and gap list." },
+  { id: "lineage-audit", label: "Complete the cross-runtime proposal-lineage audit", detail: "Backend, dashboard, companion, all five sources, readers/writers, v1 disposition, and no-go list." },
+  { id: "agent4-paired-shadow", label: "Run the Agent 4 paired-shadow laboratory", detail: "Versioned draft policy plus deterministic specialist, portfolio, and Sam-label scenarios." },
+  { id: "trust-blueprints", label: "Finish separate trust-release blueprints", detail: "Exact code/record maps, test matrices, rollback drills, reviewers, and clock effects." },
+] as const;
+
+export type ObservationChecklistItemId = (typeof OBSERVATION_HUMAN_CHECKLIST)[number]["id"];
+
+export interface ObservationChecklistState {
+  id: ObservationChecklistItemId;
+  completed: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export function isObservationChecklistItemId(value: unknown): value is ObservationChecklistItemId {
+  return OBSERVATION_HUMAN_CHECKLIST.some((item) => item.id === value);
+}
+
+export function defaultObservationChecklist(): ObservationChecklistState[] {
+  return OBSERVATION_HUMAN_CHECKLIST.map((item) => ({
+    id: item.id,
+    completed: false,
+    updatedAt: null,
+    updatedBy: null,
+  }));
 }
 
 export interface ObservationWindowSummary {

@@ -58,9 +58,15 @@ interface ProposalCardProps {
   /** Omit both handlers to render a read-only card (History view). */
   onAccept?: (id: string) => void;
   onReject?: (id: string) => void;
+  agent4Decision?: {
+    outcome: 'ACCEPT' | 'REJECT';
+    explanation: string[];
+    policyVersion: string;
+    decidedAt: string;
+  };
 }
 
-export default function ProposalCard({ proposal, expanded, onToggleExpanded, onAccept, onReject }: ProposalCardProps) {
+export default function ProposalCard({ proposal, expanded, onToggleExpanded, onAccept, onReject, agent4Decision }: ProposalCardProps) {
   const signals = extractSignals(proposal.rationale + ' ' + proposal.riskSummary);
   const hook = firstSentence(proposal.rationale);
   const hasMore = proposal.rationale.trim().length > hook.length + 2 || !!proposal.riskSummary;
@@ -140,6 +146,22 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
           </div>
         )}
       </div>
+
+      <aside className="mt-3 border border-[#cbd9d0] bg-[#f3f7f3] px-3 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#315d4e]">Agent 4 portfolio review</p>
+          {agent4Decision && (
+            <span className={`border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] ${agent4Decision.outcome === 'ACCEPT' ? 'border-[#a7c5b5] text-[#315d4e]' : 'border-[#e3c2bf] text-[#9a4039]'}`}>
+              {agent4Decision.outcome === 'ACCEPT' ? 'Within shadow policy' : 'Blocked in shadow'}
+            </span>
+          )}
+        </div>
+        <p className="mt-1.5 text-xs leading-5 text-slate-500">
+          {agent4Decision
+            ? `${agent4Decision.explanation.join(' ')} Policy ${agent4Decision.policyVersion}.`
+            : 'Awaiting Agent 4’s independent shadow review. This does not affect your ability to approve or reject the proposal.'}
+        </p>
+      </aside>
 
       {proposal.decisionNote && (
         <p className="mt-3 border border-white/10 bg-white/[0.025] px-3 py-2 text-xs leading-5 text-slate-400">

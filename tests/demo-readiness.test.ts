@@ -30,10 +30,6 @@ function healthyPayloads() {
       proposals: [{ id: "proposal-1", status: "Pending", executionState: null, fulfilledAt: null, updatedAt: "2026-07-20T15:00:00.000Z" }],
     },
     companion: { online: true, ageSeconds: 11, lastSeen: "2026-07-20T15:59:49.000Z" },
-    funnel: {
-      snapshots: [{ agentId: "agent-1", updatedAt: "2026-07-20T15:40:00.000Z" }],
-      researchDataHealth: { availability: "available", researchDataEnabled: false, shadowSelection: { policyVersion: "shadow-v1" } },
-    },
     strategy: { agentId: "agent-1", notes: "" },
     history: { reports: [{ id: "report-1", kind: "research", generatedAt: "2026-07-20T14:00:00.000Z" }] },
     news: { news: [{ date: "2026-07-20", action: "HOLD" }] },
@@ -41,9 +37,9 @@ function healthyPayloads() {
   };
 }
 
-test("core route map covers the seven authenticated investor/demo surfaces", () => {
+test("core route map excludes the deferred funnel surface", () => {
   assert.deepEqual(CORE_ROUTES.map((route) => route.label), [
-    "Command", "Positions", "Agents", "Recommendations", "Approvals", "Strategy", "History",
+    "Command", "Positions", "Agents", "Approvals", "Strategy", "History",
   ]);
   assert.equal(new Set(CORE_ROUTES.map((route) => route.path)).size, CORE_ROUTES.length);
 });
@@ -108,17 +104,15 @@ test("stale cash/holdings freshness fails closed", () => {
   assert.equal(report.overall, "FAIL");
 });
 
-test("duplicate holdings, invalid NAV date, proposal IDs, and stale agents fail integrity assertions", () => {
+test("duplicate holdings, invalid NAV date, and proposal IDs fail integrity assertions", () => {
   const payloads = healthyPayloads();
   payloads.portfolio.holdings.push({ ...payloads.portfolio.holdings[0] });
   payloads.investors.latestNavDate = "2026-07-21";
   payloads.proposals.proposals.push({ ...payloads.proposals.proposals[0] });
-  payloads.funnel.snapshots[0].updatedAt = "2026-07-18T15:40:00.000Z";
   const report = buildDataReadinessReport(payloads, { now: NOW, maxFreshMinutes: 120 });
   assert.equal(report.checks.find((item) => item.key === "data.portfolio")?.status, "fail");
   assert.equal(report.checks.find((item) => item.key === "data.nav-ledger")?.status, "fail");
   assert.equal(report.checks.find((item) => item.key === "data.proposals")?.status, "fail");
-  assert.equal(report.checks.find((item) => item.key === "status.agents")?.status, "fail");
   assertStableErrorCodes(report);
 });
 

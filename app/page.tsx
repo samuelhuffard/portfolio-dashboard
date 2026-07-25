@@ -18,7 +18,7 @@ import {
 import NewsPanel from '@/components/command/NewsPanel';
 import RunResearchButton from '@/components/command/RunResearchButton';
 import { fmtCurrency, fmtPercent, gainLossColor } from '@/lib/format';
-import { buildAdjustedValueSeries, buildPerformanceComparison, paddedReturnDomain } from '@/lib/portfolio-chart';
+import { buildAdjustedValueSeries, buildPerformanceComparison, paddedReturnDomain, type CashFlow } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
 interface PortfolioResponse {
@@ -26,6 +26,7 @@ interface PortfolioResponse {
   cash: number | null;
   lastSynced: string | null;
   performance: PerformanceRow[];
+  cashFlows: CashFlow[];
   totals: {
     totalValue: number;
     totalMarketValue: number;
@@ -50,8 +51,8 @@ function fmtAxisDollar(v: number): string {
   return `$${v.toFixed(2)}`;
 }
 
-function buildGrowthData(performance: PerformanceRow[]) {
-  const adjusted = buildAdjustedValueSeries(performance);
+function buildGrowthData(performance: PerformanceRow[], cashFlows: CashFlow[]) {
+  const adjusted = buildAdjustedValueSeries(performance, cashFlows);
   return adjusted.length > 0
     ? adjusted
     : performance
@@ -139,9 +140,9 @@ export default function OverviewPage() {
   if (!data) return null;
 
   const { totals, cash, lastSynced } = data;
-  const performanceComparison = buildPerformanceComparison(data.performance);
+  const performanceComparison = buildPerformanceComparison(data.performance, data.cashFlows);
   const hasBenchmarkData = performanceComparison.length >= 2;
-  const growthData = buildGrowthData(data.performance);
+  const growthData = buildGrowthData(data.performance, data.cashFlows);
   const allocation = buildAllocation(data.holdings);
   const topMovers = getTopMovers(data.holdings);
   const investedRatio = totals.totalValue ? (totals.totalMarketValue / totals.totalValue) * 100 : null;
@@ -202,6 +203,11 @@ export default function OverviewPage() {
               <h2 className="text-xl font-semibold text-white">
                 {effectiveMode === 'normalized' ? 'Return vs S&P 500' : 'Adjusted Portfolio Value'}
               </h2>
+              {effectiveMode === 'normalized' && (
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  S&amp;P 500 benchmark uses SPY price return
+                </p>
+              )}
               {!hasBenchmarkData && growthData.length > 0 && (
                 <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
                   No SPY history yet — benchmark comparison unavailable
@@ -254,8 +260,8 @@ export default function OverviewPage() {
                     contentStyle={{ background: '#071019', border: '1px solid rgba(0,255,178,.22)', color: '#e5fff7' }}
                   />
                   <ReferenceLine y={0} stroke="rgba(148,163,184,.35)" strokeDasharray="4 4" />
-                  <Area type="monotone" dataKey="Portfolio" stroke="#00ffb2" strokeWidth={3} fill="url(#portfolioGlow)" dot={false} />
-                  <Line type="monotone" dataKey="S&P 500" stroke="#7dd3fc" strokeWidth={2} dot={false} />
+                  <Area type="monotone" dataKey="Portfolio" name="Portfolio" stroke="#00ffb2" strokeWidth={3} fill="url(#portfolioGlow)" dot={false} />
+                  <Line type="monotone" dataKey="S&P 500" name="S&amp;P 500 (SPY price)" stroke="#7dd3fc" strokeWidth={2} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

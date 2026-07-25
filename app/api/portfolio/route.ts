@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth";
-import { getServiceAccountClients, getSharedSpreadsheetId, readHoldings, readPerformance } from "@/lib/sheets";
+import { getServiceAccountClients, getSharedSpreadsheetId, readHoldings, readInvestorLedger, readPerformance } from "@/lib/sheets";
 
 export async function GET(request: NextRequest) {
   const authz = await requireApiPermission({
@@ -14,9 +14,10 @@ export async function GET(request: NextRequest) {
     const spreadsheetId = await getSharedSpreadsheetId();
     const sheets = await getServiceAccountClients();
 
-    const [{ holdings, cash, lastSynced }, performance] = await Promise.all([
+    const [{ holdings, cash, lastSynced }, performance, investorLedger] = await Promise.all([
       readHoldings(sheets, spreadsheetId),
       readPerformance(sheets, spreadsheetId),
+      readInvestorLedger(sheets, spreadsheetId),
     ]);
 
     const totalMarketValue = holdings.reduce((sum, h) => sum + (h.marketValue ?? 0), 0);
@@ -30,6 +31,13 @@ export async function GET(request: NextRequest) {
       cash,
       lastSynced,
       performance,
+      // The ledger reader verifies every HMAC before this data reaches the
+      // chart. Signed flows, rather than a portfolio-movement heuristic, are
+      // the only adjustments to investment performance.
+      cashFlows: investorLedger.map((entry) => ({
+        date: entry.date,
+        amount: entry.type === "Contribution" ? entry.amount : entry.type === "Withdrawal" ? -entry.amount : 0,
+      })),
       totals: {
         totalValue,
         totalMarketValue,

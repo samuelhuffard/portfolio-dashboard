@@ -11,7 +11,6 @@ const API_REQUESTS = [
   ["investors", "/api/investors"],
   ["proposals", "/api/proposals"],
   ["companion", "/api/companion/trigger"],
-  ["funnel", "/api/funnel?agentId=agent-1"],
   ["strategy", "/api/strategy?agentId=agent-1"],
   ["history", "/api/history"],
   ["news", "/api/news"],
@@ -133,7 +132,6 @@ async function main(): Promise<void> {
   });
   const report = buildDataReadinessReport(payloads, {
     maxFreshMinutes: options.maxFreshMinutes,
-    maxAgentFreshMinutes: options.maxFreshMinutes,
     requireCompanionOnline: options.requireCompanionOnline,
   });
   const routeChecks = pages.map(({ route, result }) => routeCheck(route.key, route.label, result, route.marker));

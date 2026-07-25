@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ObservationUpdate, ObservationWindowSummary, Phase0DayRecord } from '@/lib/observation-shared';
-import { verdictLabel, verdictTone } from '@/lib/observation-shared';
+import type { ObservationChecklistState, ObservationUpdate, ObservationWindowSummary, Phase0DayRecord } from '@/lib/observation-shared';
+import { OBSERVATION_HUMAN_CHECKLIST, verdictLabel, verdictTone } from '@/lib/observation-shared';
 
 interface ObservationResponse {
   window: ObservationWindowSummary;
   days: Phase0DayRecord[];
   updates: ObservationUpdate[];
+  checklist: ObservationChecklistState[];
   error?: string;
 }
 
@@ -58,6 +59,7 @@ export default function ObservationPage() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [posting, setPosting] = useState(false);
+  const [updatingChecklist, setUpdatingChecklist] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -96,6 +98,26 @@ export default function ObservationPage() {
   }, [draft, posting, load]);
 
   const window = data?.window;
+  const checklistById = new Map((data?.checklist ?? []).map((item) => [item.id, item]));
+
+  const updateChecklist = useCallback(async (id: string, completed: boolean) => {
+    if (updatingChecklist) return;
+    setUpdatingChecklist(id);
+    try {
+      const res = await fetch('/api/observation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checklistItemId: id, completed }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update checklist');
+    } finally {
+      setUpdatingChecklist(null);
+    }
+  }, [load, updatingChecklist]);
 
   return (
     <div className="space-y-6">
@@ -103,7 +125,7 @@ export default function ObservationPage() {
         <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-500">Phase 0 · Supervised baseline</p>
         <h1 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white">Observation Window</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-          The system must run 10 consecutive clean trading days before any autonomy expands. An automated
+          The system must run 5 consecutive clean trading days before any autonomy expands. An automated
           observer signs one verdict per trading day at 8:15 PM ET; days shown here are displayed exactly as
           recorded on the Jetson, and the append-only record in the backend repo remains authoritative.
         </p>
@@ -138,6 +160,48 @@ export default function ObservationPage() {
           />
         </section>
       )}
+
+      <section className="terminal-panel p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-slate-400">Human completion checklist</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Offline work required before this branch is offered for review. Checkmarks are manager-maintained;
+              they do not advance Phase 0 or authorize a deployment.
+            </p>
+          </div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500">
+            {Array.from(checklistById.values()).filter((item) => item.completed).length} / {OBSERVATION_HUMAN_CHECKLIST.length} complete
+          </p>
+        </div>
+        <div className="mt-4 divide-y divide-white/10 border border-white/10">
+          {OBSERVATION_HUMAN_CHECKLIST.map((item) => {
+            const state = checklistById.get(item.id);
+            const completed = state?.completed === true;
+            const busy = updatingChecklist === item.id;
+            return (
+              <label key={item.id} className="flex cursor-pointer gap-3 bg-white/[0.025] p-4 transition hover:bg-white/[0.045]">
+                <input
+                  type="checkbox"
+                  checked={completed}
+                  disabled={busy}
+                  onChange={(event) => void updateChecklist(item.id, event.target.checked)}
+                  className="mt-1 h-4 w-4 accent-emerald-300 disabled:opacity-40"
+                />
+                <span className="min-w-0">
+                  <span className={`block text-sm font-medium ${completed ? 'text-emerald-200 line-through decoration-emerald-300/40' : 'text-slate-100'}`}>{item.label}</span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">{item.detail}</span>
+                  {state?.updatedAt && (
+                    <span className="mt-2 block font-mono text-[10px] text-slate-600">
+                      {completed ? 'Completed' : 'Reopened'} by {state.updatedBy ?? 'FundManager'} · {new Date(state.updatedAt).toLocaleString()}
+                    </span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="terminal-panel p-5">
         <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-slate-400">Manager updates</h2>

@@ -6,39 +6,50 @@
   --font-mono: var(--font-jetbrains-mono);
 }
 
+:root {
+  --paper: #fcfcf9;
+  --paper-muted: #f5f6f1;
+  --ink: #18342d;
+  --muted: #61736d;
+  --forest: #315d4e;
+  --river: #376d82;
+  --line: #d8dfd9;
+  --gold: #a47b3c;
+}
+
 body {
   min-height: 100vh;
-  background: #06080b;
-  color: #edfdf7;
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
 }
 
 ::selection {
-  background: rgba(0, 255, 178, 0.25);
-  color: #f8fffb;
+  background: #cfe0d5;
+  color: var(--ink);
 }
 
 button,
 a,
 input,
 textarea {
-  outline-color: rgba(0, 255, 178, 0.65);
+  outline-color: var(--river);
 }
 
 .terminal-panel {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.86), rgba(6, 12, 18, 0.92)),
-    radial-gradient(circle at top right, rgba(0, 255, 178, 0.08), transparent 34%);
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 253, 0.92);
+  box-shadow: 0 8px 24px rgba(32, 60, 50, 0.045);
 }
 
 .market-card {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: linear-gradient(145deg, rgba(9, 15, 22, 0.96), rgba(14, 24, 33, 0.9));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(32, 60, 50, 0.035);
 }
 
 .market-card::after {
@@ -46,7 +57,7 @@ textarea {
   position: absolute;
   inset: auto -20% -45% 20%;
   height: 90px;
-  background: radial-gradient(circle, rgba(0, 255, 178, 0.1), transparent 70%);
+  background: radial-gradient(circle, rgba(49, 93, 78, 0.06), transparent 70%);
   pointer-events: none;
 }
 
@@ -56,8 +67,8 @@ textarea {
 }
 
 .data-table th {
-  background: rgba(10, 19, 28, 0.92);
-  color: #90a4ae;
+  background: #f2f5f1;
+  color: var(--muted);
   font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
   font-size: 0.68rem;
   letter-spacing: 0.08em;
@@ -65,28 +76,51 @@ textarea {
 }
 
 .data-table td {
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-top: 1px solid var(--line);
 }
 
 .data-table tr:hover td {
-  background: rgba(0, 255, 178, 0.035);
+  background: #f2f7f3;
 }
 
 .prose {
-  color: #cad5dc;
+  color: #4e625b;
 }
 
 .prose :where(h1,h2,h3,strong) {
-  color: #f8fffb;
+  color: var(--ink);
 }
 
 .prose :where(a) {
-  color: #00ffb2;
+  color: var(--river);
 }
 
 .prose :where(code) {
-  color: #ffd166;
-  background: rgba(255, 209, 102, 0.08);
+  color: #795d2f;
+  background: #f7f1e7;
   padding: 0.12rem 0.28rem;
   border-radius: 0.35rem;
 }
+
+/* The existing screens share Tailwind's dark terminal utility vocabulary. These
+   scoped overrides deliberately translate that vocabulary into the new paper and
+   ink palette while individual screens migrate over time. */
+body .text-white,
+body .text-slate-100,
+body .text-slate-200 { color: var(--ink); }
+body .text-slate-300 { color: #40564e; }
+body .text-slate-400,
+body .text-slate-500 { color: var(--muted); }
+body .text-slate-600 { color: #7a8983; }
+body .text-emerald-200,
+body .text-emerald-300 { color: var(--forest); }
+body .text-cyan-100,
+body .text-cyan-200 { color: var(--river); }
+body .text-amber-100,
+body .text-amber-200 { color: #84652f; }
+body .bg-black\/20,
+body .bg-black\/25,
+body .bg-black\/30 { background-color: #f7f8f4; }
+body .border-white\/10,
+body .border-white\/15 { border-color: var(--line); }
+body .divide-white\/10 > :not(:last-child) { border-color: var(--line); }

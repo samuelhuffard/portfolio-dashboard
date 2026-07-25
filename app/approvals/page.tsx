@@ -11,6 +11,14 @@ import {
 } from '@/lib/proposals';
 import ProposalCard, { agentLabel } from '@/components/approvals/ProposalCard';
 
+interface Agent4Decision {
+  proposalId: string;
+  outcome: 'ACCEPT' | 'REJECT';
+  explanation: string[];
+  policyVersion: string;
+  decidedAt: string;
+}
+
 interface Draft {
   agentId: string;
   ticker: string;
@@ -198,6 +206,7 @@ export default function ApprovalsPage() {
   const [executorOnline, setExecutorOnline] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>('active');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('All');
+  const [agent4Decisions, setAgent4Decisions] = useState<Record<string, Agent4Decision>>({});
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
@@ -238,6 +247,18 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     load();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/portfolio-manager', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (cancelled || !data?.decisions) return;
+        setAgent4Decisions(Object.fromEntries(data.decisions.map((decision: Agent4Decision) => [decision.proposalId, decision])));
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
 
   // Executor (Mac companion) liveness — approved proposals only execute while
@@ -337,14 +358,13 @@ export default function ApprovalsPage() {
   return (
     <div className="max-w-6xl space-y-6">
       <section className="terminal-panel p-5 sm:p-6">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Approval Queue</p>
+        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Agent 4 · Approval Queue</p>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-4xl font-black tracking-[-0.04em] text-white">Proposed Allocations</h1>
+            <h1 className="font-serif text-4xl font-semibold tracking-[-0.04em] text-white">Approval desk</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
-              Accepting a proposal authorizes it for execution: the Mac executor picks it up and places the
-              order through the Robinhood MCP, then records the fill. The dashboard itself never submits
-              orders — it only records signed manager authorization.
+              Review each specialist recommendation alongside Agent 4&apos;s independent portfolio check. Your
+              approval remains the only authorization sent to the execution queue.
             </p>
           </div>
           <div className="border border-amber-200/20 bg-amber-200/[0.04] px-4 py-3 font-mono text-xs uppercase tracking-[0.16em] text-amber-100">
@@ -491,6 +511,7 @@ export default function ApprovalsPage() {
                   onToggleExpanded={toggleExpanded}
                   onAccept={(id) => decide(id, 'ApprovedForBrokerReview')}
                   onReject={startReject}
+                  agent4Decision={agent4Decisions[proposal.id]}
                 />
               ))
             )}
@@ -532,6 +553,7 @@ export default function ApprovalsPage() {
                   proposal={proposal}
                   expanded={expandedIds.has(proposal.id)}
                   onToggleExpanded={toggleExpanded}
+                  agent4Decision={agent4Decisions[proposal.id]}
                 />
               ))
             )}

@@ -40,7 +40,7 @@ export default function AppShell({ children, role }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isAuthRoute = pathname.startsWith("/sign-in");
-  const hasSidebar = !isAuthRoute && role !== null;
+  const hasNavigation = !isAuthRoute && role !== null;
   const shouldRedirectClientHome = role === "Client" && pathname === "/";
 
   useEffect(() => {
@@ -55,15 +55,11 @@ export default function AppShell({ children, role }: AppShellProps) {
 
   return (
     <>
-      {hasSidebar && <Sidebar role={role} />}
+      {hasNavigation && <Sidebar role={role} />}
       <main
-        className={`relative min-h-screen overflow-hidden px-3 pb-28 pt-3 sm:px-5 lg:px-8 lg:py-7 lg:pb-10 ${
-          hasSidebar ? "lg:ml-72" : ""
-        }`}
+        className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-7 sm:px-6 lg:px-8 lg:py-10"
       >
-        <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_20%_10%,rgba(0,255,178,0.14),transparent_27%),radial-gradient(circle_at_90%_5%,rgba(255,184,77,0.12),transparent_26%),linear-gradient(135deg,#06080b_0%,#0d1117_42%,#111827_100%)]" />
-        <div className="pointer-events-none fixed inset-0 -z-10 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,.7)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.7)_1px,transparent_1px)] [background-size:56px_56px]" />
-        <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-28 bg-gradient-to-b from-cyan-300/10 to-transparent" />
+        <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_86%_0%,rgba(102,128,116,.11),transparent_28%),linear-gradient(180deg,#fcfcf9_0%,#f5f6f1_100%)]" />
         <PageTransition>
           <div className="mx-auto max-w-[1540px]">
             {shouldRedirectClientHome ? (

@@ -2,6 +2,10 @@ import { randomUUID } from "crypto";
 import { getRedis } from "./redis";
 import {
   MAX_UPDATE_LENGTH,
+  defaultObservationChecklist,
+  isObservationChecklistItemId,
+  type ObservationChecklistItemId,
+  type ObservationChecklistState,
   type ObservationUpdate,
   type Phase0DayRecord,
   validateUpdateText,
@@ -31,6 +35,7 @@ export type {
 const OBSERVATION_INDEX_KEY = "pm:phase0-observation:index";
 const OBSERVATION_PREFIX = "pm:phase0-observation:";
 const UPDATES_KEY = "pm:observation:updates";
+const HUMAN_CHECKLIST_KEY = "pm:observation:human-checklist";
 const MAX_INDEX_DAYS = 90;
 const MAX_UPDATES = 200;
 
@@ -102,4 +107,51 @@ export async function appendObservationUpdate({
   await redis.lpush(UPDATES_KEY, JSON.stringify(update));
   await redis.ltrim(UPDATES_KEY, 0, MAX_UPDATES - 1);
   return update;
+}
+
+export async function readObservationChecklist(): Promise<ObservationChecklistState[]> {
+  const defaults = defaultObservationChecklist();
+  const redis = getRedis();
+  if (!redis) return defaults;
+  try {
+    const stored = parseStored<ObservationChecklistState[]>(await redis.get(HUMAN_CHECKLIST_KEY));
+    if (!Array.isArray(stored)) return defaults;
+    const byId = new Map(stored.filter((item) => isObservationChecklistItemId(item?.id)).map((item) => [item.id, item]));
+    return defaults.map((item) => {
+      const saved = byId.get(item.id);
+      return saved && typeof saved.completed === "boolean"
+        ? {
+            id: item.id,
+            completed: saved.completed,
+            updatedAt: typeof saved.updatedAt === "string" ? saved.updatedAt : null,
+            updatedBy: typeof saved.updatedBy === "string" ? saved.updatedBy : null,
+          }
+        : item;
+    });
+  } catch (error) {
+    console.warn("[Observation] failed to read human checklist:", error instanceof Error ? error.message : error);
+    return defaults;
+  }
+}
+
+export async function updateObservationChecklist({
+  id,
+  completed,
+  updatedBy,
+}: {
+  id: ObservationChecklistItemId;
+  completed: boolean;
+  updatedBy: string;
+}): Promise<ObservationChecklistState[]> {
+  if (!isObservationChecklistItemId(id)) throw new Error("Unknown observation checklist item.");
+  const redis = getRedis();
+  if (!redis) throw new Error("Redis is not configured.");
+  const current = await readObservationChecklist();
+  const now = new Date().toISOString();
+  const next = current.map((item) => item.id === id
+    ? { ...item, completed, updatedAt: now, updatedBy: String(updatedBy || "FundManager").slice(0, 120) }
+    : item
+  );
+  await redis.set(HUMAN_CHECKLIST_KEY, JSON.stringify(next));
+  return next;
 }

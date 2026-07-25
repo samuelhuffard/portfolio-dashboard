@@ -1,11 +1,13 @@
 import type { PerformanceRow } from "./sheets";
 
-const CASH_FLOW_MIN_DOLLARS = 10;
-const CASH_FLOW_MIN_PERCENT = 0.15;
-
 type ValueSnapshot = Pick<PerformanceRow, "date" | "spyPrice"> & {
   portfolioValue?: PerformanceRow["portfolioValue"];
 };
+
+export interface CashFlow {
+  date: string;
+  amount: number;
+}
 
 export interface AdjustedValuePoint {
   date: string;
@@ -26,22 +28,37 @@ interface ReturnPoint {
 }
 
 function validValueSnapshots(performance: ValueSnapshot[]): Array<ValueSnapshot & { portfolioValue: number }> {
-  return performance.filter(
-    (row): row is ValueSnapshot & { portfolioValue: number } =>
-      row.portfolioValue !== null && row.portfolioValue !== undefined && row.portfolioValue > 0,
-  );
+  // The sheet is append-only, so accounting corrections can arrive after newer
+  // rows. Use the final snapshot for each date and then calculate in calendar
+  // order; compounding in sheet order is not a valid return calculation.
+  const latestByDate = new Map<string, ValueSnapshot & { portfolioValue: number }>();
+  for (const row of performance) {
+    if (row.portfolioValue !== null && row.portfolioValue !== undefined && row.portfolioValue > 0) {
+      latestByDate.set(row.date, row as ValueSnapshot & { portfolioValue: number });
+    }
+  }
+  return [...latestByDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function cashFlowTotals(cashFlows: CashFlow[]): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const flow of cashFlows) {
+    if (!flow.date || !Number.isFinite(flow.amount) || flow.amount === 0) continue;
+    totals.set(flow.date, (totals.get(flow.date) ?? 0) + flow.amount);
+  }
+  return totals;
 }
 
 /**
- * Performance rows are snapshots of account equity. A material change between
- * two snapshots that is too large to plausibly be market movement is treated
- * as a deposit or withdrawal, never investment return. This deliberately
- * avoids NAV/unit because the historical ledger contains correction rows that
- * can rewrite NAV without changing the underlying Robinhood account value.
+ * Performance rows are account-equity snapshots. Returns are adjusted only by
+ * signed investor-ledger cash flows, never by guessing from movement size. A
+ * cash flow dated on a closing snapshot is removed before measuring that
+ * interval's market return.
  */
-function buildReturnPath(performance: ValueSnapshot[]): ReturnPoint[] {
+function buildReturnPath(performance: ValueSnapshot[], cashFlows: CashFlow[] = []): ReturnPoint[] {
   const snapshots = validValueSnapshots(performance);
   if (snapshots.length === 0) return [];
+  const flowsByDate = cashFlowTotals(cashFlows);
 
   let factor = 1;
   const points: ReturnPoint[] = [{
@@ -53,12 +70,8 @@ function buildReturnPath(performance: ValueSnapshot[]): ReturnPoint[] {
   for (let index = 1; index < snapshots.length; index += 1) {
     const previous = snapshots[index - 1];
     const current = snapshots[index];
-    const change = current.portfolioValue - previous.portfolioValue;
-    const cashFlowThreshold = Math.max(CASH_FLOW_MIN_DOLLARS, previous.portfolioValue * CASH_FLOW_MIN_PERCENT);
-    const isCashFlow = Math.abs(change) >= cashFlowThreshold;
-    const marketFactor = isCashFlow
-      ? 1
-      : current.portfolioValue / previous.portfolioValue;
+    const cashFlow = flowsByDate.get(current.date) ?? 0;
+    const marketFactor = (current.portfolioValue - cashFlow) / previous.portfolioValue;
 
     // Fail closed on a malformed snapshot instead of allowing it to invert or
     // explode the entire performance history.
@@ -79,9 +92,9 @@ function buildReturnPath(performance: ValueSnapshot[]): ReturnPoint[] {
  * path while scaling every historical point to today's account value, so a
  * deposit reads as capital that was present all along rather than a spike.
  */
-export function buildAdjustedValueSeries(performance: ValueSnapshot[]): AdjustedValuePoint[] {
+export function buildAdjustedValueSeries(performance: ValueSnapshot[], cashFlows: CashFlow[] = []): AdjustedValuePoint[] {
   const snapshots = validValueSnapshots(performance);
-  const path = buildReturnPath(snapshots);
+  const path = buildReturnPath(snapshots, cashFlows);
   if (path.length === 0) return [];
 
   const latestValue = snapshots.at(-1)?.portfolioValue;
@@ -93,12 +106,12 @@ export function buildAdjustedValueSeries(performance: ValueSnapshot[]): Adjusted
 }
 
 /**
- * Cash-flow-adjusted portfolio return against SPY. Both lines use the same
+ * Cash-flow-adjusted portfolio return against SPY price return. Both lines use the same
  * first snapshot that has an SPY price, so the comparison remains continuous
  * even when investor accounting is corrected later.
  */
-export function buildPerformanceComparison(performance: ValueSnapshot[]): PerformanceComparisonPoint[] {
-  const path = buildReturnPath(performance);
+export function buildPerformanceComparison(performance: ValueSnapshot[], cashFlows: CashFlow[] = []): PerformanceComparisonPoint[] {
+  const path = buildReturnPath(performance, cashFlows);
   const baseIndex = path.findIndex((point) => point.spyPrice !== null && point.spyPrice > 0);
   if (baseIndex === -1) return [];
 

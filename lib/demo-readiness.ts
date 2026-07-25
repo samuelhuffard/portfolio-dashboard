@@ -30,7 +30,6 @@ export const CORE_ROUTES: CoreRoute[] = [
   { key: "command", label: "Command", path: "/", marker: "Sam's Personal Investor" },
   { key: "positions", label: "Positions", path: "/holdings", marker: "Positions" },
   { key: "agents", label: "Agents", path: "/agents", marker: "Agents" },
-  { key: "recommendations", label: "Recommendations", path: "/funnel", marker: "Discovery Funnel" },
   { key: "approvals", label: "Approvals", path: "/approvals", marker: "Proposed Allocations" },
   { key: "strategy", label: "Strategy", path: "/strategy", marker: "Strategy" },
   { key: "history", label: "History", path: "/history", marker: "Report history" },
@@ -41,7 +40,6 @@ export interface ReadinessPayloads {
   investors?: unknown;
   proposals?: unknown;
   companion?: unknown;
-  funnel?: unknown;
   strategy?: unknown;
   history?: unknown;
   news?: unknown;
@@ -51,7 +49,6 @@ export interface ReadinessPayloads {
 export interface ReadinessOptions {
   now?: Date;
   maxFreshMinutes?: number;
-  maxAgentFreshMinutes?: number;
   requireCompanionOnline?: boolean;
 }
 
@@ -294,37 +291,6 @@ function validateCompanion(payload: unknown, requireOnline: boolean): ReadinessC
   }, status === "pass" ? undefined : "COMPANION_HEARTBEAT_NOT_READY")];
 }
 
-function validateFunnel(payload: unknown, now: Date, maxFreshMinutes: number): ReadinessCheck[] {
-  const key = "status.agents";
-  const label = "Agent status and policy";
-  if (!isRecord(payload)) return [missingPayload(key, label)];
-  const snapshots = payload.snapshots;
-  const health = isRecord(payload.researchDataHealth) ? payload.researchDataHealth : null;
-  const snapshotsValid = Array.isArray(snapshots) && snapshots.length > 0 && snapshots.every((snapshot) => {
-    if (!isRecord(snapshot) || typeof snapshot.agentId !== "string" || typeof snapshot.updatedAt !== "string") return false;
-    const age = ageMinutes(snapshot.updatedAt, now);
-    return age !== null && age >= -5 && age <= maxFreshMinutes;
-  });
-  const healthValid = health?.availability === "available";
-  const policyVersion = health?.researchData?.selectionPolicyVersion ?? health?.shadowSelection?.policyVersion ?? null;
-  const revisionPresent = typeof policyVersion === "string" || (Array.isArray(snapshots) && snapshots.some((snapshot) => isRecord(snapshot) && typeof snapshot.updatedAt === "string"));
-  const status: ReadinessStatus = snapshotsValid && healthValid && revisionPresent ? "pass" : "fail";
-  return [check(key, label, status, {
-    snapshots: Array.isArray(snapshots) ? snapshots.length : -1,
-    snapshotFreshness: snapshotsValid,
-    health: health?.availability === "available" ? "available" : "unavailable",
-    policyVersion: typeof policyVersion === "string" ? policyVersion : null,
-    researchDataEnabled: health?.researchDataEnabled === true,
-    fingerprint: projectionFingerprint("agents", {
-      snapshotCount: Array.isArray(snapshots) ? snapshots.length : null,
-      snapshotDates: Array.isArray(snapshots) ? snapshots.map((snapshot) => isRecord(snapshot) && typeof snapshot.updatedAt === "string" ? snapshot.updatedAt : null) : null,
-      availability: health?.availability ?? null,
-      researchDataEnabled: health?.researchDataEnabled === true,
-      policyVersion: typeof policyVersion === "string" ? policyVersion : null,
-    }),
-  }, status === "pass" ? undefined : "AGENT_STATUS_OR_REVISION_NOT_READY")];
-}
-
 function validateStrategy(payload: unknown): ReadinessCheck[] {
   const key = "data.strategy";
   const label = "Strategy read";
@@ -406,13 +372,11 @@ function validateActivity(payload: unknown): ReadinessCheck[] {
 export function buildDataReadinessReport(payloads: ReadinessPayloads, options: ReadinessOptions = {}): ReadinessReport {
   const now = options.now ?? new Date();
   const maxFreshMinutes = options.maxFreshMinutes ?? 24 * 60;
-  const maxAgentFreshMinutes = options.maxAgentFreshMinutes ?? maxFreshMinutes;
   const checks = [
     ...validatePortfolio(payloads.portfolio, now, maxFreshMinutes),
     ...validateInvestors(payloads.investors, now),
     ...validateProposals(payloads.proposals),
     ...validateCompanion(payloads.companion, options.requireCompanionOnline ?? true),
-    ...validateFunnel(payloads.funnel, now, maxAgentFreshMinutes),
     ...validateStrategy(payloads.strategy),
     ...validateHistory(payloads.history),
     ...validateNews(payloads.news),

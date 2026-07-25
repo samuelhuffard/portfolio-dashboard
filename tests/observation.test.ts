@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   summarizeObservationWindow,
   validateUpdateText,
+  defaultObservationChecklist,
+  isObservationChecklistItemId,
   verdictLabel,
   verdictTone,
   type Phase0DayRecord,
@@ -35,7 +37,7 @@ test("a failing most-recent day reports zero regardless of earlier clean days", 
   ];
   const window = summarizeObservationWindow(days);
   assert.equal(window.consecutiveCleanDays, 0);
-  assert.match(window.headline, /0 of 10/);
+  assert.match(window.headline, /0 of 5/);
 });
 
 test("missing countsTowardSafetyWindow is never treated as clean", () => {
@@ -78,4 +80,12 @@ test("update text is trimmed, control characters are stripped, and bounds are en
   assert.throws(() => validateUpdateText("   "), /required/);
   assert.throws(() => validateUpdateText("x".repeat(2001)), /at most 2000/);
   assert.equal(validateUpdateText("x".repeat(2000)).length, 2000);
+});
+
+test("human checklist has stable ids and begins incomplete", () => {
+  const checklist = defaultObservationChecklist();
+  assert.equal(checklist.length, 5);
+  assert.equal(checklist.every((item) => item.completed === false && item.updatedAt === null), true);
+  assert.equal(isObservationChecklistItemId("lineage-audit"), true);
+  assert.equal(isObservationChecklistItemId("not-a-checklist-item"), false);
 });
