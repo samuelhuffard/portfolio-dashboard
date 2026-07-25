@@ -149,7 +149,7 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
 
       <aside className="mt-3 border border-[#cbd9d0] bg-[#f3f7f3] px-3 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="pm-label">Agent 4 portfolio review</p>
+          <p className="pm-label">Kairos · Portfolio review</p>
           {agent4Decision && (
             <span className={`border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] ${agent4Decision.outcome === 'ACCEPT' ? 'border-[#a7c5b5] text-[#315d4e]' : 'border-[#e3c2bf] text-[#9a4039]'}`}>
               {agent4Decision.outcome === 'ACCEPT' ? 'Within policy' : 'Blocked in '}
@@ -159,7 +159,7 @@ export default function ProposalCard({ proposal, expanded, onToggleExpanded, onA
         <p className="mt-1.5 text-xs leading-5 text-[var(--muted)]">
           {agent4Decision
             ? `${agent4Decision.explanation.join(' ')} Policy ${agent4Decision.policyVersion}.`
-            : 'Awaiting Agent 4’s independent review. This does not affect your ability to approve or reject the proposal.'}
+            : 'Awaiting Kairos’s independent review. This does not affect your ability to approve or reject the proposal.'}
         </p>
       </aside>
 

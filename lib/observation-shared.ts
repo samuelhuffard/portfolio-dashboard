@@ -39,7 +39,7 @@ export const OBSERVATION_HUMAN_CHECKLIST = [
   { id: "pure-quality-harness", label: "Build a truly disconnected proposal-quality harness", detail: "No model, network, scheduler, Redis, proposal, or approval dependency." },
   { id: "bench30-corpus", label: "Freeze a real local point-in-time evidence corpus", detail: "Preserved T0 source packets, hashes, chronology, expected outcomes, and gap list." },
   { id: "lineage-audit", label: "Complete the cross-runtime proposal-lineage audit", detail: "Backend, dashboard, companion, all five sources, readers/writers, v1 disposition, and no-go list." },
-  { id: "agent4-paired-shadow", label: "Run the Agent 4 paired-shadow laboratory", detail: "Versioned draft policy plus deterministic specialist, portfolio, and Sam-label scenarios." },
+  { id: "agent4-paired-shadow", label: "Run the Kairos paired-shadow laboratory", detail: "Versioned draft policy plus deterministic specialist, portfolio, and Sam-label scenarios." },
   { id: "trust-blueprints", label: "Finish separate trust-release blueprints", detail: "Exact code/record maps, test matrices, rollback drills, reviewers, and clock effects." },
 ] as const;
 

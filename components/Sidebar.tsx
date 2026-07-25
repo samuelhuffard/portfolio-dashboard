@@ -17,7 +17,7 @@ const links: NavItem[] = [
   { href: '/holdings', label: 'Positions', roles: ['FundManager'] },
   { href: '/investors', label: { FundManager: 'Investors', Client: 'My Investment' }, roles: ['FundManager', 'Client'] },
   { href: '/agents', label: 'Agents', roles: ['FundManager'] },
-  { href: '/portfolio-manager', label: 'Agent 4', roles: ['FundManager'] },
+  { href: '/portfolio-manager', label: 'Kairos', roles: ['FundManager'] },
   { href: '/research', label: 'Labs', roles: ['FundManager'] },
 ];
 

@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     return NextResponse.json(body, { status: response.status });
   } catch (error) {
     return NextResponse.json(
-      { error: `Agent 4 shadow state is unavailable: ${error instanceof Error ? error.message : "unknown error"}` },
+      { error: `Kairos shadow state is unavailable: ${error instanceof Error ? error.message : "unknown error"}` },
       { status: 502 },
     );
   }

@@ -358,12 +358,12 @@ export default function ApprovalsPage() {
   return (
     <div className="max-w-6xl space-y-6">
       <section className="pm-panel border border-[var(--rule)] p-5 sm:p-6">
-        <p className="pm-label">Agent 4 · Approval Queue</p>
+        <p className="pm-label">Kairos · Approval Queue</p>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="font-serif text-[22px] font-semibold tracking-[-0.01em] text-[var(--ink)]">Approval desk</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--muted)]">
-              Review each specialist recommendation alongside Agent 4&apos;s independent portfolio check. Your
+              Review each specialist recommendation alongside Kairos&apos;s independent portfolio check. Your
               approval remains the only authorization sent to the execution queue.
             </p>
           </div>
