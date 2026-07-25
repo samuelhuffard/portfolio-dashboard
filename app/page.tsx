@@ -33,8 +33,11 @@ import {
   summarizeSeries,
   type ChartPeriod,
 } from '@/lib/command-stats';
+
+const CHART_VIEWS = ['Return', 'Balance'] as const;
+type ChartView = (typeof CHART_VIEWS)[number];
 import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
-import { buildActualValueSeries, buildPerformanceComparison } from '@/lib/portfolio-chart';
+import { buildActualValueSeries, buildPerformanceComparison, buildReturnSeries } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
 /* Chart colours are the literals the handoff specifies. */
@@ -72,6 +75,7 @@ export default function CommandPage() {
   const { data, error, loading } = usePortfolio();
   const [period, setPeriod] = useState<ChartPeriod>('1M');
   const [showBenchmark, setShowBenchmark] = useState(true);
+  const [view, setView] = useState<ChartView>('Return');
 
   const totals = data?.totals ?? null;
   const cash = data?.cash ?? null;
@@ -79,8 +83,11 @@ export default function CommandPage() {
 
   const comparison = data ? buildPerformanceComparison(data.performance, data.cashFlows) : [];
   const hasBenchmarkData = comparison.length >= 2;
-  // The dollar axis plots the recorded balance. Contribution-adjusted
-  // performance is the benchmark view's job, on a percentage axis.
+  // Return is the default: contributions are removed from the interval they
+  // land in, so funding the account leaves no step and only market movement
+  // shows. Balance plots the recorded dollar value, where deposits are real
+  // steps and dwarf the performance they sit beside.
+  const returns = data ? buildReturnSeries(data.performance, data.cashFlows) : [];
   const growth = data ? buildActualValueSeries(data.performance) : [];
 
   const windowed = filterByPeriod(growth, period);
@@ -88,11 +95,24 @@ export default function CommandPage() {
   // A line needs two points. Fall back to the value series when the benchmark
   // view has too few points in this window, otherwise the chart would render a
   // comparison series that cannot draw anything.
-  const benchmarkView = showBenchmark && hasBenchmarkData && windowedComparison.length >= 2;
-  const plotted = benchmarkView ? windowedComparison : windowed;
+  const windowedReturns = filterByPeriod(returns, period);
+  const isReturnView = view === 'Return';
+  const benchmarkView =
+    isReturnView && showBenchmark && hasBenchmarkData && windowedComparison.length >= 2;
+  const plotted = benchmarkView
+    ? windowedComparison
+    : isReturnView
+      ? windowedReturns
+      : windowed;
+
+  // Stats describe whichever axis is on screen. Drawdown in particular must be
+  // measured on the return series: computed from balances it would count a
+  // deposit-driven rise as a peak and report a fictitious fall afterwards.
+  const summary = summarizeSeries(
+    isReturnView ? windowedReturns.map((p) => p.Portfolio) : windowed.map((p) => p.Value),
+  );
   // A lone record is shown as a point, since a single point has no line.
   const soloDot = plotted.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
-  const summary = summarizeSeries(windowed.map((p) => p.Value));
   const vsBenchmark = hasBenchmarkData
     ? relativeToBenchmark(
         windowedComparison.map((p) => p.Portfolio),
@@ -161,11 +181,11 @@ export default function CommandPage() {
             <PanelHead
               title="Portfolio value"
               caption={
-                benchmarkView
-                  ? 'Return since the first benchmark close, adjusted for contributions and withdrawals'
-                  : hasBenchmarkData
-                    ? 'Account value as recorded at each close'
-                    : 'Account value as recorded at each close · no SPY history, benchmark unavailable'
+                isReturnView
+                  ? hasBenchmarkData
+                    ? 'Investment return, adjusted for contributions and withdrawals'
+                    : 'Investment return, adjusted for contributions and withdrawals · no SPY history, benchmark unavailable'
+                  : 'Account value as recorded at each close · deposits appear as steps'
               }
               right={
                 <div className="flex items-center" style={{ gap: 16 }}>
@@ -174,19 +194,25 @@ export default function CommandPage() {
                     style={{
                       gap: 6,
                       fontSize: 11.5,
-                      color: hasBenchmarkData ? 'var(--muted)' : 'var(--disabled)',
-                      cursor: hasBenchmarkData ? 'pointer' : 'not-allowed',
+                      color: hasBenchmarkData && isReturnView ? 'var(--muted)' : 'var(--disabled)',
+                      cursor: hasBenchmarkData && isReturnView ? 'pointer' : 'not-allowed',
                     }}
                   >
                     <input
                       type="checkbox"
-                      checked={showBenchmark && hasBenchmarkData}
-                      disabled={!hasBenchmarkData}
+                      checked={showBenchmark && hasBenchmarkData && isReturnView}
+                      disabled={!hasBenchmarkData || !isReturnView}
                       onChange={(e) => setShowBenchmark(e.target.checked)}
                       style={{ margin: 0, width: 12, height: 12, accentColor: 'var(--link)' }}
                     />
                     S&amp;P 500
                   </label>
+                  <Segmented
+                    label="Chart view"
+                    options={CHART_VIEWS}
+                    value={view}
+                    onChange={setView}
+                  />
                   <Segmented
                     label="Chart period"
                     options={CHART_PERIODS}
@@ -237,20 +263,18 @@ export default function CommandPage() {
                                   0.18,
                                   0.5,
                                 )
-                              : paddedDomain(windowed.map((d) => d.Value))
+                              : isReturnView
+                                ? paddedDomain(windowedReturns.map((d) => d.Portfolio), 0.18, 0.5)
+                                : paddedDomain(windowed.map((d) => d.Value))
                           }
                           tickFormatter={(v) =>
-                            benchmarkView
-                              ? `${Number(v).toFixed(1)}%`
-                              : fmtAxisDollar(Number(v))
+                            isReturnView ? `${Number(v).toFixed(1)}%` : fmtAxisDollar(Number(v))
                           }
                         />
                         <Tooltip
                           contentStyle={TOOLTIP_STYLE}
                           formatter={(v) =>
-                            benchmarkView
-                              ? `${Number(v).toFixed(2)}%`
-                              : fmtCurrency(Number(v))
+                            isReturnView ? `${Number(v).toFixed(2)}%` : fmtCurrency(Number(v))
                           }
                         />
                         {benchmarkView ? (
@@ -276,7 +300,7 @@ export default function CommandPage() {
                         ) : (
                           <Area
                             type="monotone"
-                            dataKey="Value"
+                            dataKey={isReturnView ? 'Portfolio' : 'Value'}
                             stroke="#1f4b76"
                             strokeWidth={1.75}
                             fill="none"
@@ -294,15 +318,37 @@ export default function CommandPage() {
                 >
                   <StatCell label="Period change" first>
                     <Figure
-                      value={summary.change === null ? '—' : fmtCurrency(summary.change)}
+                      value={
+                        summary.change === null
+                          ? '—'
+                          : isReturnView
+                            ? `${summary.change >= 0 ? '+' : ''}${summary.change.toFixed(2)} pt`
+                            : fmtCurrency(summary.change)
+                      }
                       tone={summary.change !== null && summary.change >= 0 ? 'pos' : undefined}
                     />
                   </StatCell>
                   <StatCell label="High">
-                    <Figure value={summary.high === null ? '—' : fmtCurrency(summary.high)} />
+                    <Figure
+                      value={
+                        summary.high === null
+                          ? '—'
+                          : isReturnView
+                            ? `${summary.high.toFixed(2)}%`
+                            : fmtCurrency(summary.high)
+                      }
+                    />
                   </StatCell>
                   <StatCell label="Low">
-                    <Figure value={summary.low === null ? '—' : fmtCurrency(summary.low)} />
+                    <Figure
+                      value={
+                        summary.low === null
+                          ? '—'
+                          : isReturnView
+                            ? `${summary.low.toFixed(2)}%`
+                            : fmtCurrency(summary.low)
+                      }
+                    />
                   </StatCell>
                   <StatCell label="Max drawdown">
                     <Figure

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildActualValueSeries, buildAdjustedValueSeries, buildPerformanceComparison, paddedReturnDomain } from "../lib/portfolio-chart";
+import { buildActualValueSeries, buildAdjustedValueSeries, buildReturnSeries, buildPerformanceComparison, paddedReturnDomain } from "../lib/portfolio-chart";
 import type { PerformanceRow } from "../lib/sheets";
 
 test("cash-flow-adjusted value uses signed deposits and ends at the actual account value", () => {
@@ -158,4 +158,52 @@ test("SPY comparison still returns nothing when no close is ever recorded", () =
     [],
   );
   assert.deepEqual(comparison, []);
+});
+
+// ─── Return series: deposits must not read as performance ───────────────────
+
+test("return series shows no step when the account is funded", () => {
+  // Funded $50 -> $75 -> $100 with no market movement at all. A balance chart
+  // shows two large steps; performance is flat, which is the truth.
+  const performance = [
+    { date: "2026-06-01", portfolioValue: 50, spyPrice: null },
+    { date: "2026-06-02", portfolioValue: 75, spyPrice: null },
+    { date: "2026-06-03", portfolioValue: 100, spyPrice: null },
+  ];
+  const flows = [
+    { date: "2026-06-02", amount: 25 },
+    { date: "2026-06-03", amount: 25 },
+  ];
+
+  const series = buildReturnSeries(performance, flows);
+  assert.deepEqual(series.map((p) => p.date), ["2026-06-01", "2026-06-02", "2026-06-03"]);
+  for (const point of series) {
+    assert.ok(Math.abs(point.Portfolio) < 1e-9, `${point.date} should be flat, got ${point.Portfolio}`);
+  }
+});
+
+test("return series still reports genuine market movement", () => {
+  // $50 funded to $75, then the market takes it to $90: +20% on the interval.
+  const series = buildReturnSeries(
+    [
+      { date: "2026-06-01", portfolioValue: 50, spyPrice: null },
+      { date: "2026-06-02", portfolioValue: 75, spyPrice: null },
+      { date: "2026-06-03", portfolioValue: 90, spyPrice: null },
+    ],
+    [{ date: "2026-06-02", amount: 25 }],
+  );
+  assert.ok(Math.abs(series[1].Portfolio) < 1e-9);
+  assert.ok(Math.abs(series[2].Portfolio - 20) < 1e-9);
+});
+
+test("return series starts at zero and needs no SPY history", () => {
+  const series = buildReturnSeries(
+    [
+      { date: "2026-06-01", portfolioValue: 100, spyPrice: null },
+      { date: "2026-06-02", portfolioValue: 110, spyPrice: null },
+    ],
+    [],
+  );
+  assert.equal(series[0].Portfolio, 0);
+  assert.ok(Math.abs(series[1].Portfolio - 10) < 1e-9);
 });

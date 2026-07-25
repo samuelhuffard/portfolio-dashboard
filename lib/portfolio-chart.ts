@@ -87,9 +87,37 @@ function buildReturnPath(performance: ValueSnapshot[], cashFlows: CashFlow[] = [
   return points;
 }
 
+export interface ReturnSeriesPoint {
+  date: string;
+  Portfolio: number;
+}
+
+/**
+ * Cumulative investment return, in percent, since the first snapshot.
+ *
+ * This is the honest way to show performance in the presence of deposits: the
+ * contribution is removed from the interval it lands in, so funding the account
+ * from $50 to $75 to $100 produces no step at all — only the market's own
+ * movement remains. Unlike `buildAdjustedValueSeries` it makes no dollar claim,
+ * so it cannot restate a balance the account never held, and unlike
+ * `buildPerformanceComparison` it does not require any SPY close to exist.
+ */
+export function buildReturnSeries(
+  performance: ValueSnapshot[],
+  cashFlows: CashFlow[] = [],
+): ReturnSeriesPoint[] {
+  const path = buildReturnPath(performance, cashFlows);
+  if (path.length === 0) return [];
+  const baseFactor = path[0].factor;
+  return path.map((point) => ({
+    date: point.date,
+    Portfolio: (point.factor / baseFactor - 1) * 100,
+  }));
+}
+
 /**
  * The account value actually recorded on each snapshot date — no rebasing, no
- * inference. This is what the "Portfolio value" chart plots.
+ * inference. This is what the chart's balance view plots.
  *
  * Prefer this over `buildAdjustedValueSeries` for anything denominated in
  * dollars. The adjusted series rebases history onto today's value, so any cash
