@@ -40,25 +40,36 @@ function validValueSnapshots(performance: ValueSnapshot[]): Array<ValueSnapshot 
   return [...latestByDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function cashFlowTotals(cashFlows: CashFlow[]): Map<string, number> {
-  const totals = new Map<string, number>();
+/**
+ * Net cash flow landing in the interval `(afterDate, throughDate]`.
+ *
+ * Flows are matched to the interval they fall in, not to an exact snapshot
+ * date. Exact-date matching silently mis-stated performance whenever a deposit
+ * landed on a day the sheet has no row for — a weekend, a holiday, or any gap
+ * in the series — because the money then had no interval to be removed from and
+ * was compounded as market return instead. A $50 account funded to $75 that way
+ * reads as a 50% gain.
+ *
+ * ISO dates compare correctly as strings.
+ */
+function netFlowInInterval(cashFlows: CashFlow[], afterDate: string, throughDate: string): number {
+  let total = 0;
   for (const flow of cashFlows) {
     if (!flow.date || !Number.isFinite(flow.amount) || flow.amount === 0) continue;
-    totals.set(flow.date, (totals.get(flow.date) ?? 0) + flow.amount);
+    if (flow.date > afterDate && flow.date <= throughDate) total += flow.amount;
   }
-  return totals;
+  return total;
 }
 
 /**
  * Performance rows are account-equity snapshots. Returns are adjusted only by
- * signed investor-ledger cash flows, never by guessing from movement size. A
- * cash flow dated on a closing snapshot is removed before measuring that
- * interval's market return.
+ * signed investor-ledger cash flows, never by guessing from movement size.
+ * Every flow is removed from the interval it lands in before that interval's
+ * market return is measured, so funding the account never reads as a gain.
  */
 function buildReturnPath(performance: ValueSnapshot[], cashFlows: CashFlow[] = []): ReturnPoint[] {
   const snapshots = validValueSnapshots(performance);
   if (snapshots.length === 0) return [];
-  const flowsByDate = cashFlowTotals(cashFlows);
 
   let factor = 1;
   const points: ReturnPoint[] = [{
@@ -70,7 +81,7 @@ function buildReturnPath(performance: ValueSnapshot[], cashFlows: CashFlow[] = [
   for (let index = 1; index < snapshots.length; index += 1) {
     const previous = snapshots[index - 1];
     const current = snapshots[index];
-    const cashFlow = flowsByDate.get(current.date) ?? 0;
+    const cashFlow = netFlowInInterval(cashFlows, previous.date, current.date);
     const marketFactor = (current.portfolioValue - cashFlow) / previous.portfolioValue;
 
     // Fail closed on a malformed snapshot instead of allowing it to invert or

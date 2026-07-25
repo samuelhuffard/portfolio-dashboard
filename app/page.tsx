@@ -34,10 +34,15 @@ import {
   type ChartPeriod,
 } from '@/lib/command-stats';
 
-const CHART_VIEWS = ['Return', 'Balance'] as const;
+const CHART_VIEWS = ['Normalized', 'Return', 'Balance'] as const;
 type ChartView = (typeof CHART_VIEWS)[number];
 import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
-import { buildActualValueSeries, buildPerformanceComparison, buildReturnSeries } from '@/lib/portfolio-chart';
+import {
+  buildActualValueSeries,
+  buildAdjustedValueSeries,
+  buildPerformanceComparison,
+  buildReturnSeries,
+} from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
 /* Chart colours are the literals the handoff specifies. */
@@ -75,7 +80,7 @@ export default function CommandPage() {
   const { data, error, loading } = usePortfolio();
   const [period, setPeriod] = useState<ChartPeriod>('1M');
   const [showBenchmark, setShowBenchmark] = useState(true);
-  const [view, setView] = useState<ChartView>('Return');
+  const [view, setView] = useState<ChartView>('Normalized');
 
   const totals = data?.totals ?? null;
   const cash = data?.cash ?? null;
@@ -88,6 +93,10 @@ export default function CommandPage() {
   // shows. Balance plots the recorded dollar value, where deposits are real
   // steps and dwarf the performance they sit beside.
   const returns = data ? buildReturnSeries(data.performance, data.cashFlows) : [];
+  // Normalized restates every point in today's capital, so a deposit is a level
+  // shift of the whole history rather than a step in it — the curve then moves
+  // only with the market, while still ending on the real balance.
+  const normalized = data ? buildAdjustedValueSeries(data.performance, data.cashFlows) : [];
   const growth = data ? buildActualValueSeries(data.performance) : [];
 
   const windowed = filterByPeriod(growth, period);
@@ -99,17 +108,22 @@ export default function CommandPage() {
   const isReturnView = view === 'Return';
   const benchmarkView =
     isReturnView && showBenchmark && hasBenchmarkData && windowedComparison.length >= 2;
+  const windowedNormalized = filterByPeriod(normalized, period);
   const plotted = benchmarkView
     ? windowedComparison
     : isReturnView
       ? windowedReturns
-      : windowed;
+      : view === 'Normalized'
+        ? windowedNormalized
+        : windowed;
 
   // Stats describe whichever axis is on screen. Drawdown in particular must be
   // measured on the return series: computed from balances it would count a
   // deposit-driven rise as a peak and report a fictitious fall afterwards.
   const summary = summarizeSeries(
-    isReturnView ? windowedReturns.map((p) => p.Portfolio) : windowed.map((p) => p.Value),
+    isReturnView
+      ? windowedReturns.map((p) => p.Portfolio)
+      : (plotted as Array<{ Value: number }>).map((p) => p.Value),
   );
   // A lone record is shown as a point, since a single point has no line.
   const soloDot = plotted.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
@@ -185,7 +199,9 @@ export default function CommandPage() {
                   ? hasBenchmarkData
                     ? 'Investment return, adjusted for contributions and withdrawals'
                     : 'Investment return, adjusted for contributions and withdrawals · no SPY history, benchmark unavailable'
-                  : 'Account value as recorded at each close · deposits appear as steps'
+                  : view === 'Normalized'
+                    ? 'Account value in today\u2019s capital, so contributions move the level rather than the shape'
+                    : 'Account value as recorded at each close · deposits appear as steps'
               }
               right={
                 <div className="flex items-center" style={{ gap: 16 }}>
@@ -265,7 +281,9 @@ export default function CommandPage() {
                                 )
                               : isReturnView
                                 ? paddedDomain(windowedReturns.map((d) => d.Portfolio), 0.18, 0.5)
-                                : paddedDomain(windowed.map((d) => d.Value))
+                                : paddedDomain(
+                                    (plotted as Array<{ Value: number }>).map((d) => d.Value),
+                                  )
                           }
                           tickFormatter={(v) =>
                             isReturnView ? `${Number(v).toFixed(1)}%` : fmtAxisDollar(Number(v))

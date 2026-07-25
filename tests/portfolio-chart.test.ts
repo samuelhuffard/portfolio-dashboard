@@ -207,3 +207,68 @@ test("return series starts at zero and needs no SPY history", () => {
   assert.equal(series[0].Portfolio, 0);
   assert.ok(Math.abs(series[1].Portfolio - 10) < 1e-9);
 });
+
+// ─── Cash flows must be matched to their interval, not an exact row date ────
+
+test("a deposit dated between snapshots is still removed from performance", () => {
+  // $50 funded to $75 by a deposit on the 2nd, but the sheet has no row that
+  // day — a weekend or any gap. Exact-date matching missed it and compounded
+  // the deposit as a 50% market gain.
+  const series = buildReturnSeries(
+    [
+      { date: "2026-06-01", portfolioValue: 50, spyPrice: null },
+      { date: "2026-06-03", portfolioValue: 75, spyPrice: null },
+    ],
+    [{ date: "2026-06-02", amount: 25 }],
+  );
+  assert.ok(
+    Math.abs(series[1].Portfolio) < 1e-9,
+    `funding must not read as return, got ${series[1].Portfolio}%`,
+  );
+});
+
+test("multiple flows inside one interval are netted", () => {
+  const series = buildReturnSeries(
+    [
+      { date: "2026-06-01", portfolioValue: 50, spyPrice: null },
+      { date: "2026-06-05", portfolioValue: 100, spyPrice: null },
+    ],
+    [
+      { date: "2026-06-02", amount: 30 },
+      { date: "2026-06-04", amount: -5 },
+      { date: "2026-06-03", amount: 25 },
+    ],
+  );
+  assert.ok(Math.abs(series[1].Portfolio) < 1e-9);
+});
+
+test("flows before the first snapshot belong to the opening balance", () => {
+  // The opening contribution is what created the first balance; subtracting it
+  // again would invent a loss.
+  const series = buildReturnSeries(
+    [
+      { date: "2026-06-10", portfolioValue: 100, spyPrice: null },
+      { date: "2026-06-11", portfolioValue: 110, spyPrice: null },
+    ],
+    [{ date: "2026-06-01", amount: 100 }],
+  );
+  assert.equal(series[0].Portfolio, 0);
+  assert.ok(Math.abs(series[1].Portfolio - 10) < 1e-9);
+});
+
+test("normalized series rebases to today's balance without a funding step", () => {
+  // $50 funded to $100 with a 10% market gain after. Every point is expressed
+  // in today's capital, so the curve moves only with the market.
+  const series = buildAdjustedValueSeries(
+    [
+      { date: "2026-06-01", portfolioValue: 50, spyPrice: null },
+      { date: "2026-06-02", portfolioValue: 100, spyPrice: null },
+      { date: "2026-06-03", portfolioValue: 110, spyPrice: null },
+    ],
+    [{ date: "2026-06-02", amount: 50 }],
+  );
+  assert.equal(series.at(-1)?.Value, 110, "ends at the real balance");
+  // No step across the funding date: both early points sit at the same level.
+  assert.ok(Math.abs(series[0].Value - series[1].Value) < 1e-9);
+  assert.ok(Math.abs(series[0].Value - 100) < 1e-9);
+});
