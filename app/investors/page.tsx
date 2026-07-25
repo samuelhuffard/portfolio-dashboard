@@ -71,7 +71,7 @@ interface InvestorUpdate {
   topHoldings: Array<{ ticker: string; marketValue: number }>;
 }
 
-const AXIS_TICK = { fontSize: 10.5, fill: '#9a9c96', fontFamily: 'var(--font-ibm-plex-mono), monospace' };
+const AXIS_TICK = { fontSize: 10.5, fill: '#9a9c96', fontFamily: '"IBM Plex Mono", ui-monospace, monospace' };
 const TOOLTIP_STYLE = {
   background: '#fff',
   border: '1px solid #dcddd9',
@@ -404,7 +404,7 @@ function ClientScreen({
                     <Area
                       type="monotone"
                       dataKey="Portfolio"
-                      stroke="var(--accent)"
+                      stroke="#1f4b76"
                       strokeWidth={1.75}
                       fill="none"
                       dot={false}

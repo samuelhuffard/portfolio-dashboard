@@ -37,7 +37,8 @@ import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
 import { buildAdjustedValueSeries, buildPerformanceComparison, type CashFlow } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
-const AXIS_TICK = { fontSize: 10.5, fill: '#9a9c96', fontFamily: 'var(--font-ibm-plex-mono), monospace' };
+/* Chart colours are the literals the handoff specifies. */
+const AXIS_TICK = { fontSize: 10.5, fill: '#9a9c96', fontFamily: '"IBM Plex Mono", ui-monospace, monospace' };
 const TOOLTIP_STYLE = {
   background: '#fff',
   border: '1px solid #dcddd9',
@@ -91,6 +92,13 @@ export default function CommandPage() {
 
   const windowed = filterByPeriod(growth, period);
   const windowedComparison = filterByPeriod(comparison, period);
+  // A line needs two points. Fall back to the value series when the benchmark
+  // view has too few points in this window, otherwise the chart would render a
+  // comparison series that cannot draw anything.
+  const benchmarkView = showBenchmark && hasBenchmarkData && windowedComparison.length >= 2;
+  const plotted = benchmarkView ? windowedComparison : windowed;
+  // A lone record is shown as a point, since a single point has no line.
+  const soloDot = plotted.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
   const summary = summarizeSeries(windowed.map((p) => p.Value));
   const vsBenchmark = hasBenchmarkData
     ? relativeToBenchmark(
@@ -203,7 +211,7 @@ export default function CommandPage() {
                 title="No verified account record yet"
                 note="The value series begins after the first sync. Nothing is estimated in the meantime."
               />
-            ) : windowed.length === 0 ? (
+            ) : plotted.length === 0 ? (
               <Hatch title="No records in this period" note="Choose a longer window to see the series." />
             ) : (
               <>
@@ -211,7 +219,7 @@ export default function CommandPage() {
                   <div style={{ height: 220 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart
-                        data={showBenchmark && hasBenchmarkData ? windowedComparison : windowed}
+                        data={plotted}
                         margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
                       >
                         <CartesianGrid stroke="#ebece9" vertical={false} />
@@ -228,7 +236,7 @@ export default function CommandPage() {
                           tickLine={false}
                           width={62}
                           domain={
-                            showBenchmark && hasBenchmarkData
+                            benchmarkView
                               ? paddedDomain(
                                   windowedComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]),
                                   0.18,
@@ -237,7 +245,7 @@ export default function CommandPage() {
                               : paddedDomain(windowed.map((d) => d.Value))
                           }
                           tickFormatter={(v) =>
-                            showBenchmark && hasBenchmarkData
+                            benchmarkView
                               ? `${Number(v).toFixed(1)}%`
                               : fmtAxisDollar(Number(v))
                           }
@@ -245,20 +253,20 @@ export default function CommandPage() {
                         <Tooltip
                           contentStyle={TOOLTIP_STYLE}
                           formatter={(v) =>
-                            showBenchmark && hasBenchmarkData
+                            benchmarkView
                               ? `${Number(v).toFixed(2)}%`
                               : fmtCurrency(Number(v))
                           }
                         />
-                        {showBenchmark && hasBenchmarkData ? (
+                        {benchmarkView ? (
                           <>
                             <Area
                               type="monotone"
                               dataKey="Portfolio"
-                              stroke="var(--accent)"
+                              stroke="#1f4b76"
                               strokeWidth={1.75}
                               fill="none"
-                              dot={false}
+                              dot={soloDot}
                               activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
                             />
                             <Line
@@ -267,17 +275,17 @@ export default function CommandPage() {
                               stroke="#a9abb0"
                               strokeWidth={1.25}
                               strokeDasharray="3 3"
-                              dot={false}
+                              dot={soloDot}
                             />
                           </>
                         ) : (
                           <Area
                             type="monotone"
                             dataKey="Value"
-                            stroke="var(--accent)"
+                            stroke="#1f4b76"
                             strokeWidth={1.75}
                             fill="none"
-                            dot={false}
+                            dot={soloDot}
                             activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
                           />
                         )}
