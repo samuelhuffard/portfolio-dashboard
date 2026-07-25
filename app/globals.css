@@ -32,8 +32,26 @@
   --accent:      #1f4b76;
   --accent-dark: #183c60;
   --link:        #2e4f7a;
-  --pos:         #2f6d4f;
-  --pos-soft:    #7fa48f;
+
+  /* Result colours — gain, loss, and caution.
+     These carry meaning, so they are tuned on chroma, not just on contrast.
+     The previous --pos (#2f6d4f) passed contrast at 6.14:1 but sat at a chroma
+     of only 8.1, which is close enough to neutral that it read as black at the
+     13px body size. These hold >=5:1 on white while carrying enough chroma to
+     be identifiable as a colour at a glance.
+     Loss is deliberately darker than gain (6.5:1 vs 5.4:1) so the pair stays
+     separable without hue — red/green is the common colour-vision confusion,
+     and every figure also carries an explicit +/- sign from lib/format.ts. */
+  --pos:         #0f7a43;
+  --pos-soft:    #6f9f84;
+  --neg:         #b3261e;
+  --neg-soft:    #c08079;
+  /* Caution is a system state (stale, degraded, unresolved), never a loss.
+     Amber sits between red and green in hue space, so this cannot be pulled
+     far from either without dropping under AA — a search of the amber range
+     bought only ~2 dE for half a point of contrast. It stays separated by
+     context instead: caution marks system state in the rails and status rows,
+     never a signed figure in a money column. Do not use it for a loss. */
   --warn:        #8a6a2f;
   --chip:        #ececeb;
   --chip-2:      #c8cacb;
@@ -120,11 +138,14 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* The headline number on a panel. Plex Mono runs optically light, so 500 at
+   22px sat too close to the 400 body text to read as the primary figure; 600
+   gives it the weight its size implies without shouting. */
 .pm-figure {
   font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-size: 22px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
@@ -218,8 +239,10 @@ a:hover {
   background: var(--panel-alt);
 }
 
+/* A totals row has to separate from the 400-weight rows stacked above it.
+   500 was a half-step nobody could see; 600 makes the summation read. */
 .pm-total-row td {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* Any missing value renders an em-dash — never a zero, never "N/A". */

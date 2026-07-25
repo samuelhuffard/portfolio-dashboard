@@ -36,7 +36,7 @@ import {
 
 const CHART_VIEWS = ['Normalized', 'Return', 'Balance'] as const;
 type ChartView = (typeof CHART_VIEWS)[number];
-import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
+import { fmtCurrency, fmtNumber, fmtPercent, gainLossColor, gainLossSoftColor, gainLossTone } from '@/lib/format';
 import {
   buildActualValueSeries,
   buildAdjustedValueSeries,
@@ -70,9 +70,16 @@ function paddedDomain(values: number[], padRatio = 0.18, minPad = 1): [number, n
 }
 
 /** A figure, or an em-dash when the value is not on the verified record. */
-function Figure({ value, tone }: { value: string; tone?: 'pos' | 'warn' }) {
+function Figure({ value, tone }: { value: string; tone?: 'pos' | 'neg' | 'warn' }) {
   if (value === '—') return <Nil />;
-  const color = tone === 'pos' ? 'var(--pos)' : tone === 'warn' ? 'var(--warn)' : 'var(--ink)';
+  const color =
+    tone === 'pos'
+      ? 'var(--pos)'
+      : tone === 'neg'
+        ? 'var(--neg)'
+        : tone === 'warn'
+          ? 'var(--warn)'
+          : 'var(--ink)';
   return <span style={{ color }}>{value}</span>;
 }
 
@@ -179,14 +186,14 @@ export default function CommandPage() {
               label="Unrealised P/L"
               value={loading || !totals ? '—' : fmtCurrency(totals.totalGainLoss)}
               muted={loading || !totals}
-              tone={totals && totals.totalGainLoss >= 0 ? 'pos' : undefined}
+              tone={totals ? gainLossTone(totals.totalGainLoss) : undefined}
               sub={loading || !totals ? 'No open positions' : 'Open positions'}
             />
             <Metric
               label="Return on invested"
               value={loading || !totals ? '—' : fmtPercent(totals.totalGainLossPct)}
               muted={loading || !totals || totals.totalGainLossPct === null}
-              tone={totals?.totalGainLossPct != null && totals.totalGainLossPct >= 0 ? 'pos' : undefined}
+              tone={gainLossTone(totals?.totalGainLossPct)}
               sub={loading || !totals ? 'Needs two records' : 'Since cost basis'}
             />
           </MetricStrip>
@@ -343,7 +350,7 @@ export default function CommandPage() {
                             ? `${summary.change >= 0 ? '+' : ''}${summary.change.toFixed(2)} pt`
                             : fmtCurrency(summary.change)
                       }
-                      tone={summary.change !== null && summary.change >= 0 ? 'pos' : undefined}
+                      tone={gainLossTone(summary.change)}
                     />
                   </StatCell>
                   <StatCell label="High">
@@ -380,7 +387,7 @@ export default function CommandPage() {
                   <StatCell label="vs S&P 500">
                     <Figure
                       value={vsBenchmark === null ? '—' : `${vsBenchmark >= 0 ? '+' : ''}${vsBenchmark.toFixed(2)} pt`}
-                      tone={vsBenchmark !== null && vsBenchmark >= 0 ? 'pos' : undefined}
+                      tone={gainLossTone(vsBenchmark)}
                     />
                   </StatCell>
                 </div>
@@ -459,7 +466,7 @@ export default function CommandPage() {
                         <td className="pm-num-cell">{fmtCurrency(totals.totalValue)}</td>
                         <td
                           className="pm-num-cell"
-                          style={{ color: totals.totalGainLoss >= 0 ? 'var(--pos)' : 'var(--ink)' }}
+                          style={{ color: gainLossColor(totals.totalGainLoss) }}
                         >
                           {fmtCurrency(totals.totalGainLoss)}
                         </td>
@@ -586,14 +593,14 @@ function HoldingRow({ holding, totalValue }: { holding: Holding; totalValue: num
       <td className="pm-num-cell">
         {holding.marketValue === null ? <Nil /> : fmtCurrency(holding.marketValue)}
       </td>
-      <td className="pm-num-cell" style={{ color: gain !== null && gain >= 0 ? 'var(--pos)' : 'var(--ink)' }}>
+      <td className="pm-num-cell" style={{ color: gainLossColor(gain) }}>
         {gain === null ? (
           <Nil />
         ) : (
           <>
             {fmtCurrency(gain)}{' '}
             {holding.gainLossPct !== null && (
-              <span style={{ color: gain >= 0 ? 'var(--pos-soft)' : 'var(--muted-2)' }}>
+              <span style={{ color: gainLossSoftColor(gain) }}>
                 ({fmtPercent(holding.gainLossPct)})
               </span>
             )}

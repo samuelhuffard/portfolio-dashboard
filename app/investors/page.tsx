@@ -16,7 +16,7 @@ import {
 } from '@/components/chrome';
 import ContributionForm, { type RosterOption } from '@/components/investors/ContributionForm';
 import UnattributedCard from '@/components/investors/UnattributedCard';
-import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
+import { fmtCurrency, fmtNumber, fmtPercent, gainLossColor, gainLossSoftColor, gainLossTone } from '@/lib/format';
 
 interface InvestorPosition {
   investorId: string | null;
@@ -253,7 +253,7 @@ function ManagerScreen({
                         <td className="pm-num-cell">{fmtCurrency(p.value)}</td>
                         <td
                           className="pm-num-cell"
-                          style={{ color: p.gainLoss !== null && p.gainLoss >= 0 ? 'var(--pos)' : 'var(--ink)' }}
+                          style={{ color: gainLossColor(p.gainLoss) }}
                         >
                           {p.gainLoss === null ? (
                             <Nil />
@@ -261,7 +261,7 @@ function ManagerScreen({
                             <>
                               {fmtCurrency(p.gainLoss)}{' '}
                               {p.gainLossPct !== null && (
-                                <span style={{ color: p.gainLoss >= 0 ? 'var(--pos-soft)' : 'var(--muted-2)' }}>
+                                <span style={{ color: gainLossSoftColor(p.gainLoss) }}>
                                   ({fmtPercent(p.gainLossPct)})
                                 </span>
                               )}
@@ -363,7 +363,7 @@ function ClientScreen({
               label="Gain / loss"
               value={loading || !position ? '—' : fmtCurrency(position.gainLoss)}
               muted={loading || !position}
-              tone={position?.gainLoss != null && position.gainLoss >= 0 ? 'pos' : undefined}
+              tone={gainLossTone(position?.gainLoss)}
               sub={position?.gainLossPct != null ? fmtPercent(position.gainLossPct) : 'Needs two records'}
             />
             <Metric
@@ -718,7 +718,7 @@ function WithdrawalPreviewPanel() {
           <Metric
             label="Realised gain"
             value={fmtCurrency(result.preview.totalRealizedGain)}
-            tone={result.preview.totalRealizedGain >= 0 ? 'pos' : undefined}
+            tone={gainLossTone(result.preview.totalRealizedGain)}
           />
           <Metric
             label={`Tax reserve (${(result.preview.taxReserveRatePct * 100).toFixed(1)}%)`}

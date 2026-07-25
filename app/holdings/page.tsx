@@ -14,7 +14,7 @@ import {
   Segmented,
 } from '@/components/chrome';
 import { REFRESH_INTERVAL_MS, usePortfolio } from '@/components/PortfolioProvider';
-import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
+import { fmtCurrency, fmtNumber, fmtPercent, gainLossColor } from '@/lib/format';
 
 const CLASS_FILTERS = ['All', 'Equities', 'Cash'] as const;
 type ClassFilter = (typeof CLASS_FILTERS)[number];
@@ -156,8 +156,7 @@ export default function PositionsPage() {
                             <td
                               className="pm-num-cell"
                               style={{
-                                color:
-                                  h.gainLoss !== null && h.gainLoss >= 0 ? 'var(--pos)' : 'var(--ink)',
+                                color: gainLossColor(h.gainLoss),
                               }}
                             >
                               {h.gainLoss === null ? <Nil /> : fmtCurrency(h.gainLoss)}
@@ -165,10 +164,7 @@ export default function PositionsPage() {
                             <td
                               className="pm-num-cell"
                               style={{
-                                color:
-                                  h.gainLossPct !== null && h.gainLossPct >= 0
-                                    ? 'var(--pos)'
-                                    : 'var(--ink)',
+                                color: gainLossColor(h.gainLossPct),
                               }}
                             >
                               {h.gainLossPct === null ? <Nil /> : fmtPercent(h.gainLossPct)}
@@ -209,7 +205,7 @@ export default function PositionsPage() {
                           <td
                             className="pm-num-cell"
                             style={{
-                              color: data.totals.totalGainLoss >= 0 ? 'var(--pos)' : 'var(--ink)',
+                              color: gainLossColor(data.totals.totalGainLoss),
                             }}
                           >
                             {fmtCurrency(data.totals.totalGainLoss)}
@@ -217,11 +213,7 @@ export default function PositionsPage() {
                           <td
                             className="pm-num-cell"
                             style={{
-                              color:
-                                data.totals.totalGainLossPct != null &&
-                                data.totals.totalGainLossPct >= 0
-                                  ? 'var(--pos)'
-                                  : 'var(--ink)',
+                              color: gainLossColor(data.totals.totalGainLossPct),
                             }}
                           >
                             {fmtPercent(data.totals.totalGainLossPct)}

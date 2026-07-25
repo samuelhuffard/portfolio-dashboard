@@ -117,10 +117,10 @@ function AgentBookStrip({ agentId }: { agentId: string }) {
   return (
     <div className="flex flex-wrap gap-6 border border-[var(--rule)] bg-[var(--panel-alt)] px-4 py-3 font-mono text-xs">
       <span className="text-[var(--muted)]">
-        Unrealized <span className={book.unrealizedGain >= 0 ? 'text-[var(--pos)]' : 'text-[var(--warn)]'}>{fmtUsd(book.unrealizedGain)}</span>
+        Unrealized <span className={book.unrealizedGain >= 0 ? 'text-[var(--pos)]' : 'text-[var(--neg)]'}>{fmtUsd(book.unrealizedGain)}</span>
       </span>
       <span className="text-[var(--muted)]">
-        Realized <span className={book.realizedGain >= 0 ? 'text-[var(--pos)]' : 'text-[var(--warn)]'}>{fmtUsd(book.realizedGain)}</span>
+        Realized <span className={book.realizedGain >= 0 ? 'text-[var(--pos)]' : 'text-[var(--neg)]'}>{fmtUsd(book.realizedGain)}</span>
       </span>
       <span className="text-[var(--muted)]">
         Win rate <span className="text-[var(--ink)]">{book.winRatePct != null ? `${book.winRatePct}%` : '—'}</span>
@@ -128,7 +128,7 @@ function AgentBookStrip({ agentId }: { agentId: string }) {
       </span>
       {book.positions.map((p) => (
         <span key={p.ticker} className="text-[var(--muted)]">
-          {p.ticker} <span className={(p.unrealizedGain ?? 0) >= 0 ? 'text-[var(--pos)]' : 'text-[var(--warn)]'}>{fmtUsd(p.unrealizedGain)}</span>
+          {p.ticker} <span className={(p.unrealizedGain ?? 0) >= 0 ? 'text-[var(--pos)]' : 'text-[var(--neg)]'}>{fmtUsd(p.unrealizedGain)}</span>
         </span>
       ))}
     </div>

@@ -11,9 +11,11 @@ const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
 });
 
+// 600 carries .pm-figure and the totals rows. Without it loaded the browser
+// synthesises a faux-bold, which smears the tabular figures.
 const ibmPlexMono = IBM_Plex_Mono({
   variable: "--font-ibm-plex-mono",
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
   subsets: ["latin"],
 });
 

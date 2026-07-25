@@ -72,8 +72,8 @@ export function Metric({
   label: string;
   value: ReactNode;
   sub?: ReactNode;
-  /** Gains and cautions only; everything else stays ink. */
-  tone?: "pos" | "warn";
+  /** Results and cautions; everything else stays ink. */
+  tone?: "pos" | "neg" | "warn";
   /** Renders the figure as an unavailable em-dash. */
   muted?: boolean;
 }) {
@@ -81,9 +81,11 @@ export function Metric({
     ? "var(--disabled)"
     : tone === "pos"
       ? "var(--pos)"
-      : tone === "warn"
-        ? "var(--warn)"
-        : "var(--ink)";
+      : tone === "neg"
+        ? "var(--neg)"
+        : tone === "warn"
+          ? "var(--warn)"
+          : "var(--ink)";
   return (
     <div className="pm-metric">
       <div className="pm-metric-label">{label}</div>
@@ -188,8 +190,15 @@ export function Nil() {
 }
 
 /** Coloured text, never a badge. */
-export function Status({ tone, children }: { tone: "pos" | "warn" | "muted"; children: ReactNode }) {
-  const color = tone === "pos" ? "var(--pos)" : tone === "warn" ? "var(--warn)" : "var(--muted)";
+export function Status({ tone, children }: { tone: "pos" | "neg" | "warn" | "muted"; children: ReactNode }) {
+  const color =
+    tone === "pos"
+      ? "var(--pos)"
+      : tone === "neg"
+        ? "var(--neg)"
+        : tone === "warn"
+          ? "var(--warn)"
+          : "var(--muted)";
   return <span style={{ color }}>{children}</span>;
 }
 
