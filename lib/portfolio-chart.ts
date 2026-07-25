@@ -88,9 +88,29 @@ function buildReturnPath(performance: ValueSnapshot[], cashFlows: CashFlow[] = [
 }
 
 /**
- * Robinhood-style account-value curve. It preserves the investment return
- * path while scaling every historical point to today's account value, so a
- * deposit reads as capital that was present all along rather than a spike.
+ * The account value actually recorded on each snapshot date — no rebasing, no
+ * inference. This is what the "Portfolio value" chart plots.
+ *
+ * Prefer this over `buildAdjustedValueSeries` for anything denominated in
+ * dollars. The adjusted series rebases history onto today's value, so any cash
+ * flow the ledger did not match to a snapshot date is absorbed as market return
+ * and silently redraws the past: a single unmatched $34 deposit is enough to
+ * make a $100 account appear to have started at $66. A dollar axis must never
+ * claim a balance the account never held.
+ */
+export function buildActualValueSeries(performance: ValueSnapshot[]): AdjustedValuePoint[] {
+  return validValueSnapshots(performance).map((snapshot) => ({
+    date: snapshot.date,
+    Value: snapshot.portfolioValue,
+  }));
+}
+
+/**
+ * Return-path curve rebased onto today's account value, so a deposit reads as
+ * capital that was present all along rather than as a spike.
+ *
+ * This is a *return* visualisation, not a balance history — see the warning on
+ * `buildActualValueSeries`. Only use it on a normalised axis.
  */
 export function buildAdjustedValueSeries(performance: ValueSnapshot[], cashFlows: CashFlow[] = []): AdjustedValuePoint[] {
   const snapshots = validValueSnapshots(performance);
@@ -112,23 +132,33 @@ export function buildAdjustedValueSeries(performance: ValueSnapshot[], cashFlows
  */
 export function buildPerformanceComparison(performance: ValueSnapshot[], cashFlows: CashFlow[] = []): PerformanceComparisonPoint[] {
   const path = buildReturnPath(performance, cashFlows);
-  const baseIndex = path.findIndex((point) => point.spyPrice !== null && point.spyPrice > 0);
+
+  // The sheet does not always carry an SPY close on every row. Dropping those
+  // rows outright discarded most of the portfolio's own history and could leave
+  // too few points to draw. Carry the last known close forward instead — a
+  // stale benchmark quote is a far smaller error than a missing comparison, and
+  // it keeps both series on the same dates.
+  let lastSpy: number | null = null;
+  const filled = path.map((point) => {
+    if (point.spyPrice !== null && point.spyPrice > 0) lastSpy = point.spyPrice;
+    return { ...point, spyPrice: lastSpy };
+  });
+
+  const baseIndex = filled.findIndex((point) => point.spyPrice !== null);
   if (baseIndex === -1) return [];
 
-  const baseFactor = path[baseIndex].factor;
-  const baseSpy = path[baseIndex].spyPrice as number;
-  return path.slice(baseIndex)
-    .filter((point): point is ReturnPoint & { spyPrice: number } => point.spyPrice !== null && point.spyPrice > 0)
-    .map((point) => {
-      const portfolio = (point.factor / baseFactor - 1) * 100;
-      const spy = (point.spyPrice / baseSpy - 1) * 100;
-      return {
-        date: point.date,
-        Portfolio: portfolio,
-        "S&P 500": spy,
-        spread: portfolio - spy,
-      };
-    });
+  const baseFactor = filled[baseIndex].factor;
+  const baseSpy = filled[baseIndex].spyPrice as number;
+  return filled.slice(baseIndex).map((point) => {
+    const portfolio = (point.factor / baseFactor - 1) * 100;
+    const spy = ((point.spyPrice as number) / baseSpy - 1) * 100;
+    return {
+      date: point.date,
+      Portfolio: portfolio,
+      "S&P 500": spy,
+      spread: portfolio - spy,
+    };
+  });
 }
 
 export function paddedReturnDomain(values: number[], minAbs = 5): [number, number] {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildAdjustedValueSeries, buildPerformanceComparison, paddedReturnDomain } from "../lib/portfolio-chart";
+import { buildActualValueSeries, buildAdjustedValueSeries, buildPerformanceComparison, paddedReturnDomain } from "../lib/portfolio-chart";
 import type { PerformanceRow } from "../lib/sheets";
 
 test("cash-flow-adjusted value uses signed deposits and ends at the actual account value", () => {
@@ -75,4 +75,87 @@ test("paddedReturnDomain expands for larger return ranges while keeping zero vis
 
   assert.equal(domain[0], -12.68);
   assert.equal(domain[1], 22.68);
+});
+
+// ─── Dollar axis must never invent a balance ────────────────────────────────
+
+test("actual value series reports the recorded balance, never a rebased one", () => {
+  // 12 Jun the account held $100. A $100 deposit lands on 24 Jul, taking it to
+  // $200. The rebasing path restates the opening balance as $200 — "as if
+  // today's capital had always been here" — which is a legitimate *return*
+  // view but a false *balance* history. The dollar axis must show the record.
+  const performance = [
+    { date: "2026-06-12", portfolioValue: 100, spyPrice: null },
+    { date: "2026-07-24", portfolioValue: 200, spyPrice: null },
+  ];
+  const flows = [{ date: "2026-07-24", amount: 100 }];
+
+  assert.deepEqual(buildActualValueSeries(performance), [
+    { date: "2026-06-12", Value: 100 },
+    { date: "2026-07-24", Value: 200 },
+  ]);
+
+  const rebased = buildAdjustedValueSeries(performance, flows);
+  assert.equal(rebased[0].Value, 200, "rebasing inflates the opening balance by the deposit");
+  assert.equal(buildActualValueSeries(performance)[0].Value, 100);
+});
+
+test("without a recorded cash flow the two series agree", () => {
+  // Worth pinning: the distortion comes from rebasing a *recorded* flow, not
+  // from a missing one. With no flows the rebased curve is the balance curve.
+  const performance = [
+    { date: "2026-06-12", portfolioValue: 100, spyPrice: null },
+    { date: "2026-07-24", portfolioValue: 200, spyPrice: null },
+  ];
+  assert.deepEqual(buildAdjustedValueSeries(performance, []), buildActualValueSeries(performance));
+});
+
+test("actual value series drops non-positive and undated snapshots", () => {
+  const series = buildActualValueSeries([
+    { date: "2026-06-12", portfolioValue: 0, spyPrice: null },
+    { date: "2026-06-13", portfolioValue: null, spyPrice: null },
+    { date: "2026-06-14", portfolioValue: 100, spyPrice: null },
+  ]);
+  assert.deepEqual(series, [{ date: "2026-06-14", Value: 100 }]);
+});
+
+test("actual value series uses the final correction for a duplicated date", () => {
+  const series = buildActualValueSeries([
+    { date: "2026-06-12", portfolioValue: 90, spyPrice: null },
+    { date: "2026-06-12", portfolioValue: 100, spyPrice: null },
+  ]);
+  assert.deepEqual(series, [{ date: "2026-06-12", Value: 100 }]);
+});
+
+// ─── Benchmark continuity ───────────────────────────────────────────────────
+
+test("SPY comparison carries the last known close forward across gaps", () => {
+  const comparison = buildPerformanceComparison(
+    [
+      { date: "2026-06-12", portfolioValue: 100, spyPrice: 500 },
+      { date: "2026-06-13", portfolioValue: 110, spyPrice: null },
+      { date: "2026-06-14", portfolioValue: 120, spyPrice: 550 },
+    ],
+    [],
+  );
+
+  // Every portfolio point is kept, not just the two with an SPY close.
+  assert.equal(comparison.length, 3);
+  assert.deepEqual(comparison.map((p) => p.date), ["2026-06-12", "2026-06-13", "2026-06-14"]);
+  // The gap day holds the previous close, so the benchmark is flat, not absent.
+  assert.equal(comparison[1]["S&P 500"], 0);
+  assert.ok(Math.abs(comparison[2]["S&P 500"] - 10) < 1e-9);
+  assert.ok(Math.abs(comparison[2].Portfolio - 20) < 1e-9);
+  assert.ok(Math.abs(comparison[2].spread - 10) < 1e-9);
+});
+
+test("SPY comparison still returns nothing when no close is ever recorded", () => {
+  const comparison = buildPerformanceComparison(
+    [
+      { date: "2026-06-12", portfolioValue: 100, spyPrice: null },
+      { date: "2026-06-13", portfolioValue: 110, spyPrice: null },
+    ],
+    [],
+  );
+  assert.deepEqual(comparison, []);
 });

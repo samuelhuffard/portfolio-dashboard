@@ -34,7 +34,7 @@ import {
   type ChartPeriod,
 } from '@/lib/command-stats';
 import { fmtCurrency, fmtNumber, fmtPercent } from '@/lib/format';
-import { buildAdjustedValueSeries, buildPerformanceComparison, type CashFlow } from '@/lib/portfolio-chart';
+import { buildActualValueSeries, buildPerformanceComparison } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
 /* Chart colours are the literals the handoff specifies. */
@@ -61,15 +61,6 @@ function paddedDomain(values: number[], padRatio = 0.18, minPad = 1): [number, n
   return [min - pad, max + pad];
 }
 
-function buildGrowthData(performance: PerformanceRow[], cashFlows: CashFlow[]) {
-  const adjusted = buildAdjustedValueSeries(performance, cashFlows);
-  return adjusted.length > 0
-    ? adjusted
-    : performance
-        .filter((p) => p.portfolioValue !== null)
-        .map((p) => ({ date: p.date, Value: p.portfolioValue as number }));
-}
-
 /** A figure, or an em-dash when the value is not on the verified record. */
 function Figure({ value, tone }: { value: string; tone?: 'pos' | 'warn' }) {
   if (value === '—') return <Nil />;
@@ -88,7 +79,9 @@ export default function CommandPage() {
 
   const comparison = data ? buildPerformanceComparison(data.performance, data.cashFlows) : [];
   const hasBenchmarkData = comparison.length >= 2;
-  const growth = data ? buildGrowthData(data.performance, data.cashFlows) : [];
+  // The dollar axis plots the recorded balance. Contribution-adjusted
+  // performance is the benchmark view's job, on a percentage axis.
+  const growth = data ? buildActualValueSeries(data.performance) : [];
 
   const windowed = filterByPeriod(growth, period);
   const windowedComparison = filterByPeriod(comparison, period);
@@ -168,9 +161,11 @@ export default function CommandPage() {
             <PanelHead
               title="Portfolio value"
               caption={
-                hasBenchmarkData
-                  ? 'Adjusted for contributions and withdrawals'
-                  : 'Adjusted for contributions and withdrawals · no SPY history, benchmark unavailable'
+                benchmarkView
+                  ? 'Return since the first benchmark close, adjusted for contributions and withdrawals'
+                  : hasBenchmarkData
+                    ? 'Account value as recorded at each close'
+                    : 'Account value as recorded at each close · no SPY history, benchmark unavailable'
               }
               right={
                 <div className="flex items-center" style={{ gap: 16 }}>
