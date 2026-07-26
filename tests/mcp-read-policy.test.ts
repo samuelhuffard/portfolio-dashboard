@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildMcpReadReceiptEvidence, MCP_JOB_HISTORY_MAX, MCP_JOB_HISTORY_TTL_SECONDS } from "../scripts/mcp-read-receipt.mjs";
+import { buildMcpReadReceiptEvidence, MCP_JOB_HISTORY_MAX, MCP_JOB_HISTORY_TTL_SECONDS, resolveMcpReceiptSource } from "../scripts/mcp-read-receipt.mjs";
+
+const RECEIPT_SECRET = "mcp-receipt-test-secret";
+const JETSON_SOURCE = "jetson-robinhood-mcp";
 
 const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
 
@@ -56,11 +59,12 @@ test("successful MCP evidence is provenance-bound and targets bounded daily hist
   const evidence = buildMcpReadReceiptEvidence(
     request,
     { ok: true, outcome: "ok", error: null },
-    "2026-07-14T13:31:00.000Z",
+    { completedAt: "2026-07-14T13:31:00.000Z", source: JETSON_SOURCE, secret: RECEIPT_SECRET },
   );
   assert.equal(evidence.receipt.accountVerified, true);
   assert.equal(evidence.receipt.accountPolicyVersion, "agentic-account-binding-v1");
-  assert.equal(evidence.jobRecord.source, "mac-robinhood-mcp");
+  assert.equal(evidence.jobRecord.source, JETSON_SOURCE);
+  assert.match(evidence.receipt.receiptHmac, /^[a-f0-9]{64}$/);
   assert.equal(evidence.jobRecord.requestId, request.id);
   assert.equal(evidence.jobRecord.invocationId, request.invocationId);
   assert.equal(evidence.historyKey, "pm:job:holdings-sync:history:2026-07-14");
@@ -73,7 +77,9 @@ test("mismatch and failure receipts cannot claim account verification", () => {
     { ok: false, outcome: "mismatch", error: null },
     { ok: false, outcome: "failed", error: "broker read failed" },
   ] as const) {
-    const evidence = buildMcpReadReceiptEvidence(request, result, "2026-07-14T13:31:00.000Z");
+    const evidence = buildMcpReadReceiptEvidence(request, result, {
+      completedAt: "2026-07-14T13:31:00.000Z", source: JETSON_SOURCE, secret: RECEIPT_SECRET,
+    });
     assert.equal(evidence.receipt.ok, false);
     assert.equal(evidence.receipt.accountVerified, false);
     assert.equal(evidence.receipt.outcome, result.outcome);
@@ -85,8 +91,14 @@ test("each scheduler slot retains its own invocation identity in completion evid
   const evidence = buildMcpReadReceiptEvidence(
     existingPendingRequest,
     { ok: true, outcome: "ok", error: null },
-    "2026-07-14T15:01:00.000Z",
+    { completedAt: "2026-07-14T15:01:00.000Z", source: JETSON_SOURCE, secret: RECEIPT_SECRET },
   );
   assert.equal(evidence.jobRecord.invocationId, "2026-07-14/09:30");
   assert.notEqual(evidence.jobRecord.invocationId, "2026-07-14/11:00");
+});
+
+test("receipt source is bound to the deployed companion role", () => {
+  assert.equal(resolveMcpReceiptSource("read-worker"), JETSON_SOURCE);
+  assert.equal(resolveMcpReceiptSource("full"), "mac-robinhood-mcp");
+  assert.throws(() => resolveMcpReceiptSource("read-worker", "mac-robinhood-mcp"));
 });

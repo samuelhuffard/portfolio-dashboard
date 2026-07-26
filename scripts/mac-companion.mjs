@@ -33,6 +33,7 @@ import {
   buildMcpReadReceiptEvidence,
   MCP_JOB_HISTORY_MAX,
   MCP_JOB_HISTORY_TTL_SECONDS,
+  resolveMcpReceiptSource,
 } from "./mcp-read-receipt.mjs";
 import { assertScheduledMcpAccountBinding, extractMcpToolCalls, summarizeMcpStream } from "./mcp-stream-evidence.mjs";
 import { execFileWithClosedStdin } from "./claude-cli.mjs";
@@ -90,6 +91,13 @@ const LIST_KEY = "pm:approval_proposals";
 const CLAUDE_BIN = process.env.CLAUDE_BIN?.trim()
   || (existsSync("/Users/samhuffard/.local/bin/claude") ? "/Users/samhuffard/.local/bin/claude" : "claude");
 const COMPANION_ROLE = resolveCompanionRole(process.env.COMPANION_ROLE);
+const MCP_RECEIPT_HMAC_SECRET = process.env.MCP_RECEIPT_HMAC_SECRET?.trim();
+const MCP_READ_RECEIPT_SOURCE = COMPANION_ROLE.brokerReads
+  ? resolveMcpReceiptSource(COMPANION_ROLE.name, process.env.MCP_READ_RECEIPT_SOURCE)
+  : null;
+if (COMPANION_ROLE.brokerReads && !MCP_RECEIPT_HMAC_SECRET) {
+  throw new Error("MCP_RECEIPT_HMAC_SECRET is required for the broker read-worker.");
+}
 const ROBINHOOD_MCP_TOOLS = "mcp__robinhood-trading__*";
 const AGENTIC_ACCOUNT_NUMBER = process.env.ROBINHOOD_ACCOUNT_NUMBER?.trim();
 // Fixed, non-mutating allowlists for scheduled broker data work. Do not widen
@@ -207,7 +215,10 @@ async function claimMcpReadRequest(kind) {
 
 async function recordMcpReadReceipt(claim, { ok, outcome, error = null }) {
   const { request } = claim;
-  const { receipt, jobRecord, historyKey } = buildMcpReadReceiptEvidence(request, { ok, outcome, error });
+  const { receipt, jobRecord, historyKey } = buildMcpReadReceiptEvidence(request, { ok, outcome, error }, {
+    source: MCP_READ_RECEIPT_SOURCE,
+    secret: MCP_RECEIPT_HMAC_SECRET,
+  });
   await redisPost(["set", mcpReadReceiptKey(request.kind), JSON.stringify(receipt), "EX", MCP_READ_RECEIPT_TTL_SECONDS]);
   await redisPost(["set", `pm:job:${request.kind}:last-run`, JSON.stringify(jobRecord)]);
   await redisPost(["rpush", historyKey, JSON.stringify(jobRecord)]);

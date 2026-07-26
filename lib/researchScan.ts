@@ -12,6 +12,8 @@ export interface AgentResearchScanSummary {
     BUY: number;
     SELL: number;
     HOLD: number;
+    NO_TRADE?: number;
+    ERROR?: number;
   };
   proposalsCreated: number;
   proposalCounts: {

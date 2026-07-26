@@ -56,6 +56,8 @@ interface AgentResearchScanSummary {
     BUY: number;
     SELL: number;
     HOLD: number;
+    NO_TRADE?: number;
+    ERROR?: number;
   };
   proposalsCreated: number;
   proposalCounts: {
@@ -124,6 +126,8 @@ function describeAgentScan(agent: AgentResearchScanSummary): string {
     `${agent.actionCounts.HOLD} hold${agent.actionCounts.HOLD === 1 ? '' : 's'}`,
     agent.actionCounts.BUY ? `${agent.actionCounts.BUY} buy signal${agent.actionCounts.BUY === 1 ? '' : 's'}` : null,
     agent.actionCounts.SELL ? `${agent.actionCounts.SELL} sell signal${agent.actionCounts.SELL === 1 ? '' : 's'}` : null,
+    agent.actionCounts.NO_TRADE ? `${agent.actionCounts.NO_TRADE} data-blocked review${agent.actionCounts.NO_TRADE === 1 ? '' : 's'}` : null,
+    agent.actionCounts.ERROR ? `${agent.actionCounts.ERROR} review error${agent.actionCounts.ERROR === 1 ? '' : 's'}` : null,
     `${agent.proposalsCreated} proposal${agent.proposalsCreated === 1 ? '' : 's'}`,
   ].filter(Boolean);
   return pieces.join(' · ');
