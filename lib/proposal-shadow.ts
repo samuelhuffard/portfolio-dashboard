@@ -4,6 +4,7 @@ interface ShadowOptions {
   backendUrl?: string;
   secret?: string;
   fetchImpl?: typeof fetch;
+  retryDelayMs?: number;
 }
 
 /**
@@ -19,24 +20,33 @@ export async function shadowProposalLifecycle(
   const secret = (options.secret ?? process.env.PORTFOLIO_WEBHOOK_SECRET)?.trim();
   if (!backendUrl || !secret) return { ok: false, skipped: true };
 
-  try {
-    const response = await (options.fetchImpl ?? fetch)(`${backendUrl}/shadow/proposal`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${secret}`,
-      },
-      body: JSON.stringify({ proposal }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(2_500),
-    });
-    if (!response.ok) {
-      console.warn(`[proposal shadow] backend returned ${response.status}; authoritative Redis write remains valid.`);
-      return { ok: false };
+  let lastError = "unknown error";
+  // A shadow write never affects the authoritative Redis decision, but one
+  // brief cold-start or connection wobble must not leave the parity mirror
+  // stale for an entire observation day. Keep the retry bounded so dashboard
+  // latency remains predictable and callers never gain a new failure mode.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await (options.fetchImpl ?? fetch)(`${backendUrl}/shadow/proposal`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${secret}`,
+        },
+        body: JSON.stringify({ proposal }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(2_500),
+      });
+      if (response.ok) return { ok: true };
+      lastError = `backend returned ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "unknown error";
     }
-    return { ok: true };
-  } catch (error) {
-    console.warn(`[proposal shadow] unavailable; authoritative Redis write remains valid: ${error instanceof Error ? error.message : "unknown error"}`);
-    return { ok: false };
+    if (attempt === 0) {
+      const delay = Math.max(0, options.retryDelayMs ?? 250);
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
+  console.warn(`[proposal shadow] unavailable after retry; authoritative Redis write remains valid: ${lastError}`);
+  return { ok: false };
 }

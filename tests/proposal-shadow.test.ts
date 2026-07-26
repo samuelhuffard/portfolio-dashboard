@@ -61,3 +61,19 @@ test("proposal shadow failure never throws into the authoritative path", async (
     console.warn = originalWarn;
   }
 });
+
+test("proposal shadow retries one transient failure before reporting success", async () => {
+  let calls = 0;
+  const result = await shadowProposalLifecycle(proposal, {
+    backendUrl: "https://backend.example",
+    secret: "test-secret",
+    retryDelayMs: 0,
+    fetchImpl: (async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("transient connection failure");
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch,
+  });
+  assert.deepEqual(result, { ok: true });
+  assert.equal(calls, 2);
+});
