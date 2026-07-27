@@ -31,8 +31,9 @@ test("scheduled MCP holdings/reconciliation use exact read-only tool allowlists"
   assert.match(reconciliation, /account_number exactly \$\{AGENTIC_ACCOUNT_NUMBER\}/);
   assert.match(holdings, /assertScheduledMcpAccountBinding/);
   assert.match(reconciliation, /assertScheduledMcpAccountBinding/);
-  assert.match(holdings, /--output-format", "stream-json"/);
-  assert.match(reconciliation, /--output-format", "stream-json"/);
+  assert.match(holdings, /robinhoodClaudeArgs\(\{ prompt, allowedTools: MCP_SNAPSHOT_TOOLS, stream: true \}\)/);
+  assert.match(reconciliation, /robinhoodClaudeArgs\(\{ prompt, allowedTools: MCP_RECONCILE_TOOLS, stream: true \}\)/);
+  assert.match(source, /stream \? \["--verbose", "--output-format", "stream-json", "--include-partial-messages"\]/);
 });
 
 test("scheduled MCP reads use a durable lease and a receipt rather than GETDEL", () => {

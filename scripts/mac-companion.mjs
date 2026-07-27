@@ -90,6 +90,7 @@ const LOCK_TTL_SECONDS = 300; // 5 min — prevents double-execution if companio
 const LIST_KEY = "pm:approval_proposals";
 const CLAUDE_BIN = process.env.CLAUDE_BIN?.trim()
   || (existsSync("/Users/samhuffard/.local/bin/claude") ? "/Users/samhuffard/.local/bin/claude" : "claude");
+const ROBINHOOD_MCP_CONFIG = process.env.ROBINHOOD_MCP_CONFIG?.trim() || join(__dir, "../.mcp.json");
 const COMPANION_ROLE = resolveCompanionRole(process.env.COMPANION_ROLE);
 const MCP_RECEIPT_HMAC_SECRET = process.env.MCP_RECEIPT_HMAC_SECRET?.trim();
 const MCP_READ_RECEIPT_SOURCE = COMPANION_ROLE.brokerReads
@@ -144,6 +145,31 @@ const MARKET_SYNC_DISALLOWED_TOOLS = [
 if (!REDIS_URL || !REDIS_TOKEN) {
   console.error("[companion] Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN");
   process.exit(1);
+}
+if (!existsSync(ROBINHOOD_MCP_CONFIG)) {
+  throw new Error(`Robinhood MCP configuration is required at ${ROBINHOOD_MCP_CONFIG}.`);
+}
+
+// Broker work must not inherit dashboard-project instructions. The companion is
+// already restricted by a signed approval, the exact Agentic account, a narrow
+// MCP tool allowlist, and a broker ref_id. Loading only the MCP config prevents
+// a dashboard UI rule from making this dedicated execution process refuse a
+// properly authorized trade.
+const BROKER_COMPANION_SYSTEM_PROMPT = `You are the dedicated Portfolio Manager broker companion. Follow the user request exactly, but only use the explicitly allowed Robinhood MCP tools. Do not use shell, files, browsers, or any other tool. A live order is authorized only when the request says it is a signed approval for the configured Agentic account and supplies its exact ref_id. Do not exercise independent investment discretion. Return only the exact JSON object requested.`;
+
+function robinhoodClaudeArgs({ prompt, allowedTools, disallowedTools = null, stream = false }) {
+  return [
+    "-p",
+    "--setting-sources", "user",
+    "--strict-mcp-config",
+    "--mcp-config", ROBINHOOD_MCP_CONFIG,
+    "--system-prompt", BROKER_COMPANION_SYSTEM_PROMPT,
+    ...(stream ? ["--verbose", "--output-format", "stream-json", "--include-partial-messages"] : []),
+    "--allowedTools", allowedTools,
+    ...(disallowedTools ? ["--disallowedTools", disallowedTools] : []),
+    "--permission-mode", "bypassPermissions",
+    prompt,
+  ];
 }
 
 // ── Redis helpers ──────────────────────────────────────────────────────────────
@@ -369,7 +395,7 @@ Use the actual average fill price for "price". On failure respond with ONLY:
   delete env.ANTHROPIC_API_KEY;
 
   const { stdout, stderr } = await runClaude(
-    ["-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--allowedTools", MCP_EXECUTION_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    robinhoodClaudeArgs({ prompt, allowedTools: MCP_EXECUTION_TOOLS, stream: true }),
     { env, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 }
   );
 
@@ -418,7 +444,7 @@ or, if no matching order exists:
   delete env.ANTHROPIC_API_KEY;
 
   const { stdout } = await runClaude(
-    ["-p", "--allowedTools", ROBINHOOD_MCP_TOOLS, "--disallowedTools", MARKET_SYNC_DISALLOWED_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    robinhoodClaudeArgs({ prompt, allowedTools: MCP_RECONCILE_TOOLS, disallowedTools: MARKET_SYNC_DISALLOWED_TOOLS }),
     { env, timeout: 120_000 }
   );
 
@@ -486,7 +512,7 @@ Include every open position. Use the actual live values from the MCP.`;
   let stdout;
   try {
     ({ stdout } = await runClaude(
-      ["-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--allowedTools", MCP_SNAPSHOT_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+      robinhoodClaudeArgs({ prompt, allowedTools: MCP_SNAPSHOT_TOOLS, stream: true }),
       { env, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 }
     ));
   } catch (err) {
@@ -591,7 +617,7 @@ Use agentHint only when obvious: agent-1 for high-growth technology/software/sem
   let stdout;
   try {
     ({ stdout } = await runClaude(
-      ["-p", "--allowedTools", ROBINHOOD_MCP_TOOLS, "--disallowedTools", MARKET_SYNC_DISALLOWED_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+      robinhoodClaudeArgs({ prompt, allowedTools: ROBINHOOD_MCP_TOOLS, disallowedTools: MARKET_SYNC_DISALLOWED_TOOLS }),
       { env, timeout: 180_000 }
     ));
   } catch (err) {
@@ -763,7 +789,7 @@ Include ALL states as reported (filled, cancelled, rejected, ...). If there are 
   delete env.ANTHROPIC_API_KEY;
 
   const { stdout } = await runClaude(
-    ["-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--allowedTools", MCP_RECONCILE_TOOLS, "--permission-mode", "bypassPermissions", prompt],
+    robinhoodClaudeArgs({ prompt, allowedTools: MCP_RECONCILE_TOOLS, stream: true }),
     { env, timeout: 180_000, maxBuffer: 5 * 1024 * 1024 }
   );
 
@@ -831,7 +857,12 @@ async function poll(force = false) {
       }
 
       try {
-        if (proposal.executionState === "Executing") {
+        if (proposal.executionState === "ManualReview") {
+          // A manager-confirmed broker fill that cannot be proved from the
+          // proposal ref_id must never be guessed or retried. Keep it out of
+          // the execution loop until the signed ledger is reconciled.
+          console.warn(`[companion] ${id} is held for manual broker reconciliation; skipping execution.`);
+        } else if (proposal.executionState === "Executing") {
           // A previous attempt started but never confirmed its outcome (crash,
           // sleep, timeout, or failed ledger recording). NEVER blindly re-execute
           // — ask the broker what happened first.

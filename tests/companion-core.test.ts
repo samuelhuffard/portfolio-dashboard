@@ -167,6 +167,8 @@ test("companion reconciliation requires exact ref_id and broker confirmation bef
   assert.match(source, /Never guess from ticker, time, or recency/);
   assert.doesNotMatch(source, /treat the most recent agentic/);
   assert.match(source, /decision\.action !== "record" \|\| decision\.orderId !== result\.orderId/);
+  assert.match(source, /proposal\.executionState === "ManualReview"/);
+  assert.match(source, /held for manual broker reconciliation/);
 });
 
 test("companion execution pins every live order to the configured Agentic account", () => {
@@ -178,6 +180,17 @@ test("companion execution pins every live order to the configured Agentic accoun
   assert.match(source, /account_number "\$\{AGENTIC_ACCOUNT_NUMBER\}" to place_equity_order/);
   assert.match(source, /assertScheduledMcpAccountBinding\(stdout, \["mcp__robinhood-trading__place_equity_order"\], AGENTIC_ACCOUNT_NUMBER\)/);
   assert.match(source, /Broker result did not confirm the configured Agentic account/);
+});
+
+test("companion isolates broker MCP work from dashboard project instructions", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /const ROBINHOOD_MCP_CONFIG = process\.env\.ROBINHOOD_MCP_CONFIG/);
+  assert.match(source, /function robinhoodClaudeArgs/);
+  assert.match(source, /"--setting-sources", "user"/);
+  assert.match(source, /"--strict-mcp-config"/);
+  assert.match(source, /"--mcp-config", ROBINHOOD_MCP_CONFIG/);
+  assert.match(source, /BROKER_COMPANION_SYSTEM_PROMPT/);
+  assert.match(source, /robinhoodClaudeArgs\(\{ prompt, allowedTools: MCP_EXECUTION_TOOLS, stream: true \}\)/);
 });
 
 test("companion launches Claude with stdin detached for unattended broker work", () => {
