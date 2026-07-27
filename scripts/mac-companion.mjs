@@ -428,12 +428,17 @@ Use the actual average fill price for "price". On failure respond with ONLY:
  * record step). Asks the broker what actually happened instead of re-executing.
  */
 async function reconcileViaClaude(proposal) {
-  const { id, ticker, executionStartedAt } = proposal;
+  const { id, ticker, executionStartedAt, executionOrderId } = proposal;
   const sinceIso = new Date(new Date(executionStartedAt ?? Date.now()).getTime() - 10 * 60 * 1000).toISOString();
+  const exactMatchInstruction = isPlausibleOrderId(executionOrderId)
+    ? `Return found=true ONLY for the broker order whose order ID is exactly "${executionOrderId}". The returned order ID must exactly equal "${executionOrderId}". Robinhood may omit ref_id, so do not require ref_id when this exact broker order ID is available.`
+    : `Return found=true ONLY for the order whose ref_id is exactly "${id}". If ref_id is missing or not visible, return found=false.`;
 
   const prompt = `Use the Robinhood MCP (read-only order tools) on my Agentic account. Do NOT place, cancel, or modify any order.
 
-Call get_equity_orders with symbol ${ticker} and created_at_gte ${sinceIso}. Return found=true ONLY for the order whose ref_id is exactly "${id}". If ref_id is missing or not visible, return found=false. Never guess from ticker, time, or recency.
+First call get_accounts and verify that account ${AGENTIC_ACCOUNT_NUMBER} is present and marked agentic_allowed. Then call get_equity_orders with account_number exactly ${AGENTIC_ACCOUNT_NUMBER}, symbol ${ticker}, and created_at_gte ${sinceIso}.
+
+${exactMatchInstruction} Never guess from ticker, time, or recency.
 
 Respond with ONLY this JSON (no other text):
 {"found": true, "orderId": "...", "state": "filled|new|queued|confirmed|partially_filled|cancelled|rejected|failed", "shares": 0.0, "price": 0.00}
@@ -444,12 +449,14 @@ or, if no matching order exists:
   delete env.ANTHROPIC_API_KEY;
 
   const { stdout } = await runClaude(
-    robinhoodClaudeArgs({ prompt, allowedTools: MCP_RECONCILE_TOOLS, disallowedTools: MARKET_SYNC_DISALLOWED_TOOLS }),
-    { env, timeout: 120_000 }
+    robinhoodClaudeArgs({ prompt, allowedTools: MCP_RECONCILE_TOOLS, disallowedTools: MARKET_SYNC_DISALLOWED_TOOLS, stream: true }),
+    { env, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 }
   );
 
-  const extracted = extractJsonObject(stdout, (p) => typeof p.found === "boolean");
-  if (!extracted) throw new Error(`No valid reconcile JSON in claude output: ${stdout.slice(0, 300)}`);
+  assertScheduledMcpAccountBinding(stdout, ["mcp__robinhood-trading__get_equity_orders"], AGENTIC_ACCOUNT_NUMBER);
+  const finalText = extractClaudeFinalText(stdout);
+  const extracted = extractJsonObject(finalText, (p) => typeof p.found === "boolean");
+  if (!extracted) throw new Error(`No valid reconcile JSON in claude output: ${finalText.slice(0, 300)}`);
   return extracted.parsed;
 }
 
@@ -704,9 +711,15 @@ async function executeProposal(id, proposal) {
       await alertTelegram(`Execution result for ${proposal.side} $${proposal.amountDollars} ${proposal.ticker} (proposal ${id}) reported a non-UUID orderId ("${String(result.orderId).slice(0, 40)}") — treating outcome as unknown; reconciling against the broker next poll.`);
       return;
     }
+    // Robinhood currently may omit ref_id in its order history. Persist the
+    // broker's own UUID before reconciliation so a restart cannot turn a real
+    // fill into an untraceable, unrelated-workflow failure. This is not a
+    // confirmation: reconciliation still independently reads this exact ID.
+    await setProposalField(id, { executionOrderId: result.orderId });
     const brokerResult = await reconcileViaClaude({
       ...proposal,
       executionStartedAt: new Date().toISOString(),
+      executionOrderId: result.orderId,
     });
     const decision = decideReconcileAction(brokerResult);
     if (decision.action !== "record" || decision.orderId !== result.orderId) {
@@ -745,7 +758,13 @@ async function reconcileProposal(id, proposal) {
     await recordAndFulfill(id, proposal, { orderId: decision.orderId, shares: decision.shares, price: decision.price });
   } else if (decision.action === "retry") {
     console.log(`[companion] ${id}: ${decision.alert ?? "no broker order found"} — clearing Executing state for retry.`);
-    await setProposalField(id, { executionState: null, executionStartedAt: null });
+    await setProposalField(id, {
+      executionState: null,
+      executionStartedAt: null,
+      executionOrderId: null,
+      executionShares: null,
+      executionPrice: null,
+    });
     if (decision.alert) {
       await alertTelegram(`Order for ${proposal.side} ${proposal.ticker} (proposal ${id}): ${decision.alert}. Proposal returned to the execution queue.`);
     }

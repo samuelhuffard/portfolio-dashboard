@@ -182,6 +182,16 @@ test("companion execution pins every live order to the configured Agentic accoun
   assert.match(source, /Broker result did not confirm the configured Agentic account/);
 });
 
+test("companion reconciles by exact broker UUID when Robinhood omits ref_id", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /executionOrderId/);
+  assert.match(source, /broker order whose order ID is exactly/);
+  assert.match(source, /do not require ref_id when this exact broker order ID is available/);
+  assert.match(source, /await setProposalField\(id, \{ executionOrderId: result\.orderId \}\)/);
+  assert.match(source, /assertScheduledMcpAccountBinding\(stdout, \["mcp__robinhood-trading__get_equity_orders"\], AGENTIC_ACCOUNT_NUMBER\)/);
+  assert.match(source, /Never guess from ticker, time, or recency/);
+});
+
 test("companion isolates broker MCP work from dashboard project instructions", () => {
   const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
   assert.match(source, /const ROBINHOOD_MCP_CONFIG = process\.env\.ROBINHOOD_MCP_CONFIG/);
