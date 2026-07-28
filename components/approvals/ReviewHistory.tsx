@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { agentLabel } from '@/components/approvals/ProposalCard';
-import { sortReviewAudits, type ReviewAudit, type ReviewAuditSortDirection, type ReviewAuditSortField } from '@/lib/review-history';
+import { getReviewAuditPage, sortReviewAudits, type ReviewAudit, type ReviewAuditSortDirection, type ReviewAuditSortField } from '@/lib/review-history';
 
 function stamp(value: string): string {
   const date = new Date(value);
@@ -32,6 +32,7 @@ export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
   const [query, setQuery] = useState('');
   const [sortField, setSortField] = useState<ReviewAuditSortField>('date');
   const [sortDirection, setSortDirection] = useState<ReviewAuditSortDirection>('desc');
+  const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -41,10 +42,12 @@ export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
     ].filter(Boolean).join(' ').toLowerCase().includes(term));
     return sortReviewAudits(matches, sortField, sortDirection);
   }, [audits, query, sortDirection, sortField]);
+  const pagination = useMemo(() => getReviewAuditPage(filtered, page), [filtered, page]);
 
   function selectSort(field: ReviewAuditSortField) {
     setSortField(field);
     setSortDirection(field === 'date' || field === 'score' ? 'desc' : 'asc');
+    setPage(0);
   }
 
   function toggle(key: string) {
@@ -64,7 +67,7 @@ export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
           <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--muted)]">{filtered.length} / {audits.length} reviews</p>
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_11rem_auto]">
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ticker, action, rationale, evaluator critique…" className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:outline-none" />
+          <input value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} placeholder="Search ticker, action, rationale, evaluator critique…" className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:outline-none" />
           <label className="sr-only" htmlFor="review-audit-sort">Order reviews by</label>
           <select id="review-audit-sort" value={sortField} onChange={(event) => selectSort(event.target.value as ReviewAuditSortField)} className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-[var(--ink)] focus:outline-none">
             <option value="date">Date</option>
@@ -72,13 +75,13 @@ export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
             <option value="action">Proposal type</option>
             <option value="company">Company A–Z</option>
           </select>
-          <button type="button" onClick={() => setSortDirection((current) => current === 'asc' ? 'desc' : 'asc')} className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ink-2)] hover:border-[#9a4039] hover:text-[#9a4039]">
+          <button type="button" onClick={() => { setSortDirection((current) => current === 'asc' ? 'desc' : 'asc'); setPage(0); }} className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ink-2)] hover:border-[#9a4039] hover:text-[#9a4039]">
             {sortDirection === 'asc' ? '↑ ascending' : '↓ descending'}
           </button>
         </div>
       </div>
 
-      {filtered.length === 0 ? <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">No retained review matches that search. New scheduled reviews enter this audit automatically.</p> : filtered.map((audit) => {
+      {filtered.length === 0 ? <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">No retained review matches that search. New scheduled reviews enter this audit automatically.</p> : pagination.rows.map((audit) => {
         const key = `${audit.runId}:${audit.agentId}:${audit.ticker}:${audit.decidedAt}`;
         const open = expanded.has(key);
         return <article key={key} className="pm-panel border border-[var(--rule)] p-4">
@@ -115,6 +118,15 @@ export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
           </div>}
         </article>;
       })}
+
+      {filtered.length > 0 && <nav aria-label="Review audit pages" className="pm-panel flex flex-col gap-3 border border-[var(--rule)] p-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Showing {pagination.start + 1}–{pagination.start + pagination.rows.length} of {filtered.length}</p>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={pagination.page === 0} className="border border-[var(--rule)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ink-2)] disabled:cursor-not-allowed disabled:opacity-40 hover:border-[#9a4039] hover:text-[#9a4039]">← Previous</button>
+          <span className="min-w-20 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Page {pagination.page + 1} / {pagination.totalPages}</span>
+          <button type="button" onClick={() => setPage((current) => Math.min(pagination.totalPages - 1, current + 1))} disabled={pagination.page === pagination.totalPages - 1} className="border border-[var(--rule)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ink-2)] disabled:cursor-not-allowed disabled:opacity-40 hover:border-[#9a4039] hover:text-[#9a4039]">Next →</button>
+        </div>
+      </nav>}
     </section>
   );
 }

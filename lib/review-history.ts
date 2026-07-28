@@ -31,6 +31,7 @@ export interface ReviewAudit {
 
 export type ReviewAuditSortField = 'date' | 'score' | 'action' | 'company';
 export type ReviewAuditSortDirection = 'asc' | 'desc';
+export const REVIEW_AUDIT_PAGE_SIZE = 50;
 
 const ACTION_ORDER: Record<string, number> = {
   BUY: 0,
@@ -65,6 +66,13 @@ export function sortReviewAudits(
     if (comparison) return comparison * multiplier;
     return left.ticker.localeCompare(right.ticker) || left.decidedAt.localeCompare(right.decidedAt);
   });
+}
+
+export function getReviewAuditPage(audits: ReviewAudit[], requestedPage: number, pageSize = REVIEW_AUDIT_PAGE_SIZE) {
+  const totalPages = Math.max(1, Math.ceil(audits.length / pageSize));
+  const page = Math.min(Math.max(0, Math.floor(requestedPage)), totalPages - 1);
+  const start = page * pageSize;
+  return { page, totalPages, start, rows: audits.slice(start, start + pageSize) };
 }
 
 function parseAudit(value: unknown): ReviewAudit | null {

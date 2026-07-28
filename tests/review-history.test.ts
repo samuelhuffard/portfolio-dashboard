@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sortReviewAudits, type ReviewAudit } from '@/lib/review-history';
+import { getReviewAuditPage, REVIEW_AUDIT_PAGE_SIZE, sortReviewAudits, type ReviewAudit } from '@/lib/review-history';
 
 function audit(overrides: Partial<ReviewAudit>): ReviewAudit {
   return {
@@ -26,4 +26,14 @@ test('review history orders proposal type and company in either direction', () =
   assert.deepEqual(sortReviewAudits(rows, 'action', 'asc').map((row) => row.finalAction), ['BUY', 'SELL', 'HOLD']);
   assert.deepEqual(sortReviewAudits(rows, 'company', 'asc').map((row) => row.ticker), ['AAPL', 'GOOG', 'MSFT']);
   assert.deepEqual(sortReviewAudits(rows, 'company', 'desc').map((row) => row.ticker), ['MSFT', 'GOOG', 'AAPL']);
+});
+
+test('review history pages exactly 50 cards and clamps an out-of-range page', () => {
+  const rows = Array.from({ length: 1275 }, (_, index) => audit({ ticker: `T${index}` }));
+  const first = getReviewAuditPage(rows, 0);
+  const last = getReviewAuditPage(rows, 999);
+  assert.equal(REVIEW_AUDIT_PAGE_SIZE, 50);
+  assert.equal(first.rows.length, 50);
+  assert.equal(last.page, 25);
+  assert.equal(last.rows.length, 25);
 });
