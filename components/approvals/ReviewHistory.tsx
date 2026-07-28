@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { agentLabel } from '@/components/approvals/ProposalCard';
-import type { ReviewAudit } from '@/lib/review-history';
+import { sortReviewAudits, type ReviewAudit, type ReviewAuditSortDirection, type ReviewAuditSortField } from '@/lib/review-history';
 
 function stamp(value: string): string {
   const date = new Date(value);
@@ -30,15 +30,22 @@ function pathSummary(audit: ReviewAudit): string {
 
 export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
   const [query, setQuery] = useState('');
+  const [sortField, setSortField] = useState<ReviewAuditSortField>('date');
+  const [sortDirection, setSortDirection] = useState<ReviewAuditSortDirection>('desc');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return audits;
-    return audits.filter((audit) => [
+    const matches = !term ? audits : audits.filter((audit) => [
       audit.ticker, audit.agentId, audit.generatorAction, audit.finalAction, audit.generatorThesis,
       audit.finalThesis, audit.reason, audit.evaluatorVerdict, ...audit.evaluatorCritique, ...audit.ruleCheck,
     ].filter(Boolean).join(' ').toLowerCase().includes(term));
-  }, [audits, query]);
+    return sortReviewAudits(matches, sortField, sortDirection);
+  }, [audits, query, sortDirection, sortField]);
+
+  function selectSort(field: ReviewAuditSortField) {
+    setSortField(field);
+    setSortDirection(field === 'date' || field === 'score' ? 'desc' : 'asc');
+  }
 
   function toggle(key: string) {
     setExpanded((current) => {
@@ -56,7 +63,19 @@ export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
           <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Every reviewed name follows its actual path: analyst signal, deterministic controls, evaluator challenge, Kairos shadow result, and final disposition. This is research history, not an execution log.</p>
           <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--muted)]">{filtered.length} / {audits.length} reviews</p>
         </div>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ticker, action, rationale, evaluator critique…" className="mt-3 w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:outline-none" />
+        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_11rem_auto]">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ticker, action, rationale, evaluator critique…" className="w-full border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted-2)] focus:outline-none" />
+          <label className="sr-only" htmlFor="review-audit-sort">Order reviews by</label>
+          <select id="review-audit-sort" value={sortField} onChange={(event) => selectSort(event.target.value as ReviewAuditSortField)} className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-[var(--ink)] focus:outline-none">
+            <option value="date">Date</option>
+            <option value="score">Score</option>
+            <option value="action">Proposal type</option>
+            <option value="company">Company A–Z</option>
+          </select>
+          <button type="button" onClick={() => setSortDirection((current) => current === 'asc' ? 'desc' : 'asc')} className="border border-[var(--rule)] bg-[var(--panel-alt)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ink-2)] hover:border-[#9a4039] hover:text-[#9a4039]">
+            {sortDirection === 'asc' ? '↑ ascending' : '↓ descending'}
+          </button>
+        </div>
       </div>
 
       {filtered.length === 0 ? <p className="pm-panel border border-[var(--rule)] p-5 text-sm text-[var(--muted)]">No retained review matches that search. New scheduled reviews enter this audit automatically.</p> : filtered.map((audit) => {

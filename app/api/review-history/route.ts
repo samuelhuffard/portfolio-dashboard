@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   });
   if (!authz.ok) return authz.response;
   try {
-    return NextResponse.json({ audits: await listReviewAudits(500) });
+    return NextResponse.json({ audits: await listReviewAudits(5_000) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load review history" }, { status: 500 });
   }

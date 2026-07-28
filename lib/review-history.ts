@@ -29,6 +29,44 @@ export interface ReviewAudit {
   kairosExplanation: string[];
 }
 
+export type ReviewAuditSortField = 'date' | 'score' | 'action' | 'company';
+export type ReviewAuditSortDirection = 'asc' | 'desc';
+
+const ACTION_ORDER: Record<string, number> = {
+  BUY: 0,
+  SELL: 1,
+  HOLD: 2,
+  NO_TRADE: 3,
+  ERROR: 4,
+};
+
+/** Sort without mutating the audit index returned by the API. Missing scores/dates always remain last. */
+export function sortReviewAudits(
+  audits: ReviewAudit[],
+  field: ReviewAuditSortField,
+  direction: ReviewAuditSortDirection,
+): ReviewAudit[] {
+  const multiplier = direction === 'asc' ? 1 : -1;
+  return [...audits].sort((left, right) => {
+    let comparison = 0;
+    if (field === 'score' || field === 'date') {
+      const leftValue = field === 'score'
+        ? left.quantScore
+        : (Number.isFinite(Date.parse(left.decidedAt)) ? Date.parse(left.decidedAt) : null);
+      const rightValue = field === 'score'
+        ? right.quantScore
+        : (Number.isFinite(Date.parse(right.decidedAt)) ? Date.parse(right.decidedAt) : null);
+      if (leftValue == null && rightValue != null) return 1;
+      if (rightValue == null && leftValue != null) return -1;
+      if (leftValue != null && rightValue != null) comparison = leftValue - rightValue;
+    }
+    if (field === 'action') comparison = (ACTION_ORDER[left.finalAction ?? ''] ?? 99) - (ACTION_ORDER[right.finalAction ?? ''] ?? 99);
+    if (field === 'company') comparison = left.ticker.localeCompare(right.ticker);
+    if (comparison) return comparison * multiplier;
+    return left.ticker.localeCompare(right.ticker) || left.decidedAt.localeCompare(right.decidedAt);
+  });
+}
+
 function parseAudit(value: unknown): ReviewAudit | null {
   try {
     const record = typeof value === "string" ? JSON.parse(value) : value;
