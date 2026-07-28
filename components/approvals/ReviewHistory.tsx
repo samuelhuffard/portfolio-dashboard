@@ -16,6 +16,9 @@ function actionTone(action: string | null): string {
 }
 
 function pathSummary(audit: ReviewAudit): string {
+  if (audit.source === 'legacy_recommendation_sheet') {
+    return `Historical recommendation retained → Final: ${audit.finalAction ?? 'NO_TRADE'}`;
+  }
   const steps = [`${audit.generatorAction ?? 'No'} initial signal`];
   if (audit.evaluatorState !== 'not_run') {
     steps.push(audit.evaluatorRevisions ? `Evaluator requested ${audit.evaluatorRevisions} revision` : `Evaluator ${audit.evaluatorState}`);
@@ -65,7 +68,7 @@ export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
               <p className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--muted)]">{agentLabel(audit.agentId)} · {stamp(audit.decidedAt)}</p>
               <h3 className={`mt-1 font-mono text-xl font-semibold ${actionTone(audit.finalAction)}`}>{audit.ticker} · {audit.finalAction ?? 'NO_TRADE'}</h3>
             </div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Score {audit.quantScore ?? 'n/a'} · {audit.proposalDisposition.replaceAll('_', ' ')}</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">{audit.source === 'legacy_recommendation_sheet' ? 'Historical sheet record · ' : ''}Score {audit.quantScore ?? 'n/a'} · {audit.proposalDisposition.replaceAll('_', ' ')}</p>
           </div>
           <p className="mt-3 border-l-2 border-[#cbd9d0] pl-3 text-sm leading-6 text-[var(--ink-2)]">{pathSummary(audit)}</p>
           <button onClick={() => toggle(key)} className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] hover:text-[var(--ink)]">{open ? '↑ collapse path' : '↓ inspect reasoning path'}</button>
@@ -77,13 +80,13 @@ export default function ReviewHistory({ audits }: { audits: ReviewAudit[] }) {
             </div>
             <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-3">
               <p className="pm-label">Controls & evaluator</p>
-              <p className="mt-1 text-sm leading-6 text-[var(--ink)]">{audit.evaluatorVerdict}</p>
+              <p className="mt-1 text-sm leading-6 text-[var(--ink)]">{audit.source === 'legacy_recommendation_sheet' ? 'Evaluator trace was not retained by the prior system.' : audit.evaluatorVerdict}</p>
               {audit.evaluatorCritique.map((item) => <p key={item} className="mt-1 text-xs leading-5 text-[var(--ink-2)]">— {item}</p>)}
               {audit.ruleCheck.map((item) => <p key={item} className="mt-1 text-xs leading-5 text-[var(--muted)]">Control: {item}</p>)}
             </div>
             <div className="border border-[#cbd9d0] bg-[#f3f7f3] p-3">
               <p className="pm-label">Kairos · shadow governance</p>
-              <p className="mt-1 text-sm leading-6 text-[var(--ink)]">{audit.kairosOutcome === 'not_recorded' ? 'No Kairos review was recorded because no actionable proposal reached that stage.' : `Kairos ${audit.kairosOutcome.toLowerCase()}ed the exact proposal; it did not resize or execute it.`}</p>
+              <p className="mt-1 text-sm leading-6 text-[var(--ink)]">{audit.source === 'legacy_recommendation_sheet' ? 'This record predates candidate-level Kairos trace retention.' : audit.kairosOutcome === 'not_recorded' ? 'No Kairos review was recorded because no actionable proposal reached that stage.' : `Kairos ${audit.kairosOutcome.toLowerCase()}ed the exact proposal; it did not resize or execute it.`}</p>
               {audit.kairosExplanation.map((item) => <p key={item} className="mt-1 text-xs leading-5 text-[var(--ink-2)]">— {item}</p>)}
             </div>
             <div className="border border-[var(--rule)] bg-[var(--panel-alt)] p-3">

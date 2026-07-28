@@ -4,6 +4,7 @@ const HISTORY_KEY = "pm:research-decision-audit:history";
 
 export interface ReviewAudit {
   schemaVersion: string;
+  source: 'scheduled_scan' | 'legacy_recommendation_sheet';
   runId: string;
   agentId: string;
   ticker: string;
@@ -36,6 +37,7 @@ function parseAudit(value: unknown): ReviewAudit | null {
     if (!audit.ticker || !audit.agentId || !audit.decidedAt) return null;
     return {
       schemaVersion: audit.schemaVersion ?? "research-decision-audit-v1",
+      source: audit.source === 'legacy_recommendation_sheet' ? 'legacy_recommendation_sheet' : 'scheduled_scan',
       runId: audit.runId ?? "",
       agentId: audit.agentId,
       ticker: audit.ticker,
