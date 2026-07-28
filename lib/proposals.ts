@@ -21,6 +21,39 @@ export { validateProposalInput };
 export type ProposalSide = "BUY" | "SELL";
 export type ProposalStatus = "Pending" | "ApprovedForBrokerReview" | "Rejected" | "Expired";
 
+export interface BuyDossier {
+  version: 1;
+  businessType: string;
+  thesis: string;
+  returnMechanism: string;
+  valuation: {
+    method: string;
+    downsidePrice: number;
+    basePrice: number;
+    upsidePrice: number;
+    assumptions: string;
+    evidenceIds: string[];
+  };
+  bearCase: string;
+  killCriteria: string[];
+  horizon: string;
+  sizingRationale: string;
+  evidence: Array<{ claim: string; evidenceIds: string[] }>;
+  owner: { agentId: string; label: string };
+}
+
+export interface SellDossier {
+  version: 1;
+  exitTrigger: string;
+  urgency: 'routine' | 'elevated' | 'urgent';
+  remainingThesis: string;
+  stayInvestedIf: string;
+  killCriteria: string[];
+  evidence: Array<{ claim: string; evidenceIds: string[] }>;
+  owner: { agentId: string; label: string };
+  positionScope: string;
+}
+
 // Sentinel decisionNote for the "no reason, don't remember" rejection option — signals the
 // caller to skip writing an agent memory for this rejection, since there's nothing to learn.
 export const NO_REASON_REJECTION = "No reason";
@@ -36,6 +69,8 @@ export interface AllocationProposal {
   sellOwnerShareLimit?: number | null;
   rationale: string;
   riskSummary: string;
+  buyDossier?: BuyDossier;
+  sellDossier?: SellDossier;
   status: ProposalStatus;
   createdAt: string;
   updatedAt: string;

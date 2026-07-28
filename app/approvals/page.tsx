@@ -10,6 +10,8 @@ import {
   type ProposalStatus,
 } from '@/lib/proposals';
 import ProposalCard, { agentLabel } from '@/components/approvals/ProposalCard';
+import ReviewHistory from '@/components/approvals/ReviewHistory';
+import type { ReviewAudit } from '@/lib/review-history';
 
 interface Agent4Decision {
   proposalId: string;
@@ -45,7 +47,7 @@ const REJECT_REASONS = [
   'Liked another proposal better.',
 ] as const;
 
-type Tab = 'active' | 'history';
+type Tab = 'active' | 'history' | 'reviews';
 
 interface AgentResearchScanSummary {
   agentId: string;
@@ -199,6 +201,7 @@ function ResearchRunSummaryCard({ scan }: { scan: ResearchScanSummary | null }) 
 export default function ApprovalsPage() {
   const [proposals, setProposals] = useState<AllocationProposal[]>([]);
   const [researchScan, setResearchScan] = useState<ResearchScanSummary | null>(null);
+  const [reviewAudits, setReviewAudits] = useState<ReviewAudit[]>([]);
   const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -237,11 +240,12 @@ export default function ApprovalsPage() {
   async function load() {
     setError(null);
     try {
-      const res = await fetch('/api/proposals');
-      const json = await res.json();
+      const [res, auditRes] = await Promise.all([fetch('/api/proposals'), fetch('/api/review-history')]);
+      const [json, auditJson] = await Promise.all([res.json(), auditRes.json()]);
       if (!res.ok || json.error) throw new Error(json.error || 'Failed to load proposals');
       setProposals(json.proposals ?? []);
       setResearchScan(json.researchScan ?? null);
+      if (auditRes.ok && !auditJson.error) setReviewAudits(auditJson.audits ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -410,6 +414,16 @@ export default function ApprovalsPage() {
         >
           History{archivedProposals.length > 0 ? ` (${archivedProposals.length})` : ''}
         </button>
+        <button
+          onClick={() => setTab('reviews')}
+          className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] transition-colors ${
+            tab === 'reviews'
+              ? 'border-[var(--rule)] text-[var(--pos)]'
+              : 'border-transparent text-[var(--muted)] hover:text-[var(--ink-2)]'
+          }`}
+        >
+          Review audit{reviewAudits.length > 0 ? ` (${reviewAudits.length})` : ''}
+        </button>
       </div>
 
       {tab === 'active' && (
@@ -564,6 +578,8 @@ export default function ApprovalsPage() {
           </section>
         </>
       )}
+
+      {tab === 'reviews' && <ReviewHistory audits={reviewAudits} />}
 
       {rejectingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--panel-alt)] p-4" onClick={cancelReject}>
