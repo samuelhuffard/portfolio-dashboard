@@ -756,18 +756,17 @@ async function reconcileProposal(id, proposal) {
       return;
     }
     await recordAndFulfill(id, proposal, { orderId: decision.orderId, shares: decision.shares, price: decision.price });
-  } else if (decision.action === "retry") {
-    console.log(`[companion] ${id}: ${decision.alert ?? "no broker order found"} — clearing Executing state for retry.`);
+  } else if (decision.action === "fail") {
+    const failureReason = decision.reason ?? "broker execution was not confirmed";
+    console.error(`[companion] ${id}: ${failureReason} — marking approval terminal; fresh signed proposal required.`);
     await setProposalField(id, {
-      executionState: null,
-      executionStartedAt: null,
-      executionOrderId: null,
-      executionShares: null,
-      executionPrice: null,
+      status: "ExecutionFailed",
+      executionState: "BrokerRejected",
+      executionFailedAt: new Date().toISOString(),
+      executionFailureReason: failureReason,
+      updatedAt: new Date().toISOString(),
     });
-    if (decision.alert) {
-      await alertTelegram(`Order for ${proposal.side} ${proposal.ticker} (proposal ${id}): ${decision.alert}. Proposal returned to the execution queue.`);
-    }
+    await alertTelegram(`Order for ${proposal.side} ${proposal.ticker} (proposal ${id}) failed: ${failureReason}. It is terminal and will not retry; create and sign a fresh proposal after a new broker-position check.`);
   } else {
     // Still working (new/queued/confirmed/partially_filled) — leave Executing, check again next poll.
     console.log(`[companion] ${id}: broker order ${rec.orderId ?? "?"} still ${rec.state ?? "working"} — waiting.`);

@@ -19,7 +19,7 @@ import {
 export { validateProposalInput };
 
 export type ProposalSide = "BUY" | "SELL";
-export type ProposalStatus = "Pending" | "ApprovedForBrokerReview" | "Rejected" | "Expired";
+export type ProposalStatus = "Pending" | "ApprovedForBrokerReview" | "Rejected" | "Expired" | "ExecutionFailed";
 
 export interface BuyDossier {
   version: 1;
@@ -87,6 +87,8 @@ export interface AllocationProposal {
   fulfilledAt: string | null;
   fulfilledOrderId: string | null;
   fulfilledShares: number | null;
+  executionFailedAt?: string | null;
+  executionFailureReason?: string | null;
   // HMAC over the trade-relevant fields, attached when a manager approves.
   // Executors verify it before placing an order, so a bare Redis write can no
   // longer forge an "approved" proposal — approval authority stays with the
@@ -122,6 +124,7 @@ export interface OpenLotForSellScope {
 export function computeSellOwnerShareLimit(
   proposal: Pick<AllocationProposal, "side" | "ticker" | "agentId">,
   lots: OpenLotForSellScope[],
+  holdings: Array<{ ticker: string; shares: number }> = [],
 ): number | null {
   if (proposal.side !== "SELL") return null;
   const ticker = proposal.ticker.trim().toUpperCase();
@@ -139,7 +142,16 @@ export function computeSellOwnerShareLimit(
       `Cannot approve this SELL: ${proposal.agentId} has no verified open ${ticker} shares.`
     );
   }
-  return Math.round(shares * 1e8) / 1e8;
+  const holding = holdings.find((row) => row.ticker.trim().toUpperCase() === ticker);
+  const brokerShares = holding?.shares;
+  // Lots may be legacy-rounded while Holdings reflects the broker's precise
+  // fractional quantity. Approval must never sign more shares than the
+  // account can actually deliver.
+  const hasBrokerShares = typeof brokerShares === "number" && Number.isFinite(brokerShares) && brokerShares > 0;
+  const safeShares = hasBrokerShares
+    ? Math.min(shares, brokerShares)
+    : shares;
+  return Math.round(safeShares * 1e8) / 1e8;
 }
 
 const LIST_KEY = "pm:approval_proposals";
@@ -185,12 +197,12 @@ async function expireIfNeeded(proposal: AllocationProposal | null): Promise<Allo
   return expired;
 }
 
-export function normalizeDecisionStatus(status: unknown): Exclude<ProposalStatus, "Pending"> {
+export function normalizeDecisionStatus(status: unknown): "ApprovedForBrokerReview" | "Rejected" {
   const normalizedStatus = cleanText(status);
-  if (!PROPOSAL_STATUSES.includes(normalizedStatus) || normalizedStatus === "Pending") {
+  if (normalizedStatus !== "ApprovedForBrokerReview" && normalizedStatus !== "Rejected") {
     throw new Error("Decision must approve or reject the proposal.");
   }
-  return normalizedStatus as Exclude<ProposalStatus, "Pending">;
+  return normalizedStatus;
 }
 
 export function applyProposalDecision(

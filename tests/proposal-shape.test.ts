@@ -66,6 +66,8 @@ const sample: AllocationProposal = {
   fulfilledAt: null,
   fulfilledOrderId: null,
   fulfilledShares: null,
+  executionFailedAt: null,
+  executionFailureReason: null,
   decisionHmac: null,
 };
 

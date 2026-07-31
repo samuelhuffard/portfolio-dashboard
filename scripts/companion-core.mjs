@@ -131,19 +131,21 @@ First check the current quote. If $${amountDollars} would require more than ${se
 //   rec = { found: boolean, orderId?, state?, shares?, price? }
 // Returns one of:
 //   { action: "record",  orderId, shares, price }  — order filled; record + fulfill
-//   { action: "retry" }                            — no/terminal order; clear Executing, re-execute next poll
-//   { action: "retry", alert }                     — same, but page Sam (order died at the broker)
+//   { action: "fail", reason }                     — terminal failure; require fresh signed approval
 //   { action: "wait" }                             — order still working; check again next poll
 export function decideReconcileAction(rec) {
   if (!rec.found) {
-    return { action: "retry" };
+    return {
+      action: "fail",
+      reason: "no broker order found after an execution attempt; approval is stale and must not be retried automatically",
+    };
   }
   const state = String(rec.state ?? "").toLowerCase();
   if (state === "filled") {
     return { action: "record", orderId: rec.orderId, shares: rec.shares, price: rec.price };
   }
   if (["cancelled", "rejected", "failed", "voided"].includes(state)) {
-    return { action: "retry", alert: `broker order ${rec.orderId} ended ${state}` };
+    return { action: "fail", reason: `broker order ${rec.orderId} ended ${state}` };
   }
   return { action: "wait" };
 }

@@ -109,13 +109,16 @@ test("reconcile decision table covers every broker outcome", () => {
     shares: 2,
     price: 100,
   });
-  // No order at the broker → safe to retry.
-  assert.deepEqual(decideReconcileAction({ found: false }), { action: "retry" });
-  // Terminal non-fill → retry, with an alert.
+  // No broker order after an attempt is not permission to replay stale intent.
+  assert.deepEqual(decideReconcileAction({ found: false }), {
+    action: "fail",
+    reason: "no broker order found after an execution attempt; approval is stale and must not be retried automatically",
+  });
+  // Terminal non-fill requires a fresh proposal and signature.
   for (const state of ["cancelled", "rejected", "failed", "voided"]) {
     const d = decideReconcileAction({ found: true, orderId: "o2", state });
-    assert.equal(d.action, "retry");
-    assert.match(d.alert ?? "", new RegExp(state));
+    assert.equal(d.action, "fail");
+    assert.match(d.reason ?? "", new RegExp(state));
   }
   // Still working → wait, never re-execute.
   for (const state of ["new", "queued", "confirmed", "partially_filled", ""]) {
@@ -169,6 +172,8 @@ test("companion reconciliation requires exact ref_id and broker confirmation bef
   assert.match(source, /decision\.action !== "record" \|\| decision\.orderId !== result\.orderId/);
   assert.match(source, /proposal\.executionState === "ManualReview"/);
   assert.match(source, /held for manual broker reconciliation/);
+  assert.match(source, /status: "ExecutionFailed"/);
+  assert.match(source, /fresh signed proposal required/);
 });
 
 test("companion execution pins every live order to the configured Agentic account", () => {

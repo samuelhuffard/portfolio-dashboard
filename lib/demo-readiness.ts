@@ -58,7 +58,7 @@ export interface SmokeBaseUrlResult {
   reason?: "BASE_URL_ORIGIN_INVALID" | "BASE_URL_CREDENTIALS_FORBIDDEN" | "BASE_URL_QUERY_OR_HASH_FORBIDDEN" | "BASE_URL_SCHEME_FORBIDDEN";
 }
 
-const PROPOSAL_STATUSES = new Set(["Pending", "ApprovedForBrokerReview", "Rejected", "Expired"]);
+const PROPOSAL_STATUSES = new Set(["Pending", "ApprovedForBrokerReview", "Rejected", "Expired", "ExecutionFailed"]);
 const TICKER_RE = /^[A-Z][A-Z0-9.-]{0,9}$/;
 
 function isRecord(value: unknown): value is Record<string, any> {

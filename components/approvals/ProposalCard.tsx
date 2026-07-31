@@ -133,6 +133,7 @@ const STATUS_STYLES: Record<ProposalStatus, string> = {
   ApprovedForBrokerReview: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--pos)]',
   Rejected: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--warn)]',
   Expired: 'border-[var(--rule)] bg-[var(--panel-alt)] text-[var(--ink)]',
+  ExecutionFailed: 'border-[#c27b73] bg-[#fff3f1] text-[#9f3b32]',
 };
 
 const STATUS_LABELS: Record<ProposalStatus, string> = {
@@ -140,6 +141,7 @@ const STATUS_LABELS: Record<ProposalStatus, string> = {
   ApprovedForBrokerReview: 'Accepted for broker review',
   Rejected: 'Rejected',
   Expired: 'Expired (48h)',
+  ExecutionFailed: 'Broker execution failed — re-approval required',
 };
 
 export function proposalStatusLabel(proposal: AllocationProposal): string {

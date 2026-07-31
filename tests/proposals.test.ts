@@ -177,6 +177,16 @@ test("SELL approval scope sums only the proposing agent's verified open lots", (
   );
 });
 
+test("SELL approval clamps a legacy-rounded lot ceiling to broker Holdings shares", () => {
+  const sell = { ...baseProposal, side: "SELL" as const, ticker: "NVDA", agentId: "agent-1" };
+  const limit = computeSellOwnerShareLimit(
+    sell,
+    [{ ticker: "NVDA", agentId: "agent-1", sharesOpen: 0.0756, status: "OPEN" }],
+    [{ ticker: "NVDA", shares: 0.075555 }],
+  );
+  assert.equal(limit, 0.075555);
+});
+
 test("v2 SELL approval signs its strategy-owner share ceiling", () => {
   process.env.AUDIT_HMAC_SECRET = "test-secret";
   try {

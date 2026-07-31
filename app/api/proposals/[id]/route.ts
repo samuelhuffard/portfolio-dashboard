@@ -12,7 +12,7 @@ import {
   updateProposalFields,
   validateProposalPatch,
 } from "@/lib/proposals";
-import { getServiceAccountClients, getSharedSpreadsheetId, readCashBalance, readLots } from "@/lib/sheets";
+import { getServiceAccountClients, getSharedSpreadsheetId, readCashBalance, readHoldingsDetail, readLots } from "@/lib/sheets";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const authz = await requireApiPermission({
@@ -43,10 +43,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           getServiceAccountClients(),
           getSharedSpreadsheetId(),
         ]);
-        sellOwnerShareLimit = computeSellOwnerShareLimit(
-          current,
-          await readLots(sheets, spreadsheetId),
-        );
+        const [lots, holdings] = await Promise.all([
+          readLots(sheets, spreadsheetId),
+          readHoldingsDetail(sheets, spreadsheetId),
+        ]);
+        sellOwnerShareLimit = computeSellOwnerShareLimit(current, lots, holdings);
       }
     }
 
