@@ -4,7 +4,7 @@ Next.js 16 / React 19 / Tailwind 4 / TS dashboard on Vercel (Clerk auth, dark "P
 
 ## Read first
 
-System docs live in the backend repo: `../portfolio-manager/docs/` — `ONBOARDING.md` (new here), `CHANGE_MAP.md` (before any change), `INVARIANTS.md` (before touching proposals/approvals/executor/investor views), `RUNBOOK.md` (ops).
+Start with this repository's `docs/AGENT-CONTEXT.md`, then read the backend's shared context at `../portfolio-manager/docs/AGENT-CONTEXT.md`. System docs live in the backend repo: `../portfolio-manager/docs/` — `ONBOARDING.md` (new here), `CHANGE_MAP.md` (before any change), `INVARIANTS.md` (before touching proposals/approvals/executor/investor views), `RUNBOOK.md` (ops).
 
 ## Hard rules
 
