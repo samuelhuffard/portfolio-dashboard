@@ -85,6 +85,8 @@ loadEnv();
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL?.trim();
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+const PORTFOLIO_BACKEND_URL = process.env.PORTFOLIO_BACKEND_URL?.trim().replace(/\/$/, "");
+const PORTFOLIO_WEBHOOK_SECRET = process.env.PORTFOLIO_WEBHOOK_SECRET?.trim();
 const POLL_INTERVAL_MS = 15 * 60 * 1000; // 15 min during market hours
 const LOCK_TTL_SECONDS = 300; // 5 min — prevents double-execution if companion restarts mid-trade
 const LIST_KEY = "pm:approval_proposals";
@@ -285,11 +287,20 @@ async function getProposal(id) {
 }
 
 async function setProposalField(id, updates) {
-  const proposal = await getProposal(id);
-  if (!proposal) throw new Error(`Proposal ${id} not found`);
-  const updated = { ...proposal, ...updates };
-  await redisPost(["set", `pm:approval_proposal:${id}`, JSON.stringify(updated)]);
-  return updated;
+  if (!PORTFOLIO_BACKEND_URL || !PORTFOLIO_WEBHOOK_SECRET) {
+    throw new Error("PORTFOLIO_BACKEND_URL and PORTFOLIO_WEBHOOK_SECRET are required for companion proposal state");
+  }
+  const response = await fetch(`${PORTFOLIO_BACKEND_URL}/companion/proposal-state`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${PORTFOLIO_WEBHOOK_SECRET}`,
+    },
+    body: JSON.stringify({ proposalId: id, patch: updates }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.ok) throw new Error(`companion proposal-state failed: ${body?.error ?? `HTTP ${response.status}`}`);
+  return body;
 }
 
 async function acquireLock(id) {
@@ -464,37 +475,31 @@ or, if no matching order exists:
 // ET conversion via Intl instead of the old approximate DST math).
 
 // ── Trade ledger + lots ────────────────────────────────────────────────────────
-const RECORD_SCRIPT = join(__dir, "../../portfolio-manager/scripts/record-trade.js");
-
 async function recordTrade(proposal, result) {
   // A real order happened by the time this runs — failing to record it corrupts
   // the FIFO/attribution books, so every problem here must THROW (the caller
   // keeps the proposal in Executing state and retries), never silently skip.
-  if (!existsSync(RECORD_SCRIPT)) {
-    throw new Error(`record-trade.js not found at ${RECORD_SCRIPT} — cannot record executed trade`);
-  }
   if (!result.orderId) throw new Error("record-trade: missing orderId from execution result");
   const shares = Number(result.shares);
   if (!Number.isFinite(shares) || shares <= 0) throw new Error(`record-trade: invalid shares "${result.shares}"`);
   const price = Number(result.price);
   if (!Number.isFinite(price) || price <= 0) throw new Error(`record-trade: invalid price "${result.price}"`);
 
-  const { stdout, stderr } = await execFileAsync(
-    "node",
-    [
-      RECORD_SCRIPT,
-      "--proposalId", proposal.id,
-      "--orderId",    result.orderId,
-      "--ticker",     proposal.ticker,
-      "--side",       proposal.side,
-      "--shares",     String(shares),
-      "--price",      String(price),
-      "--agentId",    proposal.agentId,
-    ],
-    { cwd: join(__dir, "../../portfolio-manager"), timeout: 30_000 }
-  );
-  if (stderr) console.warn("[companion] record-trade stderr:", stderr.trim());
-  console.log("[companion] ✓ Trade recorded in ledger:", stdout.trim());
+  if (!PORTFOLIO_BACKEND_URL || !PORTFOLIO_WEBHOOK_SECRET) {
+    throw new Error("PORTFOLIO_BACKEND_URL and PORTFOLIO_WEBHOOK_SECRET are required to record a trade");
+  }
+  const response = await fetch(`${PORTFOLIO_BACKEND_URL}/record-trade`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${PORTFOLIO_WEBHOOK_SECRET}`,
+    },
+    body: JSON.stringify({ proposalId: proposal.id, orderId: result.orderId, ticker: proposal.ticker, side: proposal.side, shares, price, agentId: proposal.agentId }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.ok) throw new Error(`record-trade failed: ${body?.error ?? `HTTP ${response.status}`}`);
+  if (body.needsReconciliation) throw new Error("record-trade requires lot reconciliation; proposal remains unfulfilled");
+  console.log("[companion] ✓ Trade recorded by Jetson financial writer");
 }
 
 // ── Holdings sync ─────────────────────────────────────────────────────────────
@@ -673,14 +678,7 @@ async function recordAndFulfill(id, proposal, { orderId, shares, price }) {
     await alertTelegram(`Trade EXECUTED but ledger recording FAILED for ${proposal.side} $${proposal.amountDollars} ${proposal.ticker} (proposal ${id}, order ${orderId}): ${err.message}. Will retry recording next poll.`);
     return false;
   }
-  await setProposalField(id, {
-    fulfilledAt: new Date().toISOString(),
-    fulfilledOrderId: orderId,
-    fulfilledShares: shares,
-    executionState: null,
-  });
   console.log(`[companion] ✓ ${id} fulfilled — order ${orderId}, ${shares} shares`);
-  syncHoldings().catch((err) => console.warn("[companion] sync error:", err.message));
   return true;
 }
 
@@ -764,7 +762,6 @@ async function reconcileProposal(id, proposal) {
       executionState: "BrokerRejected",
       executionFailedAt: new Date().toISOString(),
       executionFailureReason: failureReason,
-      updatedAt: new Date().toISOString(),
     });
     await alertTelegram(`Order for ${proposal.side} ${proposal.ticker} (proposal ${id}) failed: ${failureReason}. It is terminal and will not retry; create and sign a fresh proposal after a new broker-position check.`);
   } else {
