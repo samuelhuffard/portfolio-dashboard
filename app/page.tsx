@@ -5,7 +5,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -38,6 +38,7 @@ import { fmtCurrency, fmtNumber, fmtPercent, gainLossColor, gainLossSoftColor, g
 import {
   buildAdjustedValueSeries,
   buildPerformanceComparison,
+  paddedReturnDomain,
 } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
@@ -63,6 +64,18 @@ function paddedDomain(values: number[], padRatio = 0.18, minPad = 1): [number, n
   const max = Math.max(...values);
   const pad = Math.max((max - min) * padRatio, minPad);
   return [min - pad, max + pad];
+}
+
+/**
+ * Fraction (0–1, top to bottom) of a vertical gradient's bounding box where a
+ * zero-crossing domain switches from positive to negative space. Used to give
+ * an SVG gradient a hard edge exactly at the zero line, so a single Area fill
+ * reads as green above and red below regardless of how the curve wanders.
+ */
+function zeroCrossingOffset([min, max]: [number, number]): number {
+  if (max <= 0) return 0;
+  if (min >= 0) return 1;
+  return max / (max - min);
 }
 
 /** A figure, or an em-dash when the value is not on the verified record. */
@@ -98,10 +111,23 @@ export default function CommandPage() {
   const windowedComparison = filterByPeriod(comparison, period);
 
   const growthSummary = summarizeSeries(windowedGrowth.map((p) => p.Value));
-  const comparisonSummary = summarizeSeries(windowedComparison.map((p) => p.Portfolio));
+  // The comparison chart plots the spread itself (portfolio return minus S&P
+  // return), not the two absolute curves, so its stats describe that spread —
+  // how far ahead or behind the benchmark the account has run, not the raw
+  // return level.
+  const comparisonSummary = summarizeSeries(windowedComparison.map((p) => p.spread));
+  const spreadDomain = paddedReturnDomain(windowedComparison.map((p) => p.spread), 1);
+  const spreadGradientOffset = zeroCrossingOffset(spreadDomain);
   // A lone record is shown as a point, since a single point has no line.
   const growthSoloDot = windowedGrowth.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
-  const comparisonSoloDot = windowedComparison.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
+  const comparisonSoloDot =
+    windowedComparison.length === 1
+      ? {
+          r: 2.75,
+          fill: windowedComparison[0].spread >= 0 ? 'var(--pos)' : 'var(--neg)',
+          strokeWidth: 0,
+        }
+      : (false as const);
   const vsBenchmark = hasBenchmarkData
     ? relativeToBenchmark(
         windowedComparison.map((p) => p.Portfolio),
@@ -266,7 +292,7 @@ export default function CommandPage() {
           <Panel>
             <PanelHead
               title="Portfolio vs S&P 500"
-              caption="Cumulative investment return since the first comparable record, adjusted for contributions and withdrawals"
+              caption="Lead or lag against the S&P 500 since the first comparable record · green is ahead, red is behind"
             />
             {feedOffline ? (
               <Hatch
@@ -294,6 +320,16 @@ export default function CommandPage() {
                         data={windowedComparison}
                         margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
                       >
+                        <defs>
+                          <linearGradient id="spreadFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset={spreadGradientOffset} stopColor="var(--pos)" stopOpacity={0.22} />
+                            <stop offset={spreadGradientOffset} stopColor="var(--neg)" stopOpacity={0.22} />
+                          </linearGradient>
+                          <linearGradient id="spreadStroke" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset={spreadGradientOffset} stopColor="var(--pos)" stopOpacity={1} />
+                            <stop offset={spreadGradientOffset} stopColor="var(--neg)" stopOpacity={1} />
+                          </linearGradient>
+                        </defs>
                         <CartesianGrid stroke="#ebece9" vertical={false} />
                         <XAxis
                           dataKey="date"
@@ -307,33 +343,22 @@ export default function CommandPage() {
                           axisLine={false}
                           tickLine={false}
                           width={62}
-                          domain={paddedDomain(
-                            windowedComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]),
-                            0.18,
-                            0.5,
-                          )}
-                          tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
+                          domain={spreadDomain}
+                          tickFormatter={(v) => `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(1)} pt`}
                         />
                         <Tooltip
                           contentStyle={TOOLTIP_STYLE}
-                          formatter={(v) => `${Number(v).toFixed(2)}%`}
+                          formatter={(v) => `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(2)} pt vs S&P 500`}
                         />
+                        <ReferenceLine y={0} stroke="var(--rule-soft)" strokeWidth={1} />
                         <Area
                           type="linear"
-                          dataKey="Portfolio"
-                          stroke="#1f4b76"
+                          dataKey="spread"
+                          stroke="url(#spreadStroke)"
                           strokeWidth={1.5}
-                          fill="none"
+                          fill="url(#spreadFill)"
                           dot={comparisonSoloDot}
-                          activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
-                        />
-                        <Line
-                          type="linear"
-                          dataKey="S&P 500"
-                          stroke="#a9abb0"
-                          strokeWidth={1.25}
-                          strokeDasharray="3 3"
-                          dot={comparisonSoloDot}
+                          activeDot={{ r: 2.75, strokeWidth: 0 }}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -343,36 +368,27 @@ export default function CommandPage() {
                   className="flex items-center"
                   style={{ borderTop: '1px solid var(--rule-soft)', fontSize: 11.5 }}
                 >
-                  <StatCell label="Period change" first>
+                  <StatCell label="Currently" first>
                     <Figure
                       value={
-                        comparisonSummary.change === null
+                        windowedComparison.length === 0
                           ? '—'
-                          : `${comparisonSummary.change >= 0 ? '+' : ''}${comparisonSummary.change.toFixed(2)} pt`
+                          : `${windowedComparison[windowedComparison.length - 1].spread >= 0 ? '+' : ''}${windowedComparison[windowedComparison.length - 1].spread.toFixed(2)} pt`
                       }
-                      tone={gainLossTone(comparisonSummary.change)}
+                      tone={gainLossTone(windowedComparison.at(-1)?.spread ?? null)}
                     />
                   </StatCell>
-                  <StatCell label="High">
+                  <StatCell label="Best lead">
                     <Figure
-                      value={comparisonSummary.high === null ? '—' : `${comparisonSummary.high.toFixed(2)}%`}
+                      value={comparisonSummary.high === null ? '—' : `+${comparisonSummary.high.toFixed(2)} pt`}
                     />
                   </StatCell>
-                  <StatCell label="Low">
+                  <StatCell label="Worst lag">
                     <Figure
-                      value={comparisonSummary.low === null ? '—' : `${comparisonSummary.low.toFixed(2)}%`}
+                      value={comparisonSummary.low === null ? '—' : `${comparisonSummary.low.toFixed(2)} pt`}
                     />
                   </StatCell>
-                  <StatCell label="Max drawdown">
-                    <Figure
-                      value={
-                        comparisonSummary.maxDrawdownPct === null
-                          ? '—'
-                          : `${comparisonSummary.maxDrawdownPct.toFixed(2)}%`
-                      }
-                    />
-                  </StatCell>
-                  <StatCell label="vs S&P 500">
+                  <StatCell label="vs S&P 500 (period)">
                     <Figure
                       value={vsBenchmark === null ? '—' : `${vsBenchmark >= 0 ? '+' : ''}${vsBenchmark.toFixed(2)} pt`}
                       tone={gainLossTone(vsBenchmark)}
