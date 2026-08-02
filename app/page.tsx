@@ -68,14 +68,15 @@ function paddedDomain(values: number[], padRatio = 0.18, minPad = 1): [number, n
 
 /**
  * Fraction (0–1, top to bottom) of a vertical gradient's bounding box where a
- * zero-crossing domain switches from positive to negative space. Used to give
- * an SVG gradient a hard edge exactly at the zero line, so a single Area fill
- * reads as green above and red below regardless of how the curve wanders.
+ * domain crosses a threshold (zero for a return spread, the window's opening
+ * value for a dollar series). Used to give an SVG gradient a hard edge exactly
+ * at that line, so a single Area fill reads as green above and red below
+ * regardless of how the curve wanders.
  */
-function zeroCrossingOffset([min, max]: [number, number]): number {
-  if (max <= 0) return 0;
-  if (min >= 0) return 1;
-  return max / (max - min);
+function thresholdCrossingOffset([min, max]: [number, number], threshold: number): number {
+  if (max <= threshold) return 0;
+  if (min >= threshold) return 1;
+  return (max - threshold) / (max - min);
 }
 
 /** A figure, or an em-dash when the value is not on the verified record. */
@@ -111,15 +112,28 @@ export default function CommandPage() {
   const windowedComparison = filterByPeriod(comparison, period);
 
   const growthSummary = summarizeSeries(windowedGrowth.map((p) => p.Value));
+  // Colour the growth chart against where the window opened, not against zero
+  // dollars — an account balance is (almost) never negative, so a literal
+  // zero threshold would render solid green regardless of performance.
+  const growthBaseline = windowedGrowth[0]?.Value ?? 0;
+  const growthDomain = paddedDomain(windowedGrowth.map((d) => d.Value));
+  const growthGradientOffset = thresholdCrossingOffset(growthDomain, growthBaseline);
   // The comparison chart plots the spread itself (portfolio return minus S&P
   // return), not the two absolute curves, so its stats describe that spread —
   // how far ahead or behind the benchmark the account has run, not the raw
   // return level.
   const comparisonSummary = summarizeSeries(windowedComparison.map((p) => p.spread));
   const spreadDomain = paddedReturnDomain(windowedComparison.map((p) => p.spread), 1);
-  const spreadGradientOffset = zeroCrossingOffset(spreadDomain);
+  const spreadGradientOffset = thresholdCrossingOffset(spreadDomain, 0);
   // A lone record is shown as a point, since a single point has no line.
-  const growthSoloDot = windowedGrowth.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
+  const growthSoloDot =
+    windowedGrowth.length === 1
+      ? {
+          r: 2.75,
+          fill: windowedGrowth[0].Value >= growthBaseline ? 'var(--pos)' : 'var(--neg)',
+          strokeWidth: 0,
+        }
+      : (false as const);
   const comparisonSoloDot =
     windowedComparison.length === 1
       ? {
@@ -195,7 +209,7 @@ export default function CommandPage() {
           <Panel>
             <PanelHead
               title="Portfolio growth"
-              caption="Account value in today’s capital, so contributions mint units rather than showing up as growth"
+              caption="Account value in today’s capital, so contributions mint units rather than showing up as growth · green is above where the window opened, red is below"
               right={
                 <Segmented
                   label="Chart period"
@@ -226,6 +240,16 @@ export default function CommandPage() {
                         data={windowedGrowth}
                         margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
                       >
+                        <defs>
+                          <linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset={growthGradientOffset} stopColor="var(--pos)" stopOpacity={0.22} />
+                            <stop offset={growthGradientOffset} stopColor="var(--neg)" stopOpacity={0.22} />
+                          </linearGradient>
+                          <linearGradient id="growthStroke" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset={growthGradientOffset} stopColor="var(--pos)" stopOpacity={1} />
+                            <stop offset={growthGradientOffset} stopColor="var(--neg)" stopOpacity={1} />
+                          </linearGradient>
+                        </defs>
                         <CartesianGrid stroke="#ebece9" vertical={false} />
                         <XAxis
                           dataKey="date"
@@ -239,21 +263,22 @@ export default function CommandPage() {
                           axisLine={false}
                           tickLine={false}
                           width={62}
-                          domain={paddedDomain(windowedGrowth.map((d) => d.Value))}
+                          domain={growthDomain}
                           tickFormatter={(v) => fmtAxisDollar(Number(v))}
                         />
                         <Tooltip
                           contentStyle={TOOLTIP_STYLE}
                           formatter={(v) => fmtCurrency(Number(v))}
                         />
+                        <ReferenceLine y={growthBaseline} stroke="var(--rule-soft)" strokeWidth={1} />
                         <Area
                           type="linear"
                           dataKey="Value"
-                          stroke="#1f4b76"
+                          stroke="url(#growthStroke)"
                           strokeWidth={1.5}
-                          fill="none"
+                          fill="url(#growthFill)"
                           dot={growthSoloDot}
-                          activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
+                          activeDot={{ r: 2.75, strokeWidth: 0 }}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
