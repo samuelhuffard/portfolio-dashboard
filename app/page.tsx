@@ -34,14 +34,10 @@ import {
   type ChartPeriod,
 } from '@/lib/command-stats';
 
-const CHART_VIEWS = ['Normalized', 'Return', 'Balance'] as const;
-type ChartView = (typeof CHART_VIEWS)[number];
 import { fmtCurrency, fmtNumber, fmtPercent, gainLossColor, gainLossSoftColor, gainLossTone } from '@/lib/format';
 import {
-  buildActualValueSeries,
   buildAdjustedValueSeries,
   buildPerformanceComparison,
-  buildReturnSeries,
 } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
@@ -86,54 +82,26 @@ function Figure({ value, tone }: { value: string; tone?: 'pos' | 'neg' | 'warn' 
 export default function CommandPage() {
   const { data, error, loading } = usePortfolio();
   const [period, setPeriod] = useState<ChartPeriod>('1M');
-  const [showBenchmark, setShowBenchmark] = useState(true);
-  const [view, setView] = useState<ChartView>('Normalized');
 
   const totals = data?.totals ?? null;
   const cash = data?.cash ?? null;
   const holdings = data?.holdings ?? [];
 
-  const comparison = data ? buildPerformanceComparison(data.performance, data.cashFlows) : [];
-  const hasBenchmarkData = comparison.length >= 2;
-  // Return is the default: contributions are removed from the interval they
-  // land in, so funding the account leaves no step and only market movement
-  // shows. Balance plots the recorded dollar value, where deposits are real
-  // steps and dwarf the performance they sit beside.
-  const returns = data ? buildReturnSeries(data.performance, data.cashFlows) : [];
-  // Normalized restates every point in today's capital, so a deposit is a level
+  // Growth restates every point in today's capital, so a deposit is a level
   // shift of the whole history rather than a step in it — the curve then moves
   // only with the market, while still ending on the real balance.
-  const normalized = data ? buildAdjustedValueSeries(data.performance, data.cashFlows) : [];
-  const growth = data ? buildActualValueSeries(data.performance) : [];
+  const growth = data ? buildAdjustedValueSeries(data.performance, data.cashFlows) : [];
+  const comparison = data ? buildPerformanceComparison(data.performance, data.cashFlows) : [];
+  const hasBenchmarkData = comparison.length >= 2;
 
-  const windowed = filterByPeriod(growth, period);
+  const windowedGrowth = filterByPeriod(growth, period);
   const windowedComparison = filterByPeriod(comparison, period);
-  // A line needs two points. Fall back to the value series when the benchmark
-  // view has too few points in this window, otherwise the chart would render a
-  // comparison series that cannot draw anything.
-  const windowedReturns = filterByPeriod(returns, period);
-  const isReturnView = view === 'Return';
-  const benchmarkView =
-    isReturnView && showBenchmark && hasBenchmarkData && windowedComparison.length >= 2;
-  const windowedNormalized = filterByPeriod(normalized, period);
-  const plotted = benchmarkView
-    ? windowedComparison
-    : isReturnView
-      ? windowedReturns
-      : view === 'Normalized'
-        ? windowedNormalized
-        : windowed;
 
-  // Stats describe whichever axis is on screen. Drawdown in particular must be
-  // measured on the return series: computed from balances it would count a
-  // deposit-driven rise as a peak and report a fictitious fall afterwards.
-  const summary = summarizeSeries(
-    isReturnView
-      ? windowedReturns.map((p) => p.Portfolio)
-      : (plotted as Array<{ Value: number }>).map((p) => p.Value),
-  );
+  const growthSummary = summarizeSeries(windowedGrowth.map((p) => p.Value));
+  const comparisonSummary = summarizeSeries(windowedComparison.map((p) => p.Portfolio));
   // A lone record is shown as a point, since a single point has no line.
-  const soloDot = plotted.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
+  const growthSoloDot = windowedGrowth.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
+  const comparisonSoloDot = windowedComparison.length === 1 ? { r: 2.75, fill: '#1f4b76', strokeWidth: 0 } : false as const;
   const vsBenchmark = hasBenchmarkData
     ? relativeToBenchmark(
         windowedComparison.map((p) => p.Portfolio),
@@ -200,49 +168,15 @@ export default function CommandPage() {
 
           <Panel>
             <PanelHead
-              title="Portfolio value"
-              caption={
-                isReturnView
-                  ? hasBenchmarkData
-                    ? 'Investment return, adjusted for contributions and withdrawals'
-                    : 'Investment return, adjusted for contributions and withdrawals · no SPY history, benchmark unavailable'
-                  : view === 'Normalized'
-                    ? 'Account value in today\u2019s capital, so contributions move the level rather than the shape'
-                    : 'Account value as recorded at each close · deposits appear as steps'
-              }
+              title="Portfolio growth"
+              caption="Account value in today’s capital, so contributions mint units rather than showing up as growth"
               right={
-                <div className="flex items-center" style={{ gap: 16 }}>
-                  <label
-                    className="flex items-center"
-                    style={{
-                      gap: 6,
-                      fontSize: 11.5,
-                      color: hasBenchmarkData && isReturnView ? 'var(--muted)' : 'var(--disabled)',
-                      cursor: hasBenchmarkData && isReturnView ? 'pointer' : 'not-allowed',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={showBenchmark && hasBenchmarkData && isReturnView}
-                      disabled={!hasBenchmarkData || !isReturnView}
-                      onChange={(e) => setShowBenchmark(e.target.checked)}
-                      style={{ margin: 0, width: 12, height: 12, accentColor: 'var(--link)' }}
-                    />
-                    S&amp;P 500
-                  </label>
-                  <Segmented
-                    label="Chart view"
-                    options={CHART_VIEWS}
-                    value={view}
-                    onChange={setView}
-                  />
-                  <Segmented
-                    label="Chart period"
-                    options={CHART_PERIODS}
-                    value={period}
-                    onChange={setPeriod}
-                  />
-                </div>
+                <Segmented
+                  label="Chart period"
+                  options={CHART_PERIODS}
+                  value={period}
+                  onChange={setPeriod}
+                />
               }
             />
             {feedOffline ? (
@@ -255,7 +189,7 @@ export default function CommandPage() {
                 title="No verified account record yet"
                 note="The value series begins after the first sync. Nothing is estimated in the meantime."
               />
-            ) : plotted.length === 0 ? (
+            ) : windowedGrowth.length === 0 ? (
               <Hatch title="No records in this period" note="Choose a longer window to see the series." />
             ) : (
               <>
@@ -263,7 +197,7 @@ export default function CommandPage() {
                   <div style={{ height: 220 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart
-                        data={plotted}
+                        data={windowedGrowth}
                         margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
                       >
                         <CartesianGrid stroke="#ebece9" vertical={false} />
@@ -279,60 +213,128 @@ export default function CommandPage() {
                           axisLine={false}
                           tickLine={false}
                           width={62}
-                          domain={
-                            benchmarkView
-                              ? paddedDomain(
-                                  windowedComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]),
-                                  0.18,
-                                  0.5,
-                                )
-                              : isReturnView
-                                ? paddedDomain(windowedReturns.map((d) => d.Portfolio), 0.18, 0.5)
-                                : paddedDomain(
-                                    (plotted as Array<{ Value: number }>).map((d) => d.Value),
-                                  )
-                          }
-                          tickFormatter={(v) =>
-                            isReturnView ? `${Number(v).toFixed(1)}%` : fmtAxisDollar(Number(v))
-                          }
+                          domain={paddedDomain(windowedGrowth.map((d) => d.Value))}
+                          tickFormatter={(v) => fmtAxisDollar(Number(v))}
                         />
                         <Tooltip
                           contentStyle={TOOLTIP_STYLE}
-                          formatter={(v) =>
-                            isReturnView ? `${Number(v).toFixed(2)}%` : fmtCurrency(Number(v))
-                          }
+                          formatter={(v) => fmtCurrency(Number(v))}
                         />
-                        {benchmarkView ? (
-                          <>
-                            <Area
-                              type="monotone"
-                              dataKey="Portfolio"
-                              stroke="#1f4b76"
-                              strokeWidth={1.75}
-                              fill="none"
-                              dot={soloDot}
-                              activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="S&P 500"
-                              stroke="#a9abb0"
-                              strokeWidth={1.25}
-                              strokeDasharray="3 3"
-                              dot={soloDot}
-                            />
-                          </>
-                        ) : (
-                          <Area
-                            type="monotone"
-                            dataKey={isReturnView ? 'Portfolio' : 'Value'}
-                            stroke="#1f4b76"
-                            strokeWidth={1.75}
-                            fill="none"
-                            dot={soloDot}
-                            activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
-                          />
-                        )}
+                        <Area
+                          type="linear"
+                          dataKey="Value"
+                          stroke="#1f4b76"
+                          strokeWidth={1.5}
+                          fill="none"
+                          dot={growthSoloDot}
+                          activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div
+                  className="flex items-center"
+                  style={{ borderTop: '1px solid var(--rule-soft)', fontSize: 11.5 }}
+                >
+                  <StatCell label="Period change" first>
+                    <Figure
+                      value={growthSummary.change === null ? '—' : fmtCurrency(growthSummary.change)}
+                      tone={gainLossTone(growthSummary.change)}
+                    />
+                  </StatCell>
+                  <StatCell label="High">
+                    <Figure value={growthSummary.high === null ? '—' : fmtCurrency(growthSummary.high)} />
+                  </StatCell>
+                  <StatCell label="Low">
+                    <Figure value={growthSummary.low === null ? '—' : fmtCurrency(growthSummary.low)} />
+                  </StatCell>
+                  <StatCell label="Max drawdown">
+                    <Figure
+                      value={
+                        growthSummary.maxDrawdownPct === null
+                          ? '—'
+                          : `${growthSummary.maxDrawdownPct.toFixed(2)}%`
+                      }
+                    />
+                  </StatCell>
+                </div>
+              </>
+            )}
+          </Panel>
+
+          <Panel>
+            <PanelHead
+              title="Portfolio vs S&P 500"
+              caption="Cumulative investment return since the first comparable record, adjusted for contributions and withdrawals"
+            />
+            {feedOffline ? (
+              <Hatch
+                title="Holdings feed is offline"
+                note="The interface is online but the sheet-backed feed did not return data. Nothing is estimated in the meantime."
+              />
+            ) : noRecord ? (
+              <Hatch
+                title="No verified account record yet"
+                note="The value series begins after the first sync. Nothing is estimated in the meantime."
+              />
+            ) : !hasBenchmarkData ? (
+              <Hatch
+                title="No S&P 500 benchmark history"
+                note="The sheet-backed feed has no SPY close on any record yet."
+              />
+            ) : windowedComparison.length === 0 ? (
+              <Hatch title="No records in this period" note="Choose a longer window to see the series." />
+            ) : (
+              <>
+                <div style={{ padding: '16px 18px 10px' }}>
+                  <div style={{ height: 220 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={windowedComparison}
+                        margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+                      >
+                        <CartesianGrid stroke="#ebece9" vertical={false} />
+                        <XAxis
+                          dataKey="date"
+                          tick={AXIS_TICK}
+                          axisLine={{ stroke: '#dcddd9' }}
+                          tickLine={false}
+                          minTickGap={40}
+                        />
+                        <YAxis
+                          tick={AXIS_TICK}
+                          axisLine={false}
+                          tickLine={false}
+                          width={62}
+                          domain={paddedDomain(
+                            windowedComparison.flatMap((d) => [d.Portfolio, d['S&P 500']]),
+                            0.18,
+                            0.5,
+                          )}
+                          tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
+                        />
+                        <Tooltip
+                          contentStyle={TOOLTIP_STYLE}
+                          formatter={(v) => `${Number(v).toFixed(2)}%`}
+                        />
+                        <Area
+                          type="linear"
+                          dataKey="Portfolio"
+                          stroke="#1f4b76"
+                          strokeWidth={1.5}
+                          fill="none"
+                          dot={comparisonSoloDot}
+                          activeDot={{ r: 2.75, fill: '#1f4b76', strokeWidth: 0 }}
+                        />
+                        <Line
+                          type="linear"
+                          dataKey="S&P 500"
+                          stroke="#a9abb0"
+                          strokeWidth={1.25}
+                          strokeDasharray="3 3"
+                          dot={comparisonSoloDot}
+                        />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -344,43 +346,29 @@ export default function CommandPage() {
                   <StatCell label="Period change" first>
                     <Figure
                       value={
-                        summary.change === null
+                        comparisonSummary.change === null
                           ? '—'
-                          : isReturnView
-                            ? `${summary.change >= 0 ? '+' : ''}${summary.change.toFixed(2)} pt`
-                            : fmtCurrency(summary.change)
+                          : `${comparisonSummary.change >= 0 ? '+' : ''}${comparisonSummary.change.toFixed(2)} pt`
                       }
-                      tone={gainLossTone(summary.change)}
+                      tone={gainLossTone(comparisonSummary.change)}
                     />
                   </StatCell>
                   <StatCell label="High">
                     <Figure
-                      value={
-                        summary.high === null
-                          ? '—'
-                          : isReturnView
-                            ? `${summary.high.toFixed(2)}%`
-                            : fmtCurrency(summary.high)
-                      }
+                      value={comparisonSummary.high === null ? '—' : `${comparisonSummary.high.toFixed(2)}%`}
                     />
                   </StatCell>
                   <StatCell label="Low">
                     <Figure
-                      value={
-                        summary.low === null
-                          ? '—'
-                          : isReturnView
-                            ? `${summary.low.toFixed(2)}%`
-                            : fmtCurrency(summary.low)
-                      }
+                      value={comparisonSummary.low === null ? '—' : `${comparisonSummary.low.toFixed(2)}%`}
                     />
                   </StatCell>
                   <StatCell label="Max drawdown">
                     <Figure
                       value={
-                        summary.maxDrawdownPct === null
+                        comparisonSummary.maxDrawdownPct === null
                           ? '—'
-                          : `${summary.maxDrawdownPct.toFixed(2)}%`
+                          : `${comparisonSummary.maxDrawdownPct.toFixed(2)}%`
                       }
                     />
                   </StatCell>
