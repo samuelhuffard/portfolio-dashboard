@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildActualValueSeries, buildAdjustedValueSeries, buildReturnSeries, buildPerformanceComparison, paddedReturnDomain } from "../lib/portfolio-chart";
+import { buildActualValueSeries, buildAdjustedValueSeries, buildReturnSeries, buildPerformanceComparison, paddedReturnDomain, seriesGradientOffset } from "../lib/portfolio-chart";
 import type { PerformanceRow } from "../lib/sheets";
 
 test("cash-flow-adjusted value uses signed deposits and ends at the actual account value", () => {
@@ -379,4 +379,30 @@ test("a history with no unit accounting still uses the signed cash-flow path", (
   assert.equal(series[0].Portfolio, 0);
   assert.ok(Math.abs(series[1].Portfolio) < 1e-9, "funding is not a gain");
   assert.ok(Math.abs(series[2].Portfolio - 10) < 1e-9, "the 10% move survives");
+});
+
+test("gradient break is measured against the series, not a padded axis domain", () => {
+  // The break must sit where the series crosses the threshold, as a fraction of
+  // the drawn path's own bounding box. 90 is the midpoint of 80..100, so a
+  // threshold of 90 splits the box exactly in half.
+  assert.equal(seriesGradientOffset([80, 90, 100], 90), 0.5);
+  assert.equal(seriesGradientOffset([100, 80], 95), 0.25);
+});
+
+test("a series entirely on one side of the threshold renders one colour", () => {
+  // This is the case that broke: the growth chart's threshold is the window's
+  // opening value, so on a monotonic window it equals the series min or max. An
+  // offset measured against the padded domain landed outside 0-1 here and
+  // flipped the whole chart to the wrong colour.
+  assert.equal(seriesGradientOffset([100, 110, 120], 100), 1, "rising off the open is all green");
+  assert.equal(seriesGradientOffset([100, 90, 80], 100), 0, "falling off the open is all red");
+  assert.equal(seriesGradientOffset([120, 130], 100), 1, "threshold below the series is all green");
+  assert.equal(seriesGradientOffset([80, 90], 100), 0, "threshold above the series is all red");
+});
+
+test("gradient break survives flat and empty series", () => {
+  assert.equal(seriesGradientOffset([50, 50, 50], 50), 1);
+  assert.equal(seriesGradientOffset([50, 50], 60), 0);
+  assert.equal(seriesGradientOffset([], 0), 1);
+  assert.equal(seriesGradientOffset([NaN, Infinity], 0), 1);
 });

@@ -350,6 +350,35 @@ export function buildPerformanceComparison(performance: ValueSnapshot[], cashFlo
   });
 }
 
+/**
+ * Where to put the hard colour break in a vertical `objectBoundingBox` gradient
+ * so it lands exactly on `threshold`.
+ *
+ * The offset must be a fraction of the *painted path's own* bounding box, which
+ * is what SVG's default `gradientUnits` measures — not a fraction of the axis
+ * domain. Measuring against the padded domain instead put the break wherever the
+ * padding happened to fall, and whenever the threshold sat at the series min or
+ * max (the growth chart's baseline is the window's opening value, so it often
+ * does) the offset landed outside 0–1 and the entire series rendered in one
+ * colour.
+ *
+ * Both the stroke and the fill are covered by this one figure. The stroke's box
+ * is the series extent; the fill's box also includes the threshold, because the
+ * area is drawn with `baseValue={threshold}`. They agree wherever the series
+ * actually crosses, and where it does not the clamp resolves both to a single
+ * correct colour.
+ */
+export function seriesGradientOffset(values: number[], threshold: number): number {
+  const finite = values.filter(Number.isFinite);
+  if (finite.length === 0) return 1;
+
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
+  if (max === min) return max >= threshold ? 1 : 0;
+
+  return Math.min(1, Math.max(0, (max - threshold) / (max - min)));
+}
+
 export function paddedReturnDomain(values: number[], minAbs = 5): [number, number] {
   const finite = values.filter(Number.isFinite);
   if (finite.length === 0) return [-minAbs, minAbs];

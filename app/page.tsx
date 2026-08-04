@@ -39,6 +39,7 @@ import {
   buildAdjustedValueSeries,
   buildPerformanceComparison,
   paddedReturnDomain,
+  seriesGradientOffset,
 } from '@/lib/portfolio-chart';
 import type { Holding, PerformanceRow } from '@/lib/sheets';
 
@@ -64,19 +65,6 @@ function paddedDomain(values: number[], padRatio = 0.18, minPad = 1): [number, n
   const max = Math.max(...values);
   const pad = Math.max((max - min) * padRatio, minPad);
   return [min - pad, max + pad];
-}
-
-/**
- * Fraction (0–1, top to bottom) of a vertical gradient's bounding box where a
- * domain crosses a threshold (zero for a return spread, the window's opening
- * value for a dollar series). Used to give an SVG gradient a hard edge exactly
- * at that line, so a single Area fill reads as green above and red below
- * regardless of how the curve wanders.
- */
-function thresholdCrossingOffset([min, max]: [number, number], threshold: number): number {
-  if (max <= threshold) return 0;
-  if (min >= threshold) return 1;
-  return (max - threshold) / (max - min);
 }
 
 /** A figure, or an em-dash when the value is not on the verified record. */
@@ -116,15 +104,17 @@ export default function CommandPage() {
   // dollars — an account balance is (almost) never negative, so a literal
   // zero threshold would render solid green regardless of performance.
   const growthBaseline = windowedGrowth[0]?.Value ?? 0;
-  const growthDomain = paddedDomain(windowedGrowth.map((d) => d.Value));
-  const growthGradientOffset = thresholdCrossingOffset(growthDomain, growthBaseline);
+  const growthValues = windowedGrowth.map((d) => d.Value);
+  const growthDomain = paddedDomain(growthValues);
+  const growthGradientOffset = seriesGradientOffset(growthValues, growthBaseline);
   // The comparison chart plots the spread itself (portfolio return minus S&P
   // return), not the two absolute curves, so its stats describe that spread —
   // how far ahead or behind the benchmark the account has run, not the raw
   // return level.
-  const comparisonSummary = summarizeSeries(windowedComparison.map((p) => p.spread));
-  const spreadDomain = paddedReturnDomain(windowedComparison.map((p) => p.spread), 1);
-  const spreadGradientOffset = thresholdCrossingOffset(spreadDomain, 0);
+  const spreadValues = windowedComparison.map((p) => p.spread);
+  const comparisonSummary = summarizeSeries(spreadValues);
+  const spreadDomain = paddedReturnDomain(spreadValues, 1);
+  const spreadGradientOffset = seriesGradientOffset(spreadValues, 0);
   // A lone record is shown as a point, since a single point has no line.
   const growthSoloDot =
     windowedGrowth.length === 1
@@ -270,15 +260,25 @@ export default function CommandPage() {
                           contentStyle={TOOLTIP_STYLE}
                           formatter={(v) => fmtCurrency(Number(v))}
                         />
-                        <ReferenceLine y={growthBaseline} stroke="var(--rule-soft)" strokeWidth={1} />
+                        <ReferenceLine
+                          y={growthBaseline}
+                          stroke="var(--ink-2)"
+                          strokeWidth={1}
+                          strokeDasharray="2 3"
+                        />
                         <Area
                           type="linear"
                           dataKey="Value"
+                          // Fill between the curve and the window's opening
+                          // value, not down to the chart floor — the shaded
+                          // area is the period's gain or loss, and it is what
+                          // anchors the gradient's colour break to the rule.
+                          baseValue={growthBaseline}
                           stroke="url(#growthStroke)"
                           strokeWidth={1.5}
                           fill="url(#growthFill)"
                           dot={growthSoloDot}
-                          activeDot={{ r: 2.75, strokeWidth: 0 }}
+                          activeDot={{ r: 2.75, strokeWidth: 0, fill: 'var(--ink)' }}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -375,15 +375,16 @@ export default function CommandPage() {
                           contentStyle={TOOLTIP_STYLE}
                           formatter={(v) => `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(2)} pt vs S&P 500`}
                         />
-                        <ReferenceLine y={0} stroke="var(--rule-soft)" strokeWidth={1} />
+                        <ReferenceLine y={0} stroke="var(--ink-2)" strokeWidth={1} strokeDasharray="2 3" />
                         <Area
                           type="linear"
                           dataKey="spread"
+                          baseValue={0}
                           stroke="url(#spreadStroke)"
                           strokeWidth={1.5}
                           fill="url(#spreadFill)"
                           dot={comparisonSoloDot}
-                          activeDot={{ r: 2.75, strokeWidth: 0 }}
+                          activeDot={{ r: 2.75, strokeWidth: 0, fill: 'var(--ink)' }}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
