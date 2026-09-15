@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { buildMcpReadReceiptEvidence, MCP_JOB_HISTORY_MAX, MCP_JOB_HISTORY_TTL_SECONDS, resolveMcpReceiptSource } from "../scripts/mcp-read-receipt.mjs";
+import { buildHoldingsSyncProvenanceArgs } from "../lib/mcp-read-invocation.mjs";
 
 const RECEIPT_SECRET = "mcp-receipt-test-secret";
 const JETSON_SOURCE = "jetson-robinhood-mcp";
@@ -45,7 +46,21 @@ test("scheduled MCP reads use a durable lease and a receipt rather than GETDEL",
   assert.match(protocol, /ACK_MCP_QUEUE_HEAD_SCRIPT/);
   assert.match(protocol, /redisCmd\("lindex"/);
   assert.doesNotMatch(protocol, /getdel/);
-  assert.match(source, /--request-id/, "snapshot requests must make Sheets retries idempotent");
+  assert.match(source, /buildHoldingsSyncProvenanceArgs/, "snapshot requests must forward the complete provenance pair");
+  assert.match(
+    source,
+    /syncHoldings\(\{ requestId: request\.id, invocationId: request\.invocationId \}\)/,
+    "the companion must forward the request's signed slot identity to the backend writer",
+  );
+});
+
+test("companion forwards an all-or-nothing provenance pair to the backend snapshot writer", () => {
+  assert.deepEqual(
+    buildHoldingsSyncProvenanceArgs({ requestId: "00000000-0000-4000-8000-000000000001", invocationId: "2026-09-14/16:30" }),
+    ["--request-id", "00000000-0000-4000-8000-000000000001", "--invocation-id", "2026-09-14/16:30"],
+  );
+  assert.deepEqual(buildHoldingsSyncProvenanceArgs(), []);
+  assert.throws(() => buildHoldingsSyncProvenanceArgs({ requestId: "request", invocationId: null }), /requires both/);
 });
 
 const request = {

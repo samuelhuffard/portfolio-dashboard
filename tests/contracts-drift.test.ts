@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // The cross-repo contract guard. `lib/contracts/` is a mechanically generated
 // mirror of ../portfolio-manager/contracts/ (produced by `npm run contracts:sync`
@@ -15,7 +15,19 @@ import { dirname, join, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mirrorDir = resolve(here, "../lib/contracts");
-const canonicalDir = resolve(here, "../../portfolio-manager/contracts");
+// CI checks out the canonical backend below GITHUB_WORKSPACE; normal local
+// runs keep the sibling-checkout convention. An explicit absolute override is
+// allowed for review worktrees, but never to the shipped mirror itself.
+const canonicalDir = process.env.PORTFOLIO_MANAGER_CONTRACTS_DIR
+  ? resolve(process.env.PORTFOLIO_MANAGER_CONTRACTS_DIR)
+  : process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_WORKSPACE
+    ? resolve(process.env.GITHUB_WORKSPACE, "portfolio-manager/contracts")
+    : resolve(here, "../../portfolio-manager/contracts");
+
+function sameOrNested(child: string, parent: string): boolean {
+  const path = relative(parent, child);
+  return path === "" || (!path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path));
+}
 
 function contractFiles(dir: string): string[] {
   return readdirSync(dir)
@@ -27,6 +39,15 @@ test("canonical contracts repo is present as a sibling checkout", () => {
   assert.ok(
     existsSync(canonicalDir),
     `Expected canonical contracts at ${canonicalDir}. Check out portfolio-manager as a sibling.`
+  );
+  assert.ok(contractFiles(canonicalDir).length > 0, "Canonical contracts directory is empty.");
+});
+
+test("canonical contracts cannot be the dashboard mirror", () => {
+  assert.equal(
+    sameOrNested(canonicalDir, mirrorDir),
+    false,
+    "PORTFOLIO_MANAGER_CONTRACTS_DIR must point to an independent backend checkout, never lib/contracts."
   );
 });
 

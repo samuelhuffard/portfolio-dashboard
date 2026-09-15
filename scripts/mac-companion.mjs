@@ -18,6 +18,7 @@ import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { buildHoldingsSyncProvenanceArgs } from "../lib/mcp-read-invocation.mjs";
 import {
   verifyApprovalSignature,
   verifySellOwnerShareCeiling,
@@ -505,7 +506,7 @@ async function recordTrade(proposal, result) {
 // ── Holdings sync ─────────────────────────────────────────────────────────────
 const SYNC_SCRIPT = join(__dir, "../../portfolio-manager/scripts/sync-holdings-from-mcp.js");
 
-async function syncHoldings({ requestId = null } = {}) {
+async function syncHoldings({ requestId = null, invocationId = null } = {}) {
   if (!existsSync(SYNC_SCRIPT)) {
     throw new Error("sync-holdings-from-mcp.js not found");
   }
@@ -559,7 +560,10 @@ Include every open position. Use the actual live values from the MCP.`;
   // dotenv + credentials.json resolve correctly
   const syncDir = join(__dir, "../../portfolio-manager");
   await new Promise((resolve, reject) => {
-    const args = [SYNC_SCRIPT, ...(requestId ? ["--request-id", requestId] : [])];
+    const args = [
+      SYNC_SCRIPT,
+      ...buildHoldingsSyncProvenanceArgs({ requestId, invocationId }),
+    ];
     const child = execFile("node", args, { env: process.env, cwd: syncDir }, (err) => {
       if (err) reject(err); else resolve();
     });
@@ -567,7 +571,7 @@ Include every open position. Use the actual live values from the MCP.`;
     child.stdin.end();
   });
 
-  console.log(`[companion] ✓ Holdings synced to Google Sheets${requestId ? ` (request ${requestId})` : ""}`);
+  console.log(`[companion] ✓ Holdings synced to Google Sheets${requestId ? ` (request ${requestId})` : ""}${invocationId ? ` (slot ${invocationId})` : ""}`);
 }
 
 // ── Market scan sync ─────────────────────────────────────────────────────────
@@ -919,7 +923,7 @@ async function heartbeat() {
 
   if (COMPANION_ROLE.brokerReads) {
     await processMcpReadRequest("holdings-sync", async (request) => {
-      await syncHoldings({ requestId: request.id });
+      await syncHoldings({ requestId: request.id, invocationId: request.invocationId });
       return "ok";
     });
     await processMcpReadRequest("order-reconciliation", (request) => runDailyReconciliation(request.requestedForET));
