@@ -227,9 +227,18 @@ test("companion heartbeat cannot overlap or crash on a rejected async tick", () 
   assert.doesNotMatch(source, /setInterval\(heartbeat, 30_000\)/);
 });
 
-test("companion Redis helpers reject HTTP and Upstash command errors", () => {
+test("companion Redis helpers bound stalled network calls and reject HTTP/Upstash errors", () => {
   const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /const REDIS_REQUEST_TIMEOUT_MS = 15_000/);
+  assert.match(source, /import \{ fetchJsonWithTimeout \} from "\.\/redis-request\.mjs"/);
+  assert.match(source, /await fetchJsonWithTimeout\(fetch, `\$\{REDIS_URL\}\/\$\{cmd\}/);
+  assert.match(source, /await fetchJsonWithTimeout\(fetch, REDIS_URL/);
   assert.match(source, /if \(!res\.ok \|\| json\.error\) throw new Error/);
+});
+
+test("read-worker bounds its backend snapshot writer", () => {
+  const source = readFileSync(new URL("../scripts/mac-companion.mjs", import.meta.url), "utf8");
+  assert.match(source, /execFile\("node", args, \{ env: process\.env, cwd: syncDir, timeout: 120_000 \}/);
 });
 
 test("companion MCP failures cannot dump the command prompt or account identifier", () => {

@@ -38,8 +38,10 @@ import {
 } from "./mcp-read-receipt.mjs";
 import { assertScheduledMcpAccountBinding, extractMcpToolCalls, summarizeMcpStream } from "./mcp-stream-evidence.mjs";
 import { execFileWithClosedStdin } from "./claude-cli.mjs";
+import { fetchJsonWithTimeout } from "./redis-request.mjs";
 
 const execFileAsync = promisify(execFile);
+const REDIS_REQUEST_TIMEOUT_MS = 15_000;
 
 async function runClaude(args, options) {
   // Claude CLI explicitly treats /dev/null as the unattended prompt mode.
@@ -177,21 +179,19 @@ function robinhoodClaudeArgs({ prompt, allowedTools, disallowedTools = null, str
 
 // ── Redis helpers ──────────────────────────────────────────────────────────────
 async function redisCmd(cmd, ...args) {
-  const res = await fetch(`${REDIS_URL}/${cmd}/${args.map(encodeURIComponent).join("/")}`, {
+  const { response: res, json } = await fetchJsonWithTimeout(fetch, `${REDIS_URL}/${cmd}/${args.map(encodeURIComponent).join("/")}`, {
     headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
-  });
-  const json = await res.json();
+  }, REDIS_REQUEST_TIMEOUT_MS);
   if (!res.ok || json.error) throw new Error(`Redis ${cmd} failed: ${json.error ?? `HTTP ${res.status}`}`);
   return json.result;
 }
 
 async function redisPost(body) {
-  const res = await fetch(REDIS_URL, {
+  const { response: res, json } = await fetchJsonWithTimeout(fetch, REDIS_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${REDIS_TOKEN}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
-  const json = await res.json();
+  }, REDIS_REQUEST_TIMEOUT_MS);
   if (!res.ok || json.error) throw new Error(`Redis command failed: ${json.error ?? `HTTP ${res.status}`}`);
   return json.result;
 }
@@ -564,7 +564,7 @@ Include every open position. Use the actual live values from the MCP.`;
       SYNC_SCRIPT,
       ...buildHoldingsSyncProvenanceArgs({ requestId, invocationId }),
     ];
-    const child = execFile("node", args, { env: process.env, cwd: syncDir }, (err) => {
+    const child = execFile("node", args, { env: process.env, cwd: syncDir, timeout: 120_000 }, (err) => {
       if (err) reject(err); else resolve();
     });
     child.stdin.write(positionsJson);
